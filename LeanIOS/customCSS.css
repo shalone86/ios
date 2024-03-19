@@ -1,0 +1,12 @@
+.header 
+{
+  display: none!important;
+}
+#ghost-portal-root
+{
+  display: none;
+}
+.header .nav
+{
+  visibility: hidden!important;
+}
