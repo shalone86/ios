@@ -14,7 +14,6 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -85,14 +84,11 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private EditText amountInput;
     private TextView amountLabel;
-    private Button chargeModeBtn, receiveModeBtn;
-    private boolean receiveMode = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("rates", MODE_PRIVATE);
-        receiveMode = prefs.getBoolean("receiveMode", false);
         for (Rate r : rates) {
             r.percent = prefs.getFloat(r.id + "_p", (float) r.defPercent);
             r.fixed = prefs.getFloat(r.id + "_f", (float) r.defFixed);
@@ -112,25 +108,11 @@ public class MainActivity extends Activity {
         subtitle.setTextColor(MUTED);
         root.addView(subtitle);
 
-        // Mode toggle
-        LinearLayout toggle = new LinearLayout(this);
-        toggle.setOrientation(LinearLayout.HORIZONTAL);
-        chargeModeBtn = new Button(this);
-        chargeModeBtn.setText("I charge…");
-        receiveModeBtn = new Button(this);
-        receiveModeBtn.setText("I want to get…");
-        toggle.addView(chargeModeBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        toggle.addView(receiveModeBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        LinearLayout.LayoutParams tlp = matchWrap();
-        tlp.topMargin = dp(16);
-        root.addView(toggle, tlp);
-        chargeModeBtn.setOnClickListener(v -> setMode(false));
-        receiveModeBtn.setOnClickListener(v -> setMode(true));
-
         amountLabel = text("", 14, false);
         amountLabel.setTextColor(MUTED);
+        amountLabel.setText("Amount you want to end up with");
         LinearLayout.LayoutParams alp = matchWrap();
-        alp.topMargin = dp(12);
+        alp.topMargin = dp(16);
         root.addView(amountLabel, alp);
 
         amountInput = new EditText(this);
@@ -173,7 +155,7 @@ public class MainActivity extends Activity {
         root.addView(note, nlp);
 
         setContentView(scroll);
-        setMode(receiveMode);
+        recalc();
     }
 
     private View buildRow(Rate r) {
@@ -210,17 +192,6 @@ public class MainActivity extends Activity {
         return row;
     }
 
-    private void setMode(boolean receive) {
-        receiveMode = receive;
-        prefs.edit().putBoolean("receiveMode", receive).apply();
-        chargeModeBtn.setAlpha(receive ? 0.5f : 1f);
-        receiveModeBtn.setAlpha(receive ? 1f : 0.5f);
-        amountLabel.setText(receive
-                ? "Amount you want to end up with"
-                : "Amount you charge the customer");
-        recalc();
-    }
-
     private long parseCents() {
         String s = amountInput.getText().toString().replaceAll("[^0-9.]", "");
         if (s.isEmpty() || s.equals(".")) return 0;
@@ -236,26 +207,19 @@ public class MainActivity extends Activity {
         long amt = parseCents();
         for (Rate r : rates) {
             r.rateView.setText(fmtPct(r.percent) + "% + " + money.format(r.fixed));
-            if (!receiveMode) {
-                long fee = r.feeCents(amt);
-                long net = amt - fee;
-                r.mainView.setText("−" + fmt(fee));
-                r.mainView.setTextColor(RED);
-                r.subView.setText("You get " + fmt(net));
-                r.subView.setTextColor(GREEN);
-            } else {
-                long charge = r.chargeForNet(amt);
-                if (charge < 0) {
-                    r.mainView.setText("—");
-                    r.subView.setText("");
-                    continue;
-                }
-                long fee = r.feeCents(charge);
-                r.mainView.setText("Charge " + fmt(charge));
-                r.mainView.setTextColor(GREEN);
-                r.subView.setText("Fee " + fmt(fee));
-                r.subView.setTextColor(RED);
+            long exact = r.chargeForNet(amt);
+            if (exact < 0) {
+                r.mainView.setText("\u2014");
+                r.subView.setText("");
+                continue;
             }
+            // Round the charge up to the next whole dollar.
+            long charge = (exact + 99) / 100 * 100;
+            long fee = r.feeCents(charge);
+            r.mainView.setText("Charge " + fmt(charge));
+            r.mainView.setTextColor(GREEN);
+            r.subView.setText("Fee " + fmt(fee) + " \u00b7 you get " + fmt(charge - fee));
+            r.subView.setTextColor(MUTED);
         }
     }
 

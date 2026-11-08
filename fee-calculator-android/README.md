@@ -2,8 +2,8 @@
 
 Shows exactly what Square and Stripe will take from a charge, and what you keep.
 
-- **I charge…** — enter what the customer pays; see each fee and your net.
-- **I want to get…** — enter what you want to end up with; see what to charge.
+- Enter what you want to end up with; see what to charge, rounded up to the
+  next whole dollar, plus the fee and what you actually keep at that price.
 - Tap any rate to edit it (saved on the phone) if your plan/pricing differs.
 
 Default rates are standard US pricing as of Nov 2026.
