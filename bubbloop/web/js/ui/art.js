@@ -125,6 +125,7 @@ export const GLYPHS = {
   cloud: glyph('#e9e1ff', `<path d="M15 32a6 6 0 0 1 .500-12 8 8 0 0 1 15.500-1.500A6.500 6.500 0 0 1 33 32z" fill="#fff" stroke="${INK}" stroke-width="2.200" stroke-linejoin="round"/>`),
   star: glyph('#fff1c4', `<path d="M24 10l4.200 8.600 9.500 1.400-6.900 6.700 1.600 9.400L24 31.700l-8.400 4.400 1.600-9.400-6.900-6.700 9.500-1.400z" fill="${INK}"/>`),
   leaf: glyph('#e4f7ea', `<rect x="12" y="12" width="24" height="26" rx="6" fill="#fff" stroke="${INK}" stroke-width="2.200"/>${S('M18 12v14M24 12v19M30 12v14', 2.600)}`),
+  mic: glyph('#ffe1e6', `<rect x="19" y="10" width="10" height="18" rx="5" fill="${INK}"/>${S('M14 23a10 10 0 0 0 20 0M24 33v6M18 39h12', 2.600)}`),
   pixel: glyph('#ffe1ee', `<path d="M14 14h6v4h8v-4h6v4h4v8h-4v4h-4v4h-4v4h-4v-4h-4v-4h-4v-4h-4v-8h4z" fill="${INK}"/>`),
 };
 

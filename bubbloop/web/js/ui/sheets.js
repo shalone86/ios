@@ -6,6 +6,8 @@ import { INSTRUMENTS, instrumentById } from '../instruments.js';
 import { MASTERS, REVERBS, ECHOES } from '../graph.js';
 import { PATTERNS } from '../patterns.js';
 import * as S from '../state.js';
+import { addSample, getSample, setRoot, recordMic, decodeFile, sampleIds, packSamples, unpackSamples, ensureSamples } from '../samples.js';
+import { midiName } from '../theory.js';
 import { FILLS } from '../seq.js';
 import { exportProject, FORMATS } from '../exporter.js';
 import { canShare, shareFile, saveFile, isNative } from '../platform.js';
@@ -188,7 +190,9 @@ function project() {
       const f = file.files && file.files[0];
       if (!f) return;
       try {
-        const loaded = S.repair(JSON.parse(await f.text()));
+        const raw = JSON.parse(await f.text());
+        if (raw.samples) { await unpackSamples(raw.samples); delete raw.samples; }
+        const loaded = S.repair(raw);
         if (!loaded) throw new Error('not a song');
         loaded.id = Math.random().toString(36).slice(2, 10);
         closeSheet();
@@ -205,7 +209,7 @@ function project() {
       else if (act === 'open') file.click();
       else if (act === 'file') {
         try {
-          const saved = await saveFile(`${p.name.replace(/[\\/:*?"<>|]/g, ' ')}.bubbloop.json`, 'application/json', new TextEncoder().encode(S.serialize(p)));
+          const saved = await saveFile(`${p.name.replace(/[\\/:*?"<>|]/g, ' ')}.bubbloop.json`, 'application/json', new TextEncoder().encode(JSON.stringify({ ...JSON.parse(S.serialize(p)), samples: await packSamples(sampleIds(p)) })));
           toast(`Saved to ${saved.where}`);
         } catch (e) { toast(e.message); }
       }
@@ -310,6 +314,7 @@ function instrument(track) {
     on(root, '[data-inst]', (b) => {
       track.inst = b.dataset.inst;
       app.engine.syncTrack(track);
+      if (track.inst === 'sampler') { renderAll(); touch(); sampler(track); return; }
       root.querySelectorAll('[data-inst]').forEach((n) => n.classList.toggle('on', n === b));
       preview(track, true);
       renderAll(); touch();
@@ -344,6 +349,80 @@ function chord() {
       const e = app.engine;
       if (e.ready) e.g.playCell(t, 1, +c, S.chordOf(t, +c), 0.75, e.now + 0.03, 0.6);
     });
+  });
+}
+
+// The sampler: record or import a sound, then play it on the bubbles.
+let recorder = null;
+function sampler(t) {
+  const p = app.project, e = app.engine;
+  t.smp = t.smp || { mode: 'keys', key: null, kit: {} };
+  const kit = t.smp.mode === 'kit';
+  const slot = app.focus.r * 5 + app.focus.c;
+  const cur = getSample(kit ? t.smp.kit[slot] : t.smp.key);
+  const put = async (sound, name) => {
+    const made = await addSample(sound.data, sound.sr, name);
+    if (!made) { toast('That was silent: try again, a little louder'); return; }
+    if (kit) t.smp.kit[slot] = made.id; else t.smp.key = made.id;
+    touch(); renderAll(); sampler(t);
+    if (e.ready) e.g.playSample(t, kit ? app.focus.r : 1, kit ? app.focus.c : 0, 'off', 0.9, e.now + 0.05, 1.2);
+  };
+  show(`
+    <h2>Sampler</h2>
+    <div class="wrap">
+      <button class="pill ${kit ? '' : 'on'}" data-mode="keys">Keyboard: one sound, every note</button>
+      <button class="pill ${kit ? 'on' : ''}" data-mode="kit">Kit: a sound per bubble</button>
+    </div>
+    <p class="sub" style="margin-top:10px">${kit
+      ? `Filling bubble <b>row ${app.focus.r + 1}, column ${app.focus.c + 1}</b>. Close this, tap another bubble, and come back to fill that one.`
+      : 'Your sound is tuned automatically and spread across the bubbles in the song\'s key.'}</p>
+    <div class="item" style="margin:6px 0 12px"><span class="sp"><b>${cur ? esc(cur.name) : 'Nothing here yet'}</b>
+      <small>${cur ? `${cur.buffer.duration.toFixed(1)} s${kit ? '' : ` · heard as ${midiName(Math.round(cur.root))}${cur.pitched ? '' : ' (no clear pitch found)'}`}` : 'Record something or bring in a file'}</small></span>
+      ${cur && !kit ? '<span class="stepper"><button data-root="-1">−</button><span>tune</span><button data-root="1">+</button></span>' : ''}</div>
+    <button class="pill primary" id="s-rec">${recorder ? 'Stop' : 'Record with the microphone'}</button>
+    <div class="progress" ${recorder ? '' : 'hidden'}><i id="s-level"></i></div>
+    <div class="wrap" style="margin-top:10px">
+      <button class="pill" id="s-file">Import an audio file</button>
+      ${cur ? '<button class="pill" id="s-play">Hear it</button><button class="pill danger" id="s-clear">Remove</button>' : ''}
+    </div>
+    <input type="file" id="s-input" accept="audio/*" hidden>
+    <p class="sub" style="margin-top:10px">Up to 12 seconds. Silence at the ends is trimmed for you.</p>
+  `, (root) => {
+    on(root, '[data-mode]', (b) => { t.smp.mode = b.dataset.mode; touch(); renderAll(); sampler(t); });
+    on(root, '[data-root]', (b) => { setRoot(cur.id, cur.root - +b.dataset.root); sampler(t); if (e.ready) e.g.playSample(t, 1, 0, 'off', 0.9, e.now + 0.03, 0.8); });
+    root.querySelector('#s-rec').addEventListener('click', async () => {
+      await e.wake(p);
+      if (recorder) {
+        const r = recorder; recorder = null;
+        await put(r.stop(), kit ? `Pad ${slot + 1}` : 'My sound');
+        return;
+      }
+      try {
+        if (e.playing) e.stop();
+        recorder = await recordMic(e.ctx);
+      } catch (err) { toast('The microphone is not available: check the app\'s permission'); return; }
+      sampler(t);
+      const meter = () => {
+        const bar = document.getElementById('s-level');
+        if (!recorder || !bar) return;
+        bar.style.width = `${Math.min(100, recorder.level() * 140)}%`;
+        if (recorder.full()) { document.getElementById('s-rec').click(); return; }
+        requestAnimationFrame(meter);
+      };
+      meter();
+    });
+    const input = root.querySelector('#s-input');
+    root.querySelector('#s-file').addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      try { await e.wake(p); await put(await decodeFile(e.ctx, f), f.name.replace(/\.[^.]+$/, '').slice(0, 24)); }
+      catch (err) { toast('That file could not be read as audio'); }
+    });
+    const play = root.querySelector('#s-play');
+    if (play) play.addEventListener('click', async () => { await e.wake(p); e.g.playSample(t, kit ? app.focus.r : 1, kit ? app.focus.c : 0, 'off', 0.9, e.now + 0.03, 1.5); });
+    const clear = root.querySelector('#s-clear');
+    if (clear) clear.addEventListener('click', () => { if (kit) delete t.smp.kit[slot]; else t.smp.key = null; touch(); renderAll(); sampler(t); });
   });
 }
 
@@ -659,4 +738,4 @@ function spice(blockIdx, trackId) {
   draw();
 }
 
-export const openSheets = { spice, space, copyBlock,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };
+export const openSheets = { spice, space, copyBlock, sampler,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };

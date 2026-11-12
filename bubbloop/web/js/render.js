@@ -6,6 +6,7 @@ import { getKit } from './drums.js';
 import { buildGraph } from './graph.js';
 import { songSegments, loopSegments, scheduleRange } from './seq.js';
 import { serialize } from './state.js';
+import { ensureSamples, sampleIds } from './samples.js';
 
 const CHUNK = 1.5;      // seconds of music scheduled per step
 const LEAD = 0.02;      // silence before the first note
@@ -35,6 +36,7 @@ export async function renderProject(project, options = {}) {
 
   const ctx = new OfflineAudioContext(2, frames, sampleRate);
   const kit = await getKit(sampleRate, p.key);
+  try { await ensureSamples(sampleIds(p)); } catch (e) { /* no sample storage here */ }
   const g = buildGraph(ctx, p, kit, { offline: true, solo, master });
   for (const fx of [...p.sections.flatMap((s) => s.fx), ...p.song.flatMap((b) => b.fx)]) if (fx.tr) g.trackRack(fx.tr);
   for (const k of Object.keys(p.latch || {})) if (p.latch[k]) g.rack.on(k, p.latch[k].p, 0);

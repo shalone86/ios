@@ -1,0 +1,220 @@
+// The sampler's sample library. Audio you record or import is trimmed,
+// levelled, pitch-detected and kept in IndexedDB on the device; songs refer
+// to samples by id. Decoded buffers are cached so playback is instant and the
+// offline renderer can use the very same audio.
+
+const DB = 'bubbloop-samples', STORE = 'samples';
+const cache = new Map();          // id -> { id, name, root, buffer }
+export const MAX_SECONDS = 12;
+
+function db() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function tx(mode, fn) {
+  const d = await db();
+  return new Promise((resolve, reject) => {
+    const t = d.transaction(STORE, mode);
+    const out = fn(t.objectStore(STORE));
+    t.oncomplete = () => resolve(out && out.result !== undefined ? out.result : undefined);
+    t.onerror = () => reject(t.error);
+  });
+}
+
+function toBuffer(data, sr) {
+  const b = new AudioBuffer({ length: Math.max(1, data.length), sampleRate: sr, numberOfChannels: 1 });
+  b.copyToChannel(data, 0);
+  return b;
+}
+
+// Cut silence off both ends, fade the edges, bring the peak up to a set level.
+export function tidy(data, sr) {
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+  if (peak < 1e-4) return null;
+  const floor = peak * 0.02;
+  let a = 0, b = data.length - 1;
+  while (a < b && Math.abs(data[a]) < floor) a++;
+  while (b > a && Math.abs(data[b]) < floor * 0.5) b--;
+  a = Math.max(0, a - Math.floor(sr * 0.003));
+  b = Math.min(data.length - 1, b + Math.floor(sr * 0.05));
+  const n = Math.min(b - a + 1, Math.floor(sr * MAX_SECONDS));
+  const out = new Float32Array(n);
+  const k = 0.9 / peak, fin = Math.floor(sr * 0.002), fout = Math.floor(sr * 0.02);
+  for (let i = 0; i < n; i++) {
+    let g = k;
+    if (i < fin) g *= i / fin;
+    if (n - i < fout) g *= (n - i) / fout;
+    out[i] = data[a + i] * g;
+  }
+  return out;
+}
+
+// Fundamental as a (fractional) MIDI note, by autocorrelation of the body of
+// the sound. Returns null when it is not pitched (a drum hit, a noise).
+export function detectPitch(data, sr) {
+  const n = Math.min(data.length, 8192);
+  if (n < 2048) return null;
+  const start = Math.min(data.length - n, Math.floor(data.length * 0.15));
+  const x = data.subarray(start, start + n);
+  const lo = Math.floor(sr / 1000), hi = Math.min(Math.floor(sr / 55), n >> 1);
+  let energy = 0;
+  for (let i = 0; i < n; i++) energy += x[i] * x[i];
+  if (energy < 1e-6) return null;
+  const ac = new Float32Array(hi + 2);
+  for (let lag = lo - 1; lag <= hi + 1; lag++) {
+    let s = 0;
+    for (let i = 0; i + lag < n; i++) s += x[i] * x[i + lag];
+    ac[lag] = s / energy;
+  }
+  // first strong peak, not the tallest: the tallest is often an octave below
+  let best = -1, top = 0;
+  for (let lag = lo; lag <= hi; lag++) top = Math.max(top, ac[lag]);
+  if (top < 0.45) return null;
+  for (let lag = lo; lag <= hi; lag++) {
+    if (ac[lag] > top * 0.88 && ac[lag] >= ac[lag - 1] && ac[lag] >= ac[lag + 1]) { best = lag; break; }
+  }
+  if (best < 0) return null;
+  const y0 = ac[best - 1], y1 = ac[best], y2 = ac[best + 1];
+  const shift = (y0 - 2 * y1 + y2) !== 0 ? 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2) : 0;
+  const freq = sr / (best + shift);
+  return 69 + 12 * Math.log2(freq / 440);
+}
+
+const newId = () => 's' + Math.random().toString(36).slice(2, 10);
+
+// Store a sound. Resolves to its record, or null if it was silent.
+export async function addSample(raw, sr, name) {
+  const data = tidy(raw, sr);
+  if (!data) return null;
+  const pitch = detectPitch(data, sr);
+  const rec = { id: newId(), name: name || 'Sample', sr, data, root: pitch == null ? 60 : pitch, pitched: pitch != null, made: Date.now() };
+  await tx('readwrite', (s) => s.put(rec));
+  cache.set(rec.id, { id: rec.id, name: rec.name, root: rec.root, pitched: rec.pitched, buffer: toBuffer(data, sr) });
+  return cache.get(rec.id);
+}
+
+export const getSample = (id) => cache.get(id) || null;
+
+// Make sure these ids are decoded and ready (before playing or rendering).
+export async function ensureSamples(ids) {
+  const need = [...new Set(ids)].filter((id) => id && !cache.has(id));
+  if (!need.length) return;
+  const d = await db();
+  await Promise.all(need.map((id) => new Promise((resolve) => {
+    const req = d.transaction(STORE).objectStore(STORE).get(id);
+    req.onsuccess = () => {
+      const r = req.result;
+      if (r) cache.set(id, { id, name: r.name, root: r.root, pitched: r.pitched, buffer: toBuffer(r.data, r.sr) });
+      resolve();
+    };
+    req.onerror = () => resolve();
+  })));
+}
+
+export async function setRoot(id, root) {
+  const c = cache.get(id);
+  if (!c) return;
+  c.root = root;
+  const d = await db();
+  const store = d.transaction(STORE, 'readwrite').objectStore(STORE);
+  const req = store.get(id);
+  req.onsuccess = () => { if (req.result) { req.result.root = root; store.put(req.result); } };
+}
+
+// Every sample id a project uses.
+export function sampleIds(project) {
+  const ids = [];
+  for (const t of project.tracks) {
+    if (!t.smp) continue;
+    if (t.smp.key) ids.push(t.smp.key);
+    for (const id of Object.values(t.smp.kit || {})) ids.push(id);
+  }
+  return [...new Set(ids)];
+}
+
+// For song files: samples travel with the song as 16-bit audio in base64.
+export async function packSamples(ids) {
+  await ensureSamples(ids);
+  const out = {};
+  for (const id of ids) {
+    const c = cache.get(id);
+    if (!c) continue;
+    const f = c.buffer.getChannelData(0);
+    const pcm = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(f[i] * 32767)));
+    const bytes = new Uint8Array(pcm.buffer);
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    out[id] = { name: c.name, root: c.root, pitched: c.pitched, sr: c.buffer.sampleRate, pcm: btoa(s) };
+  }
+  return out;
+}
+
+export async function unpackSamples(packed) {
+  for (const [id, r] of Object.entries(packed || {})) {
+    if (cache.has(id)) continue;
+    const bin = atob(r.pcm);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const pcm = new Int16Array(bytes.buffer);
+    const data = new Float32Array(pcm.length);
+    for (let i = 0; i < pcm.length; i++) data[i] = pcm[i] / 32768;
+    await tx('readwrite', (s) => s.put({ id, name: r.name, sr: r.sr, data, root: r.root, pitched: r.pitched, made: Date.now() }));
+    cache.set(id, { id, name: r.name, root: r.root, pitched: r.pitched, buffer: toBuffer(data, r.sr) });
+  }
+}
+
+// ---------- getting sound in ----------
+
+// Start recording from the microphone. Resolves to { stop, level } where
+// stop() resolves to { data, sr } and level() is the current input level 0..1.
+export async function recordMic(ctx) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+  });
+  const src = ctx.createMediaStreamSource(stream);
+  const tap = ctx.createScriptProcessor(4096, 1, 1);
+  const mute = ctx.createGain();
+  mute.gain.value = 0;
+  const chunks = [];
+  let total = 0, lvl = 0;
+  const limit = ctx.sampleRate * MAX_SECONDS;
+  tap.onaudioprocess = (e) => {
+    const d = e.inputBuffer.getChannelData(0);
+    let p = 0;
+    for (let i = 0; i < d.length; i++) p = Math.max(p, Math.abs(d[i]));
+    lvl = p;
+    if (total < limit) { chunks.push(new Float32Array(d)); total += d.length; }
+  };
+  src.connect(tap).connect(mute).connect(ctx.destination);
+  return {
+    level: () => lvl,
+    full: () => total >= limit,
+    stop() {
+      tap.onaudioprocess = null;
+      try { src.disconnect(); tap.disconnect(); mute.disconnect(); } catch (e) { /* gone */ }
+      stream.getTracks().forEach((t) => t.stop());
+      const data = new Float32Array(total);
+      let o = 0;
+      for (const c of chunks) { data.set(c, o); o += c.length; }
+      return { data, sr: ctx.sampleRate };
+    },
+  };
+}
+
+// Decode an audio file the user picked, mixed to mono.
+export async function decodeFile(ctx, file) {
+  const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+  const n = Math.min(buf.length, Math.floor(buf.sampleRate * MAX_SECONDS * 2));
+  const data = new Float32Array(n);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const ch = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) data[i] += ch[i] / buf.numberOfChannels;
+  }
+  return { data, sr: buf.sampleRate };
+}

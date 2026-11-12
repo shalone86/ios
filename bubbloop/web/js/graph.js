@@ -5,6 +5,7 @@
 import { makeShared, instrumentById, makeInsert, startVoice } from './instruments.js';
 import { DRUM_PADS, padFor } from './drums.js';
 import { cellNotes } from './theory.js';
+import { getSample } from './samples.js';
 
 export const FX = [
   { id: 'reverb',  name: 'Cloud',   sub: 'reverb', zones: ['mist', 'deep'] },
@@ -528,6 +529,7 @@ export function buildGraph(ctx, project, kit, opts = {}) {
   g.playCell = (track, row, col, chord, vel, t, dur, acc = 0) => {
     const ch = channel(track);
     const inst = instrumentById(track.inst);
+    if (inst.id === 'sampler') return g.playSample(track, row, col, chord, vel, t, dur, acc);
     if (inst.id === 'drums') { const p = padFor(track, row, col); return [g.playDrum(track, p.idx, vel, t, p.rate)]; }
     const notes = cellNotes(g.project, track, row, col, chord, acc);
     // steal the oldest voices if this would exceed the instrument's polyphony
@@ -542,6 +544,55 @@ export function buildGraph(ctx, project, kit, opts = {}) {
       ch.voices.push(h);
       return h;
     }).filter(Boolean);
+  };
+
+  // Sampler: one sound stretched across the bubbles (keyboard mode), or a
+  // different sound on each bubble (kit mode).
+  g.playSample = (track, row, col, chord, vel, t, dur, acc = 0) => {
+    const ch = channel(track);
+    const smp = track.smp || {};
+    const kit = smp.mode === 'kit';
+    const sample = getSample(kit ? (smp.kit || {})[row * 5 + col] : smp.key);
+    if (!sample) return [];
+    const notes = kit ? [null] : cellNotes(g.project, track, row, col, chord, acc);
+    ch.voices = ch.voices.filter((v) => v.until > t);
+    while (ch.voices.length + notes.length > 12 && ch.voices.length) ch.voices.shift().kill(t);
+    const scale = notes.length > 1 ? 1 / Math.sqrt(notes.length * 0.75) : 1;
+    return notes.map((m) => {
+      const src = ctx.createBufferSource();
+      src.buffer = sample.buffer;
+      const rate = m == null ? 1 : Math.pow(2, (m - sample.root) / 12);
+      src.playbackRate.value = rate;
+      const gn = ctx.createGain();
+      const peak = (0.25 + 0.75 * vel * vel) * scale * 0.8;
+      gn.gain.setValueAtTime(0, t);
+      gn.gain.linearRampToValueAtTime(peak, t + 0.004);
+      src.connect(gn).connect(ch.bus);
+      src.start(t);
+      const h = {
+        t, until: t + sample.buffer.duration / rate,
+        release(tr) {
+          if (kit) return;                       // kit sounds ring out like drums
+          tr = Math.max(tr, t + 0.03);
+          gn.gain.cancelScheduledValues(tr);
+          gn.gain.setTargetAtTime(0, tr, 0.04);
+          try { src.stop(tr + 0.3); } catch (e) { /* done */ }
+          h.until = Math.min(h.until, tr + 0.3);
+        },
+        kill(tk) {
+          const at = Math.max(tk, ctx.currentTime);
+          gn.gain.cancelScheduledValues(at);
+          gn.gain.setTargetAtTime(0, at, 0.006);
+          try { src.stop(at + 0.05); } catch (e) { /* done */ }
+          h.until = Math.min(h.until, at + 0.05);
+        },
+        bend(cents, at) { src.detune.setTargetAtTime(cents, at, 0.015); },
+      };
+      if (!sh.offline) src.onended = () => { try { gn.disconnect(); } catch (e) { /* gone */ } };
+      if (dur != null) h.release(t + Math.max(0.03, dur));
+      ch.voices.push(h);
+      return h;
+    });
   };
 
   g.playDrum = (track, padIdx, vel, t, rate = 1) => {

@@ -32,7 +32,7 @@ await page.evaluate(async () => {
 });
 
 console.log('instrument        peak dB   rms dB');
-const instruments = await page.evaluate(() => window.T.INSTRUMENTS.filter((i) => i.id !== 'drums').map((i) => i.id));
+const instruments = await page.evaluate(() => window.T.INSTRUMENTS.filter((i) => i.voice).map((i) => i.id));
 for (const id of instruments) {
   // a held triad, then three single notes up the grid
   const r = await pullChannels(page, `(async () => {

@@ -3,6 +3,7 @@
 
 import { PPQ, STEP, BAR, quantizeTick } from './theory.js';
 import { getKit } from './drums.js';
+import { ensureSamples, sampleIds } from './samples.js';
 import { buildGraph } from './graph.js';
 import { songSegments, scheduleRange, swingUnwarp } from './seq.js';
 import { insertSorted, pushUndo, chordOf } from './state.js';
@@ -79,6 +80,7 @@ export class Engine {
     this.project = project;
     if (!this.ctx) return;
     const kit = await getKit(this.ctx.sampleRate, project.key);
+    try { await ensureSamples(sampleIds(project)); } catch (e) { /* storage unavailable: sampler tracks stay silent */ }
     this.g = buildGraph(this.ctx, project, kit);
     this.applyLatches();
     this.refreshMutes();

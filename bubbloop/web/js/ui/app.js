@@ -3,6 +3,7 @@
 import { ROWS, COLS, STEP, BAR, KEY_NAMES, scaleById, chordLabel, cellNotes, CHORDS } from '../theory.js';
 import { Engine } from '../engine.js';
 import { padFor } from '../drums.js';
+import { getSample } from '../samples.js';
 import { FX } from '../graph.js';
 import { instrumentById } from '../instruments.js';
 import * as S from '../state.js';
@@ -144,6 +145,7 @@ function drawTools() {
     if (t.role === 'drums') html += chip('grooves', 'Grooves ▾');
     else {
       html += chip('inst', esc(instrumentById(t.inst).name) + ' ▾');
+      if (t.inst === 'sampler') html += chip('sampler', 'Sample ▾', true);
       const ch = CHORDS.find((c) => c.id === t.chord) || CHORDS[0];
       const mixed = t.chords && Object.keys(t.chords).length > 0;
       html += chip('chord', (mixed ? 'Chords: mixed' : t.chord === 'off' ? 'Chords: off' : 'Chords: ' + ch.name) + ' ▾', mixed || t.chord !== 'off');
@@ -197,7 +199,9 @@ function renderGrid() {
         label = pad.name;
       } else {
         cls = 'hue-' + c + (c === 0 ? ' root' : '');
-        if (S.chordOf(t, c) !== 'off') label = chordLabel(p, c, S.chordOf(t, c));
+        const kitSmp = t.inst === 'sampler' && t.smp && t.smp.mode === 'kit';
+        if (kitSmp) { const sm = getSample((t.smp.kit || {})[idx]); label = sm ? sm.name.slice(0, 7) : '+'; }
+        else if (S.chordOf(t, c) !== 'off') label = chordLabel(p, c, S.chordOf(t, c));
         else if (app.settings.names) label = KEY_NAMES[cellNotes(p, t, r, c)[0] % 12];
       }
       const size = drums && !t.group ? 92 : 95 - r * 4;
@@ -846,6 +850,7 @@ function bind() {
     if (tool === 'acc') { engine.acc = engine.acc === 0 ? 1 : engine.acc === 1 ? -1 : 0; renderTools(); }
     else if (tool === 'fxtarget') { app.fxTrack = !app.fxTrack; renderTools(); }
     else if (tool === 'inst') openSheets.instrument(t);
+    else if (tool === 'sampler') openSheets.sampler(t);
     else if (tool === 'grooves') openSheets.grooves();
     else if (tool === 'chord') openSheets.chord();
     else if (tool === 'oct-' || tool === 'oct+') {

@@ -517,6 +517,7 @@ export const INSTRUMENTS = [
   { id: 'dreamPad',   name: 'Dream Pad',   face: 'cloud', roles: ['pads'],                   voice: dreamPad,   poly: 8,  strum: 0,     gm: 89 },
   { id: 'musicBox',   name: 'Music Box',   face: 'star',  roles: ['melody'],                 voice: musicBox,   poly: 10, strum: 0.01,  gm: 10 },
   { id: 'kalimba',    name: 'Kalimba',     face: 'leaf',  roles: ['melody'],                 voice: kalimba,    poly: 10, strum: 0.012, gm: 108 },
+  { id: 'sampler',    name: 'Sampler',     face: 'mic',   roles: [],                         voice: null,       poly: 12, strum: 0,     gm: 0 },
   { id: 'chip',       name: 'Chiptune',    face: 'pixel', roles: ['melody', 'bass'],         voice: chip,       poly: 6,  strum: 0,     gm: 80 },
 ];
 

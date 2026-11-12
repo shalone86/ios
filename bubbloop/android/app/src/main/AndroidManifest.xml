@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- No permissions: Bubbloop never touches the network, and files are
-         saved through the system media store, which needs none. -->
+    <!-- The microphone is used only by the sampler, and only asked for the
+         first time you record. Bubbloop never touches the network; files are
+         saved through the system media store, which needs no permission. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:allowBackup="true"

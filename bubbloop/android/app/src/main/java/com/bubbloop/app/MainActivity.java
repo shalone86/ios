@@ -5,6 +5,8 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.Manifest;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
@@ -26,6 +28,7 @@ import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.MimeTypeMap;
+import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -62,6 +65,8 @@ public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String HOME = "https://" + HOST + "/index.html";
     private static final int PICK_FILE = 7;
+    private static final int ASK_MIC = 8;
+    private PermissionRequest micRequest;
 
     private WebView web;
     private ValueCallback<Uri[]> filePicker;
@@ -256,6 +261,18 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code != ASK_MIC || micRequest == null) return;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            micRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+        } else {
+            micRequest.deny();
+        }
+        micRequest = null;
+    }
+
+    @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request == PICK_FILE && filePicker != null) {
@@ -351,6 +368,21 @@ public class MainActivity extends Activity {
                 return false;
             }
             return true;
+        }
+
+        @Override
+        public void onPermissionRequest(PermissionRequest request) {
+            // the sampler asking for the microphone
+            boolean mic = false;
+            for (String r : request.getResources()) if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) mic = true;
+            if (!mic) { request.deny(); return; }
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            } else {
+                if (micRequest != null) micRequest.deny();
+                micRequest = request;
+                requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, ASK_MIC);
+            }
         }
 
         @Override
