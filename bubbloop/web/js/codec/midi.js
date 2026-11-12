@@ -4,7 +4,7 @@
 import { PPQ, cellNotes } from '../theory.js';
 import { padFor } from '../drums.js';
 import { instrumentById } from '../instruments.js';
-import { songSegments, loopSegments, swingWarp } from '../seq.js';
+import { songSegments, loopSegments, swingWarp, withFill } from '../seq.js';
 
 const DIVISION = 480;
 const SCALE = DIVISION / PPQ;
@@ -17,6 +17,11 @@ function vlq(n) {
 const str = (s) => Array.from(new TextEncoder().encode(s));
 const u32 = (v) => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
 const u16 = (v) => [(v >>> 8) & 255, v & 255];
+// cents -> 14-bit pitch bend (centre 8192) for a +-2 semitone range
+const bendBytes = (ch, cents) => {
+  const v = Math.max(0, Math.min(16383, Math.round(8192 + (cents / 200) * 8192)));
+  return [0xe0 | ch, v & 127, v >> 7];
+};
 
 function chunk(events, endTick) {
   // events: { t, order, bytes }
@@ -57,13 +62,32 @@ export function encodeMidi(project, what = 'song') {
     }
     const name = `${track.name} (${inst.name})`;
     const ev = [{ t: 0, order: 0, bytes: [0xff, 0x03, ...vlq(str(name).length), ...str(name)] }];
-    if (!drums) ev.push({ t: 0, order: 1, bytes: [0xc0 | ch, inst.gm] });
+    if (!drums) {
+      ev.push({ t: 0, order: 1, bytes: [0xc0 | ch, inst.gm] });
+      // RPN 0: pitch-bend range = 2 semitones, so bends in cents map exactly
+      for (const [cc, v] of [[101, 0], [100, 0], [6, 2], [38, 0]]) ev.push({ t: 0, order: 1, bytes: [0xb0 | ch, cc, v] });
+    }
     for (const seg of segs) {
       if (seg.off && seg.off[track.id]) continue;
-      for (const e of p.sections[seg.secIdx].ev[track.id] || []) {
+      const sec = p.sections[seg.secIdx];
+      if (seg.block < 0 && sec.mute && sec.mute[track.id]) continue;   // a section's own mutes
+      let evs = sec.ev[track.id] || [];
+      // block "spice", as in scheduleRange: an energy change and a closing fill
+      const sp = seg.sp && seg.sp[track.id];
+      const gain = sp && sp.vel ? sp.vel : 1;
+      if (sp && sp.fill && seg.last) evs = withFill(track, evs, seg.len, sp.fill);
+      for (const e of evs) {
         const on = (seg.start + swingWarp(e.t, p.swing)) * SCALE;
         const off = on + Math.max(1, e.d * SCALE - 1);
-        const vel = Math.max(1, Math.min(127, Math.round(e.v * 127)));
+        const vel = Math.max(1, Math.min(127, Math.round(Math.min(1, e.v * gain) * 127)));
+        // recorded bends ride the channel with the note, then recentre
+        if (!drums && e.b && e.b.length) {
+          for (const [dt, cents] of e.b) {
+            const bt = on + dt * SCALE;
+            if (bt < off) ev.push({ t: bt, order: 2.6, bytes: bendBytes(ch, cents) });
+          }
+          ev.push({ t: off, order: 2.4, bytes: bendBytes(ch, 0) });
+        }
         const notes = drums ? [padFor(track, e.r, e.c).pad.gm] : cellNotes(p, track, e.r, e.c, e.ch, e.a);
         for (const n of notes) {
           if (n < 0 || n > 127) continue;

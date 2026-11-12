@@ -181,5 +181,76 @@ console.log('MIDI');
   check(counts[3] === 6, `chord exported as three notes per block (${counts[3]})`);
 }
 
+// Walk a MIDI file: per track, a list of { t, st, d1, d2 } channel messages
+// (absolute ticks; running status honoured, meta and sysex skipped).
+function walkMidi(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const ntrk = dv.getUint16(10), tracks = [];
+  let o = 14;
+  for (let k = 0; k < ntrk; k++) {
+    const end = o + 8 + dv.getUint32(o + 4);
+    let i = o + 8, t = 0, status = 0;
+    const msgs = [];
+    while (i < end) {
+      let d = 0, b;
+      do { b = bytes[i++]; d = (d << 7) | (b & 127); } while (b & 0x80);
+      t += d;
+      b = bytes[i];
+      if (b === 0xff) { i += 3 + bytes[i + 2]; status = 0; continue; }
+      if (b === 0xf0 || b === 0xf7) { i += 2 + bytes[i + 1]; status = 0; continue; }
+      if (b & 0x80) { status = b; i++; }
+      const hi = status & 0xf0, n = hi === 0xc0 || hi === 0xd0 ? 1 : 2;
+      msgs.push({ t, st: hi, ch: status & 15, d1: bytes[i], d2: n === 2 ? bytes[i + 1] : 0 });
+      i += n;
+    }
+    tracks.push(msgs); o = end;
+  }
+  return tracks;
+}
+
+console.log('MIDI export matches playback');
+{
+  const mk = () => {
+    const p = newProject('Spice');
+    p.sections[0].ev[p.tracks[3].id] = [{ t: 0, d: 96, r: 2, c: 2, v: 0.5, b: [[0, 0], [48, 100], [72, -200]] }];
+    return p;
+  };
+  // pitch bend
+  let p = mk();
+  let tr = walkMidi(encodeMidi(p, 'loop'))[4];
+  const ch = tr.find((m) => m.st === 0x90).ch;
+  const rpn = tr.filter((m) => m.st === 0xb0 && m.t === 0).map((m) => [m.d1, m.d2].join(':')).join(' ');
+  check(rpn === '101:0 100:0 6:2 38:0', `bend range set with RPN 0 (${rpn})`);
+  const pb = tr.filter((m) => m.st === 0xe0).map((m) => [m.t, m.d1 | (m.d2 << 7)]);
+  const noteOff = tr.find((m) => m.st === 0x80).t;
+  check(JSON.stringify(pb) === JSON.stringify([[0, 8192], [240, 12288], [360, 0], [noteOff, 8192]]),
+    `bend values and reset: ${JSON.stringify(pb)}`);
+  check(tr.filter((m) => m.st === 0xe0).every((m) => m.ch === ch), 'bends on the note channel');
+
+  // fills: rep16 only on the last pass of a block, only in the last two beats
+  p = mk();
+  p.sections[0].ev[p.tracks[3].id] = [{ t: 0, d: 24, r: 2, c: 2, v: 0.8 }, { t: 96 * 3, d: 24, r: 2, c: 2, v: 0.8 }];
+  addBlock(p); p.song[0].rep = 2; p.song[0].sp = { [p.tracks[3].id]: { fill: 'rep16' } };
+  const pass = p.sections[0].bars * 384 * 5;                      // MIDI ticks per pass
+  const ons = walkMidi(encodeMidi(p, 'song'))[4].filter((m) => m.st === 0x90);
+  const first = ons.filter((m) => m.t < pass), second = ons.filter((m) => m.t >= pass);
+  const tail = (m) => m.t - pass >= pass - 960;
+  check(first.length === 2, `no fill on the first pass (${first.length} note-ons)`);
+  check(second.length === 10, `rep16 fill adds note-ons on the last pass (${second.length})`);
+  check(second.filter(tail).length === 8 && ons.filter((m) => m.t >= pass - 960 && m.t < pass).length === 0, 'fill hits fall in the last two beats only');
+
+  // energy
+  p = mk();
+  p.sections[0].ev[p.tracks[3].id] = [{ t: 0, d: 24, r: 2, c: 2, v: 0.5 }, { t: 96, d: 24, r: 2, c: 2, v: 0.9 }];
+  addBlock(p); p.song[0].sp = { [p.tracks[3].id]: { vel: 1.5 } };
+  const vels = walkMidi(encodeMidi(p, 'song'))[4].filter((m) => m.st === 0x90).map((m) => m.d2);
+  check(vels[0] === Math.round(0.75 * 127) && vels[1] === 127, `energy scales and clamps velocity (${vels})`);
+
+  // a section's own mute holds in a loop export
+  p = mk();
+  p.sections[0].mute = { [p.tracks[3].id]: true };
+  check(walkMidi(encodeMidi(p, 'loop'))[4].every((m) => m.st !== 0x90), 'muted track has no notes in a loop export');
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : '\nall codec checks passed');
 process.exit(failed ? 1 : 0);
