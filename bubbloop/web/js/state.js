@@ -180,7 +180,7 @@ export function repair(p) {
 }
 
 export function loadSettings() {
-  return Object.assign({ haptics: true, names: false, tapOffset: 0, metroPlay: false, quality: 'auto' }, readJSON(SETTINGS_KEY, {}));
+  return Object.assign({ haptics: true, names: false, tapOffset: 0, metroPlay: false, smooth: 'auto' }, readJSON(SETTINGS_KEY, {}));
 }
 export function saveSettings(s) {
   writeJSON(SETTINGS_KEY, s);
@@ -326,8 +326,8 @@ export function removeTrack(p, id) {
   if (p.tracks.length <= 1) return false;
   pushUndo(p);
   p.tracks = p.tracks.filter((t) => t.id !== id);
-  for (const s of p.sections) delete s.ev[id];
-  for (const b of p.song) delete b.off[id];
+  for (const s of p.sections) { delete s.ev[id]; s.fx = s.fx.filter((f) => f.tr !== id); }
+  for (const b of p.song) { delete b.off[id]; if (b.sp) delete b.sp[id]; b.fx = b.fx.filter((f) => f.tr !== id); }
   return true;
 }
 
@@ -388,7 +388,7 @@ export function addBlock(p, at = p.song.length, from = null) {
   pushUndo(p);
   const src = from != null ? p.song[from] : p.song[p.song.length - 1];
   const b = src
-    ? { sec: src.sec, rep: src.rep, off: { ...src.off }, fx: [] }
+    ? { sec: src.sec, rep: src.rep, off: { ...src.off }, sp: JSON.parse(JSON.stringify(src.sp || {})), fx: [] }
     : { sec: p.cur, rep: 1, off: {}, fx: [] };
   p.song.splice(at, 0, b);
   return b;

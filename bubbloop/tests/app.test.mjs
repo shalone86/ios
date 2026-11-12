@@ -118,6 +118,46 @@ const fxLane = await state(() => window.bubbloop.project.sections[0].fx.map((e) 
 check(fxLane.length === 1 && fxLane[0].k === 'stutter' && fxLane[0].p === 1, 'held FX recorded into the loop with its setting');
 await shot('5-fx');
 
+console.log('Menus do not leak into each other');
+{
+  const before = await state(() => window.bubbloop.project.tracks.map((t) => t.inst).join());
+  await click('.tab[data-view="play"]');
+  await click('.pod[data-track]:nth-child(4)');
+  await click('[data-tool="inst"]');
+  await click('[data-inst="kalimba"]');
+  await page.evaluate(() => document.getElementById('scrim').click());
+  await click('.pod[data-track]:nth-child(2)');
+  await click('[data-tool="inst"]');
+  await click('[data-inst="bassSynth"]');
+  await page.evaluate(() => document.getElementById('scrim').click());
+  const insts = await state(() => window.bubbloop.project.tracks.map((t) => t.inst));
+  check(insts[3] === 'kalimba' && insts[1] === 'bassSynth' && insts[2] === before.split(',')[2], `changing one track's sound leaves the others alone (${insts.join()})`);
+  await click('.pod.add');
+  await click('[data-role="melody"]');
+  const after = await state(() => window.bubbloop.project.tracks.map((t) => t.inst));
+  check(after.length === 5 && after.slice(0, 4).join() === insts.join(), `adding a track adds exactly one and changes no other (${after.join()})`);
+  const newId = await state(() => window.bubbloop.project.tracks[4].id);
+  await state(() => window.bubbloop.project.tracks[4]).then(() => {});
+  await page.evaluate((id) => window.bubbloop && document.querySelector(`.pod[data-track="${id}"]`).click(), newId);
+  await click('.tab[data-view="mix"]');
+  await click(`[data-mixmore="${newId}"]`);
+  await click('[data-act="del"]'); await click('[data-act="del"]');
+  const left = await state(() => window.bubbloop.project.tracks.map((t) => t.inst));
+  check(left.join() === insts.join(), `removing it leaves the original four (${left.join()})`);
+  await click('#btn-key');
+  await click('[data-scale="minor"]'); await click('[data-key="9"]'); await click('[data-scale="hira"]');
+  check(await state(() => window.bubbloop.project.scale === 'hira' && window.bubbloop.project.key === 9), 'key and scale changes stick');
+  await click('[data-key="0"]'); await click('[data-scale="major"]');
+  await page.evaluate(() => document.getElementById('scrim').click());
+  // FX on one track only
+  await click('.tab[data-view="fx"]');
+  await click('[data-tool="fxtarget"]');
+  check(/only/.test(await page.locator('[data-tool="fxtarget"]').innerText()), 'FX can be aimed at the current track');
+  await click('[data-tool="fxtarget"]');
+  await click('.tab[data-view="play"]');
+  await click('.pod[data-track]:nth-child(3)');
+}
+
 console.log('Sections and song mode');
 await click('.tab[data-view="play"]');
 await click('[data-sec="add"]');

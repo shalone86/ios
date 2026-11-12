@@ -21,7 +21,9 @@ export class Engine {
     this.queued = null;        // section waiting for the next loop boundary
     this.songFrom = 0;
     this.loopSong = false;
-    this.tapOffset = 0;        // user latency trim, seconds
+    this.tapOffset = 0;
+    this.acc = 0;              // accidental applied to hand-played notes: -1, 0, +1
+    this.smooth = 'auto';      // 'auto' | 'on' | 'off': bigger audio buffer for Bluetooth        // user latency trim, seconds
     this.metroPlay = false;
     this.viz = [];             // things the UI should animate, in time order
     this.listeners = new Set();
@@ -45,7 +47,17 @@ export class Engine {
   async wake(project) {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AC({ latencyHint: 'interactive' });
+      const big = this.smooth === 'on' || (this.smooth === 'auto' && this.autoSmooth);
+      this.ctx = new AC({ latencyHint: big ? 'playback' : 'interactive' });
+      this.bigBuffer = big;
+      // Bluetooth outputs cannot keep up with the smallest buffer and crackle.
+      // They show up as a long output latency: if so, reopen with a safer one.
+      if (!big && this.smooth === 'auto') {
+        setTimeout(() => {
+          const c = this.ctx;
+          if (c && !this.playing && (c.outputLatency || 0) > 0.09) { this.autoSmooth = true; this.reopen(); }
+        }, 1500);
+      }
     }
     if (this.ctx.state !== 'running') {
       try { await this.ctx.resume(); } catch (e) { /* will retry on next touch */ }
@@ -58,6 +70,15 @@ export class Engine {
       }
       await this.loading;
     }
+  }
+
+  // Throw the audio context away and start a new one (buffer size change).
+  async reopen() {
+    const p = this.project;
+    if (this.playing) this.stop();
+    if (this.ctx) { try { await this.ctx.close(); } catch (e) { /* already closed */ } }
+    this.ctx = null; this.g = null;
+    if (p) await this.wake(p);
   }
 
   async load(project) {
@@ -99,7 +120,7 @@ export class Engine {
     } else {
       p.bpm = bpm;
     }
-    if (this.g) this.g.rack.setTempo(bpm, this.now);
+    if (this.g) this.g.eachRack((r) => r.setTempo(bpm, this.now));
   }
 
   async setKey() {
@@ -118,7 +139,7 @@ export class Engine {
     if (!this.ready) return;
     const p = this.project;
     if (this.playing) this.stop(true);
-    this.g.rack.setTempo(p.bpm, this.now);
+    this.g.eachRack((r) => r.setTempo(p.bpm, this.now));
     const song = this.mode === 'song' && p.song.length > 0;
     if (song) {
       this.segs = songSegments(p, this.songFrom).map((s) => ({ ...s, pass: ++this.pass }));
@@ -157,7 +178,7 @@ export class Engine {
     this.recording = false;
     this.queued = null;
     this.g.killAll(now);
-    this.g.rack.reset(now);
+    this.g.eachRack((r) => r.reset(now));
     this.applyLatches();
     this.viz.length = 0;
     this.idleNext = now;
@@ -193,7 +214,7 @@ export class Engine {
     if (on) latch[k] = { p: p ?? null }; else delete latch[k];
     if (!this.g) return;
     if (on) this.g.rack.on(k, p, this.now);
-    else if (!this.heldFx.has(k)) this.g.rack.off(k, this.now);
+    else if (!this.heldFx.has(k + '|')) this.g.rack.off(k, this.now);
   }
 
   // ---------- scheduler ----------
@@ -206,7 +227,8 @@ export class Engine {
       const dur = (60 / p.bpm) / 4;
       if (this.idleNext < now - 0.5) this.idleNext = now;
       while (this.idleNext < now + LOOKAHEAD) {
-        g.rack.tick(this.idleIdx++, this.idleNext, dur);
+        g.eachRack((r) => r.tick(this.idleIdx, this.idleNext, dur));
+        this.idleIdx++;
         this.idleNext += dur;
       }
       return;
@@ -333,7 +355,8 @@ export class Engine {
     const now = this.now;
     const drums = track.role === 'drums';
     const chord = drums ? undefined : track.chord;
-    const handles = this.g.playCell(track, row, col, chord, vel, now);
+    const acc = drums ? 0 : this.acc;
+    const handles = this.g.playCell(track, row, col, chord, vel, now, undefined, acc);
     const id = ++this.nid;
     const h = { handles, rec: null };
     const slot = this.mode === 'loop' ? this.recSlot(now) : null;
@@ -349,6 +372,7 @@ export class Engine {
       if (dupe >= 0) list.splice(dupe, 1);
       const ev = { t: q, d: STEP, r: row, c: col, v: Math.round(vel * 100) / 100 };
       if (chord && chord !== 'off') ev.ch = chord;
+      if (acc) ev.a = acc;
       ev._p = pass;
       insertSorted(list, ev);
       if (!drums) h.rec = { ev, seg, start: slot.local };
@@ -378,17 +402,20 @@ export class Engine {
 
   finishHeld(now) {
     for (const h of this.held.values()) this.closeRec(h, now);
-    for (const [k, f] of this.heldFx) this.closeFx(k, f, now);
+    for (const [key, f] of this.heldFx) this.closeFx(key.split('|')[0], f, now);
   }
 
   // ---------- quick-hit FX ----------
 
-  fxDown(k, p) {
+  fxDown(k, p, tr = null) {
     if (!this.ready) return;
     const now = this.now;
-    if (this.heldFx.has(k)) this.fxUp(k);
-    this.g.rack.on(k, p, now);
-    const f = { p, rec: null };
+    const key = k + '|' + (tr || '');
+    if (this.heldFx.has(key)) this.fxUp(k, tr);
+    const rack = this.g.fxRack(tr);
+    if (!rack) return;
+    rack.on(k, p, now);
+    const f = { p, tr, rack, rec: null };
     const slot = this.recSlot(now);
     if (slot) {
       const proj = this.project, { seg } = slot;
@@ -401,20 +428,22 @@ export class Engine {
       this.markUndo(`fx:${seg.pass}`);
       const ev = { t, d: STEP, k };
       if (p != null) ev.p = p;
+      if (tr) ev.tr = tr;
       ev._p = seg.pass;
       insertSorted(lane, ev);
       f.rec = { ev, seg, start: base + slot.local, span, lane };
       this.emit('edit');
     }
-    this.heldFx.set(k, f);
+    this.heldFx.set(key, f);
   }
 
-  fxUp(k) {
-    const f = this.heldFx.get(k);
+  fxUp(k, tr = null) {
+    const key = k + '|' + (tr || '');
+    const f = this.heldFx.get(key);
     if (!f) return;
-    this.heldFx.delete(k);
+    this.heldFx.delete(key);
     const now = this.now;
-    if (!(this.project.latch && this.project.latch[k])) this.g.rack.off(k, now);
+    if (tr || !(this.project.latch && this.project.latch[k])) f.rack.off(k, now);
     this.closeFx(k, f, now);
   }
 
@@ -427,7 +456,7 @@ export class Engine {
     // fold together overlapping hits of the same effect
     for (let i = lane.length - 1; i >= 0; i--) {
       const o = lane[i];
-      if (o === ev || o.k !== k || o.p !== ev.p) continue;
+      if (o === ev || o.k !== k || o.p !== ev.p || o.tr !== ev.tr) continue;
       if (o.t < ev.t + ev.d && ev.t < o.t + o.d) {
         const a = Math.min(o.t, ev.t), b = Math.max(o.t + o.d, ev.t + ev.d);
         ev.t = a; ev.d = b - a;

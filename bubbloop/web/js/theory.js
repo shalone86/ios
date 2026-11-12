@@ -25,6 +25,9 @@ export const CHORDS = [
   { id: 'off',    name: 'Single', hint: 'one note' },
   { id: 'triad',  name: 'Triad',  hint: 'three-note chord' },
   { id: 'seven',  name: '7th',    hint: 'jazzy four notes' },
+  { id: 'nine',   name: '9th',    hint: 'lush five notes' },
+  { id: 'eleven', name: '11th',   hint: 'airy and suspended' },
+  { id: 'thirteen', name: '13th', hint: 'big band colour' },
   { id: 'dream',  name: 'Dreamy', hint: 'wide open voicing' },
   { id: 'power',  name: 'Power',  hint: 'root + fifth' },
   { id: 'stack',  name: 'Stack',  hint: 'pentatonic cluster' },
@@ -53,9 +56,10 @@ export function rootMidi(project, track) {
 }
 
 // MIDI note(s) for a bubble. chord = one of CHORDS ids.
-export function cellNotes(project, track, row, col, chord = 'off') {
+// acc: +1 sharpens, -1 flattens (an accidental outside the scale).
+export function cellNotes(project, track, row, col, chord = 'off', acc = 0) {
   const sc = scaleById(project.scale);
-  const base = rootMidi(project, track) + 12 * row;
+  const base = rootMidi(project, track) + 12 * row + (acc || 0);
   const root = base + sc.steps[col];
   if (!chord || chord === 'off') return [root];
 
@@ -74,6 +78,9 @@ export function cellNotes(project, track, row, col, chord = 'off') {
   switch (chord) {
     case 'triad': return [deg(0), deg(2), deg(4)];
     case 'seven': return [deg(0), deg(2), deg(4), deg(6)];
+    case 'nine': return [deg(0), deg(2), deg(4), deg(6), deg(8)];
+    case 'eleven': return [deg(0), deg(4), deg(6), deg(8), deg(10)];
+    case 'thirteen': return [deg(0), deg(2), deg(6), deg(8), deg(12)];
     case 'dream': return [deg(0), deg(4), deg(8), deg(9)];
     case 'power': return [deg(0), deg(4), deg(7)];
     default: return [root];
@@ -99,6 +106,10 @@ export function chordLabel(project, col, chord) {
   if (chord === 'seven') {
     if (q === 'dim') q = sev === 10 ? 'm7♭5' : 'dim7';
     else q += sev === 11 ? (q === '' ? 'maj7' : 'M7') : '7';
+  } else if (chord === 'nine' || chord === 'eleven' || chord === 'thirteen') {
+    const n = { nine: '9', eleven: '11', thirteen: '13' }[chord];
+    if (q === 'dim') q = 'm' + n + '♭5';
+    else q += (sev === 11 ? (q === '' ? 'maj' : 'M') : '') + n;
   } else if (chord === 'dream') {
     q += 'add9';
   }

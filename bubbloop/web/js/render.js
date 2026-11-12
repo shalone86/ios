@@ -36,6 +36,7 @@ export async function renderProject(project, options = {}) {
   const ctx = new OfflineAudioContext(2, frames, sampleRate);
   const kit = await getKit(sampleRate, p.key);
   const g = buildGraph(ctx, p, kit, { offline: true, solo, master });
+  for (const fx of [...p.sections.flatMap((s) => s.fx), ...p.song.flatMap((b) => b.fx)]) if (fx.tr) g.trackRack(fx.tr);
   for (const k of Object.keys(p.latch || {})) if (p.latch[k]) g.rack.on(k, p.latch[k].p, 0);
 
   const timeAt = (tick) => LEAD + tick * spt;

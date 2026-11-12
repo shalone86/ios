@@ -64,7 +64,7 @@ export function encodeMidi(project, what = 'song') {
         const on = (seg.start + swingWarp(e.t, p.swing)) * SCALE;
         const off = on + Math.max(1, e.d * SCALE - 1);
         const vel = Math.max(1, Math.min(127, Math.round(e.v * 127)));
-        const notes = drums ? [DRUM_PADS[e.r * 5 + e.c].gm] : cellNotes(p, track, e.r, e.c, e.ch);
+        const notes = drums ? [DRUM_PADS[e.r * 5 + e.c].gm] : cellNotes(p, track, e.r, e.c, e.ch, e.a);
         for (const n of notes) {
           if (n < 0 || n > 127) continue;
           ev.push({ t: on, order: 3, bytes: [0x90 | ch, n, vel] });

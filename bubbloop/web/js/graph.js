@@ -75,7 +75,9 @@ function xfade(ctx, input, wetIn, wetOut) {
 
 // ---------- quick-hit FX rack ----------
 
-function buildRack(ctx, sh, project) {
+// lite: a per-track rack. It has no reverb or echo of its own; those hits
+// are passed to lite.send() to open that track's sends instead.
+function buildRack(ctx, sh, project, lite = null) {
   const sr = ctx.sampleRate;
   const G = (v = 1) => { const g = ctx.createGain(); g.gain.value = v; return g; };
   const pre = G(), mix = G();
@@ -83,11 +85,13 @@ function buildRack(ctx, sh, project) {
 
   // reverb bus (track sends + the Cloud hit)
   const revIn = G();
-  const conv = ctx.createConvolver();
-  conv.normalize = false;
-  conv.buffer = makeImpulse(ctx, 2.6);
-  const revOut = G(1.6);
-  revIn.connect(conv).connect(revOut).connect(mix);
+  if (!lite) {
+    const conv = ctx.createConvolver();
+    conv.normalize = false;
+    conv.buffer = makeImpulse(ctx, 2.6);
+    const revOut = G(1.6);
+    revIn.connect(conv).connect(revOut).connect(mix);
+  }
   const hitRev = G(0);
   pre.connect(hitRev).connect(revIn);
 
@@ -101,10 +105,12 @@ function buildRack(ctx, sh, project) {
   dHp.type = 'highpass'; dHp.frequency.value = 240;
   const merger = ctx.createChannelMerger(2);
   const dlyOut = G(0.85);
-  dlyIn.connect(dL); dL.connect(dR);
-  dR.connect(dTone).connect(dHp).connect(fb).connect(dL);
-  dL.connect(merger, 0, 0); dR.connect(merger, 0, 1);
-  merger.connect(dlyOut).connect(mix);
+  if (!lite) {
+    dlyIn.connect(dL); dL.connect(dR);
+    dR.connect(dTone).connect(dHp).connect(fb).connect(dL);
+    dL.connect(merger, 0, 0); dR.connect(merger, 0, 1);
+    merger.connect(dlyOut).connect(mix);
+  }
   const hitDly = G(0);
   pre.connect(hitDly).connect(dlyIn);
 
@@ -252,8 +258,11 @@ function buildRack(ctx, sh, project) {
     on(k, p, t, dur) {
       const seq = dur != null;
       switch (k) {
-        case 'reverb': hitRev.gain.setTargetAtTime(0.45, t, 0.012); break;
+        case 'reverb':
+          if (lite) lite.send('rev', true, t); else hitRev.gain.setTargetAtTime(0.45, t, 0.012);
+          break;
         case 'delay':
+          if (lite) { lite.send('dly', true, t); break; }
           hitDly.gain.setTargetAtTime(1, t, 0.008);
           fb.gain.setTargetAtTime(0.62, t, 0.02);
           break;
@@ -292,8 +301,11 @@ function buildRack(ctx, sh, project) {
 
     off(k, t, sequenced = false) {
       switch (k) {
-        case 'reverb': hitRev.gain.setTargetAtTime(0, t, 0.03); break;
+        case 'reverb':
+          if (lite) lite.send('rev', false, t); else hitRev.gain.setTargetAtTime(0, t, 0.03);
+          break;
         case 'delay':
+          if (lite) { lite.send('dly', false, t); break; }
           hitDly.gain.setTargetAtTime(0, t, 0.01);
           fb.gain.setTargetAtTime(0.42, t, 0.6);
           break;
@@ -395,6 +407,27 @@ export function buildGraph(ctx, project, kit, opts = {}) {
 
   const g = { ctx, sh, rack, master, kit, channels: new Map(), project };
 
+  // FX can target one track. Its rack is built the first time it is needed
+  // and spliced in between the track's fader and its pan.
+  g.trackRack = (id) => {
+    const ch = g.channels.get(id);
+    if (!ch) return null;
+    if (ch.rack) return ch.rack;
+    const hit = { rev: ctx.createGain(), dly: ctx.createGain() };
+    hit.rev.gain.value = 0; hit.dly.gain.value = 0;
+    ch.pan.connect(hit.rev).connect(rack.revIn);
+    ch.pan.connect(hit.dly).connect(rack.dlyIn);
+    ch.rack = buildRack(ctx, sh, g.project, {
+      send(kind, on, t) { hit[kind].gain.setTargetAtTime(on ? (kind === 'rev' ? 0.9 : 1) : 0, t, on ? 0.012 : 0.03); },
+    });
+    try { ch.mute.disconnect(ch.pan); } catch (e) { /* not yet wired */ }
+    ch.mute.connect(ch.rack.input);
+    ch.rack.output.connect(ch.pan);
+    return ch.rack;
+  };
+  g.fxRack = (trackId) => (trackId ? g.trackRack(trackId) : rack);
+  g.eachRack = (fn) => { fn(rack); for (const ch of g.channels.values()) if (ch.rack) fn(ch.rack); };
+
   function channel(track) {
     let ch = g.channels.get(track.id);
     if (ch) return ch;
@@ -453,11 +486,11 @@ export function buildGraph(ctx, project, kit, opts = {}) {
   };
 
   // Play the notes of one bubble. Returns handles to release/kill.
-  g.playCell = (track, row, col, chord, vel, t, dur) => {
+  g.playCell = (track, row, col, chord, vel, t, dur, acc = 0) => {
     const ch = channel(track);
     const inst = instrumentById(track.inst);
     if (inst.id === 'drums') return [g.playDrum(track, row * 5 + col, vel, t)];
-    const notes = cellNotes(g.project, track, row, col, chord);
+    const notes = cellNotes(g.project, track, row, col, chord, acc);
     // steal the oldest voices if this would exceed the instrument's polyphony
     ch.voices = ch.voices.filter((v) => !v.ended && v.until > t);
     while (ch.voices.length + notes.length > inst.poly && ch.voices.length) {

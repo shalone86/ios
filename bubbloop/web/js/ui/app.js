@@ -30,6 +30,7 @@ export const app = {
   stepBar: 0,
   eraser: false,
   songSel: -1,
+  fxTrack: false,           // FX pads act on the current track rather than the whole mix
   nowBlock: -1,
 };
 const engine = app.engine;
@@ -73,7 +74,15 @@ function renderTop() {
   el.key.textContent = `${KEY_NAMES[p.key]} ${scaleById(p.scale).name.toLowerCase()}`;
 }
 
-function renderSections() {
+// Re-rendering a strip must not throw away where it was scrolled to.
+function keepScroll(node, fn) {
+  const x = node.scrollLeft, y = node.scrollTop;
+  fn();
+  node.scrollLeft = x; node.scrollTop = y;
+}
+
+function renderSections() { keepScroll(el.sections, drawSections); }
+function drawSections() {
   const p = app.project;
   let html = '';
   if (engine.mode === 'song') {
@@ -109,7 +118,8 @@ function updateHint() {
 
 // ---------- track pods ----------
 
-function renderTracks() {
+function renderTracks() { keepScroll(el.tracks, drawTracks); }
+function drawTracks() {
   const p = app.project;
   const cur = curTrack();
   let html = p.tracks.map((t) => `
@@ -124,7 +134,8 @@ function renderTracks() {
 
 // ---------- tool row ----------
 
-function renderTools() {
+function renderTools() { keepScroll(el.tools, drawTools); }
+function drawTools() {
   const p = app.project, t = curTrack();
   const chip = (id, label, on = false, extra = '') => `<button class="pill small ${on ? 'on' : ''} ${extra}" data-tool="${id}">${label}</button>`;
   let html = '';
@@ -134,6 +145,7 @@ function renderTools() {
       html += chip('inst', esc(instrumentById(t.inst).name) + ' ▾');
       const ch = CHORDS.find((c) => c.id === t.chord) || CHORDS[0];
       html += chip('chord', (t.chord === 'off' ? 'Chords: off' : 'Chords: ' + ch.name) + ' ▾', t.chord !== 'off');
+      html += chip('acc', engine.acc > 0 ? '♯ sharp' : engine.acc < 0 ? '♭ flat' : '♮', engine.acc !== 0);
       html += `<span class="stepper"><button data-tool="oct-">−</button><span>oct ${t.oct > 0 ? '+' : ''}${t.oct}</span><button data-tool="oct+">+</button></span>`;
     }
     html += chip('steps', icon('steps') + 'Steps', app.stepsOn);
@@ -142,7 +154,8 @@ function renderTools() {
     html += chip('redo', icon('redo'), false, S.canRedo() ? '' : 'dim');
   } else if (app.view === 'fx') {
     const n = curSection().fx.length + p.song.reduce((a, b) => a + b.fx.length, 0);
-    html += '<span class="label">Hold a pad. Record to keep the moves in your loop.</span>';
+    html += chip('fxtarget', app.fxTrack ? `On: ${esc(t.name)} only` : 'On: whole mix', app.fxTrack);
+    html += '<span class="label">Hold a pad. Record to keep it.</span>';
     if (n) html += chip('clearfx', `Clear ${n} recorded`);
   } else if (app.view === 'mix') {
     html += '<span class="label">Balance your band</span>';
@@ -154,7 +167,7 @@ function renderTools() {
       html += chip('blk-left', icon('left')) + chip('blk-right', icon('right'));
       html += chip('blk-copy', icon('copy') + 'Copy') + chip('blk-del', icon('trash'));
     } else if (p.song.length) {
-      html += '<span class="label">Tap a block to change it. Tap bubbles to wake or rest a track.</span>';
+      html += '<span class="label">Tap a bubble to rest a track. Hold one for fills and energy.</span>';
     } else {
       html += '<span class="label">Arrange your loops into a whole song</span>';
     }
@@ -344,13 +357,14 @@ function bindFx() {
       return;
     }
     const z = zoneOf(pad, f, e.clientX);
-    engine.fxDown(f.id, z);
+    const tr = app.fxTrack ? curTrack().id : null;
+    engine.fxDown(f.id, z, tr);
     pad.classList.add('on');
     showZone(pad, z);
     if (app.settings.haptics) haptic();
     const b = pad.getBoundingClientRect();
     particles.burst(e.clientX, e.clientY, getComputedStyle(pad).getPropertyValue('--hue').trim(), 6, b.width * 0.3);
-    held.set(e.pointerId, { pad, f, z });
+    held.set(e.pointerId, { pad, f, z, tr });
   });
   el.fx.addEventListener('pointermove', (e) => {
     const h = held.get(e.pointerId);
@@ -358,14 +372,14 @@ function bindFx() {
     const z = zoneOf(h.pad, h.f, e.clientX);
     if (z === h.z) return;
     h.z = z;
-    engine.fxDown(h.f.id, z);       // re-trigger with the new setting
+    engine.fxDown(h.f.id, z, h.tr);       // re-trigger with the new setting
     showZone(h.pad, z);
   });
   const up = (e) => {
     const h = held.get(e.pointerId);
     if (!h) return;
     held.delete(e.pointerId);
-    engine.fxUp(h.f.id);
+    engine.fxUp(h.f.id, h.tr);
     if (!app.project.latch[h.f.id]) { h.pad.classList.remove('on'); showZone(h.pad, -1); }
     if (engine.recording) renderTools();
   };
@@ -376,7 +390,8 @@ function bindFx() {
 
 // ---------- mixer ----------
 
-function renderMix() {
+function renderMix() { keepScroll(el.mix, drawMix); }
+function drawMix() {
   const p = app.project, cur = curTrack();
   const slider = (id, key, val) => `<input type="range" min="0" max="100" value="${Math.round(val * 100)}" data-mix="${id}:${key}" style="--fill:${Math.round(val * 100)}%">`;
   el.mix.innerHTML = p.tracks.map((t) => `
@@ -423,6 +438,13 @@ function bindMix() {
 // ---------- song matrix ----------
 
 function renderSong() {
+  const old = el.song.querySelector('.matrix');
+  const x = old ? old.scrollLeft : 0, y = old ? old.scrollTop : 0;
+  drawSong();
+  const now = el.song.querySelector('.matrix');
+  if (now) { now.scrollLeft = x; now.scrollTop = y; }
+}
+function drawSong() {
   const p = app.project;
   if (!p.song.length) {
     el.song.innerHTML = `<div class="matrix"><div class="song-empty">
@@ -437,7 +459,7 @@ function renderSong() {
     const hue = ROLE_COLOR[t.role], lo = ROLE_COLOR_LO[t.role];
     const cells = p.song.map((b, i) => {
       const empty = !(p.sections[b.sec].ev[t.id] || []).length;
-      return `<td class="${i === app.songSel ? 'col-sel' : ''} ${i === app.nowBlock ? 'col-now' : ''}" data-col="${i}"><button class="sb ${b.off[t.id] ? 'off' : ''} ${empty ? 'empty' : ''}" style="--hue:${hue};--hue-lo:${lo}" data-cell="${i}:${t.id}" aria-label="${esc(t.name)} in block ${i + 1}"><i></i></button></td>`;
+      return `<td class="${i === app.songSel ? 'col-sel' : ''} ${i === app.nowBlock ? 'col-now' : ''}" data-col="${i}"><button class="sb ${b.off[t.id] ? 'off' : ''} ${empty ? 'empty' : ''} ${b.sp && b.sp[t.id] ? (b.sp[t.id].fill ? 'fill' : 'spiced') : ''}" style="--hue:${hue};--hue-lo:${lo}" data-cell="${i}:${t.id}" aria-label="${esc(t.name)} in block ${i + 1}"><i></i></button></td>`;
     }).join('');
     return `<tr><th class="rowhead">${trackMascot(t)}</th>${cells}<td></td></tr>`;
   }).join('');
@@ -457,6 +479,11 @@ function markSongColumn() {
 }
 
 function bindSong() {
+  longPress(el.song, '.sb', (node) => {
+    const [i, id] = node.dataset.cell.split(':');
+    if (app.settings.haptics) haptic();
+    openSheets.spice(+i, id);
+  });
   el.song.addEventListener('click', (e) => {
     const d = e.target.closest('button')?.dataset || {};
     const p = app.project;
@@ -796,7 +823,9 @@ function bind() {
     const b = e.target.closest('[data-tool]');
     if (!b) return;
     const p = app.project, t = curTrack(), tool = b.dataset.tool;
-    if (tool === 'inst') openSheets.instrument(t);
+    if (tool === 'acc') { engine.acc = engine.acc === 0 ? 1 : engine.acc === 1 ? -1 : 0; renderTools(); }
+    else if (tool === 'fxtarget') { app.fxTrack = !app.fxTrack; renderTools(); }
+    else if (tool === 'inst') openSheets.instrument(t);
     else if (tool === 'grooves') openSheets.grooves();
     else if (tool === 'chord') openSheets.chord();
     else if (tool === 'oct-' || tool === 'oct+') {
@@ -903,6 +932,7 @@ async function boot() {
   app.trackId = (app.project.tracks.find((t) => t.role === 'melody') || app.project.tracks[0]).id;
   engine.tapOffset = (app.settings.tapOffset || 0) / 1000;
   engine.metroPlay = !!app.settings.metroPlay;
+  engine.smooth = app.settings.smooth || 'auto';
   engine.project = app.project;
   bind();
   el.app.hidden = false;

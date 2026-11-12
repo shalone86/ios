@@ -18,23 +18,66 @@ let busy = false;
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
+let shownTitle = null;
+
 function show(html, bind) {
-  body.innerHTML = html;
+  // Every sheet gets a brand-new root element. Handlers are attached to it,
+  // so they are thrown away with it; attaching them to the shared container
+  // let a menu opened earlier keep reacting to taps in a later one.
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  const title = (root.querySelector('h2') || {}).textContent || '';
+  const same = !sheet.hidden && title === shownTitle;
+  const keep = same ? sheet.scrollTop : 0;
+  body.textContent = '';
+  body.appendChild(root);
+  shownTitle = title;
   sheet.hidden = false;
   scrim.hidden = false;
-  sheet.scrollTop = 0;
-  sheet.style.animation = 'none';
-  void sheet.offsetWidth;
-  sheet.style.animation = '';
-  mountIcons(body);
-  if (bind) bind(body);
+  sheet.style.transform = '';
+  if (!same) {
+    sheet.style.animation = 'none';
+    void sheet.offsetWidth;
+    sheet.style.animation = '';
+  }
+  sheet.scrollTop = keep;            // redrawing a sheet keeps your place in it
+  mountIcons(root);
+  if (bind) bind(root);
+}
+
+// Pull a sheet down to dismiss it.
+{
+  let startY = null, pulling = false, dy = 0;
+  sheet.addEventListener('touchstart', (e) => {
+    const tag = e.target.tagName;
+    startY = (sheet.scrollTop <= 0 && tag !== 'INPUT' && !busy) ? e.touches[0].clientY : null;
+    pulling = false; dy = 0;
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    dy = e.touches[0].clientY - startY;
+    if (!pulling && dy > 10) pulling = true;
+    if (!pulling) { if (dy < -6) startY = null; return; }
+    e.preventDefault();
+    sheet.style.animation = 'none';
+    sheet.style.transform = `translateY(${Math.max(0, dy)}px)`;
+  }, { passive: false });
+  const end = () => {
+    if (pulling && dy > 90) closeSheet();
+    else if (pulling) { sheet.style.transition = 'transform .18s'; sheet.style.transform = ''; setTimeout(() => { sheet.style.transition = ''; }, 200); }
+    startY = null; pulling = false;
+  };
+  sheet.addEventListener('touchend', end);
+  sheet.addEventListener('touchcancel', end);
 }
 
 export function closeSheet() {
   if (busy) return;
   sheet.hidden = true;
   scrim.hidden = true;
-  body.innerHTML = '';
+  sheet.style.transform = '';
+  shownTitle = null;
+  body.textContent = '';
 }
 export const sheetIsOpen = () => !sheet.hidden;
 scrim.addEventListener('click', closeSheet);
@@ -92,6 +135,8 @@ function project() {
     <h3>Settings</h3>
     <div class="field"><span>Buzz on tap</span><span style="flex:1"></span><button class="toggle ${st.haptics ? 'on' : ''}" data-set="haptics" aria-label="Haptics"></button></div>
     <div class="field"><span>Show note names</span><span style="flex:1"></span><button class="toggle ${st.names ? 'on' : ''}" data-set="names" aria-label="Note names"></button></div>
+    <div class="field"><span>Smooth audio</span><span style="flex:1"></span><div class="wrap">${['auto', 'on', 'off'].map((v) => `<button class="pill small ${st.smooth === v ? 'on' : ''}" data-smooth="${v}">${v}</button>`).join('')}</div></div>
+    <p class="sub">Crackle on Bluetooth? Set this to on. It uses a bigger audio buffer: steadier sound, slightly slower response.</p>
     <div class="field"><span>Click while playing</span><span style="flex:1"></span><button class="toggle ${st.metroPlay ? 'on' : ''}" data-set="metroPlay" aria-label="Metronome during playback"></button></div>
     <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="160" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
     <p class="sub">If recorded notes land late, nudge tap timing up; if early, down.</p>
@@ -114,6 +159,13 @@ function project() {
       S.saveSettings(st);
       app.engine.metroPlay = !!st.metroPlay;
       if (k === 'names') renderAll();
+    });
+    on(root, '[data-smooth]', (b) => {
+      st.smooth = b.dataset.smooth;
+      S.saveSettings(st);
+      root.querySelectorAll('[data-smooth]').forEach((n) => n.classList.toggle('on', n === b));
+      app.engine.smooth = st.smooth;
+      app.engine.reopen();
     });
     on(root, '[data-open]', async (b) => {
       const loaded = S.loadProject(b.dataset.open);
@@ -498,4 +550,36 @@ function exporter() {
   draw();
 }
 
-export const openSheets = { project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };
+// Long-press a bubble in the song matrix: ways to vary one track in one block.
+function spice(blockIdx, trackId) {
+  const p = app.project, b = p.song[blockIdx], t = p.tracks.find((x) => x.id === trackId);
+  if (!b || !t) return;
+  const draw = () => {
+    const sp = (b.sp && b.sp[trackId]) || {};
+    const vel = sp.vel || 1;
+    show(`
+      <h2>${esc(t.name)} in block ${blockIdx + 1}</h2>
+      <p class="sub">Spice up this one spot without touching the loop itself.</p>
+      <div class="field"><span>Fill at the end</span><span style="flex:1"></span><button class="toggle ${sp.fill ? 'on' : ''}" data-sp="fill" aria-label="Fill"></button></div>
+      <p class="sub">${t.role === 'drums' ? 'A snare and tom roll over the last two beats.' : 'The last note repeats and quickens over the last two beats.'}</p>
+      <h3>Energy</h3>
+      <div class="wrap">${[[0.55, 'Whisper'], [0.78, 'Soft'], [1, 'Normal'], [1.25, 'Hard']].map(([v, n]) => `<button class="pill ${Math.abs(vel - v) < 0.01 ? 'on' : ''}" data-vel="${v}">${n}</button>`).join('')}</div>
+      <div class="field" style="margin-top:14px"><span>Playing</span><span style="flex:1"></span><button class="toggle ${b.off[trackId] ? '' : 'on'}" data-sp="on" aria-label="Playing"></button></div>
+    `, (root) => {
+      const edit = (fn) => {
+        S.pushUndo(p);
+        b.sp = b.sp || {};
+        const cur = b.sp[trackId] || {};
+        fn(cur);
+        if (!cur.fill && (!cur.vel || cur.vel === 1)) delete b.sp[trackId]; else b.sp[trackId] = cur;
+        touch(); renderAll(); draw();
+      };
+      on(root, '[data-sp="fill"]', () => edit((c) => { c.fill = !c.fill; }));
+      on(root, '[data-vel]', (n) => edit((c) => { c.vel = +n.dataset.vel; }));
+      on(root, '[data-sp="on"]', () => { S.pushUndo(p); if (b.off[trackId]) delete b.off[trackId]; else b.off[trackId] = true; touch(); renderAll(); draw(); });
+    });
+  };
+  draw();
+}
+
+export const openSheets = { spice,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };

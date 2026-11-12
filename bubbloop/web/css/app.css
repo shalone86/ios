@@ -314,6 +314,9 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 .sb.off i { background: none; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3); transform: scale(0.72); }
 .sb.off i::before, .sb.off i::after { height: 2px; top: 50%; background: rgba(255, 255, 255, 0.45); }
 .sb.empty i { opacity: 0.35; }
+.sb.fill::after, .sb.spiced::after { content: '✦'; position: absolute; right: 4px; top: 0; font-size: 13px; color: #fff6c9; text-shadow: 0 1px 3px rgba(30, 10, 70, 0.7); }
+.sb.spiced::after { content: '•'; font-size: 18px; top: -4px; }
+.sb { position: relative; }
 .col-now .sb:not(.off) i { animation: pulse 0.35s ease-in-out infinite alternate; }
 .col-sel .sb, .col-sel { background: rgba(255, 255, 255, 0.07); }
 .addcol { width: 50px; height: 38px; margin: 3px; border-radius: 12px; border: 1.5px dashed var(--line); font-size: 22px; font-weight: 500; }
