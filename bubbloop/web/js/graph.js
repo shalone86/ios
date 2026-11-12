@@ -7,8 +7,8 @@ import { DRUM_PADS } from './drums.js';
 import { cellNotes } from './theory.js';
 
 export const FX = [
-  { id: 'reverb',  name: 'Cloud',   sub: 'reverb' },
-  { id: 'delay',   name: 'Echo',    sub: 'delay' },
+  { id: 'reverb',  name: 'Cloud',   sub: 'reverb', zones: ['mist', 'deep'] },
+  { id: 'delay',   name: 'Echo',    sub: 'delay', zones: ['1/8', '3/16', '1/4'] },
   { id: 'squish',  name: 'Squish',  sub: 'compressor' },
   { id: 'crunch',  name: 'Crunch',  sub: 'distortion' },
   { id: 'stutter', name: 'Stutter', sub: 'beat repeat', zones: ['1/8', '1/16', '1/32'] },
@@ -158,6 +158,7 @@ function buildRack(ctx, sh, project, lite = null) {
   squish.out.connect(pump).connect(gate).connect(output);
 
   let spb = 60 / project.bpm;
+  let echoBeats = 0.75;                  // dotted eighth unless an Echo hit picks another
   const windows = { glitch: [], squish: [] };
   let last = null;     // most recent 16th handed to tick()
 
@@ -247,9 +248,15 @@ function buildRack(ctx, sh, project, lite = null) {
   const rack = {
     input: pre, output, revIn, dlyIn,
 
+    echoTime(p, t) {
+      echoBeats = [0.5, 0.75, 1][p ?? 1] ?? 0.75;
+      dL.delayTime.setTargetAtTime(spb * echoBeats, t, 0.02);
+      dR.delayTime.setTargetAtTime(spb * echoBeats, t, 0.02);
+    },
+
     setTempo(bpm, t = 0) {
       spb = 60 / bpm;
-      const d = spb * 0.75;                 // dotted eighth
+      const d = spb * echoBeats;
       dL.delayTime.setTargetAtTime(d, t, 0.05);
       dR.delayTime.setTargetAtTime(d, t, 0.05);
     },
@@ -259,10 +266,11 @@ function buildRack(ctx, sh, project, lite = null) {
       const seq = dur != null;
       switch (k) {
         case 'reverb':
-          if (lite) lite.send('rev', true, t); else hitRev.gain.setTargetAtTime(0.45, t, 0.012);
+          if (lite) lite.send('rev', true, t, p === 0 ? 0.45 : 1); else hitRev.gain.setTargetAtTime(p === 0 ? 0.2 : 0.5, t, 0.012);
           break;
         case 'delay':
-          if (lite) { lite.send('dly', true, t); break; }
+          if (lite) { lite.echo(p, t); lite.send('dly', true, t); break; }
+          rack.echoTime(p, t);
           hitDly.gain.setTargetAtTime(1, t, 0.008);
           fb.gain.setTargetAtTime(0.62, t, 0.02);
           break;
@@ -418,7 +426,8 @@ export function buildGraph(ctx, project, kit, opts = {}) {
     ch.pan.connect(hit.rev).connect(rack.revIn);
     ch.pan.connect(hit.dly).connect(rack.dlyIn);
     ch.rack = buildRack(ctx, sh, g.project, {
-      send(kind, on, t) { hit[kind].gain.setTargetAtTime(on ? (kind === 'rev' ? 0.9 : 1) : 0, t, on ? 0.012 : 0.03); },
+      echo(p, t) { rack.echoTime(p, t); },
+      send(kind, on, t, amount = 1) { hit[kind].gain.setTargetAtTime(on ? (kind === 'rev' ? 0.9 : 1) * amount : 0, t, on ? 0.012 : 0.03); },
     });
     try { ch.mute.disconnect(ch.pan); } catch (e) { /* not yet wired */ }
     ch.mute.connect(ch.rack.input);

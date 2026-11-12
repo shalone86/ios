@@ -182,7 +182,21 @@ await wait(500);
 check(await state(() => window.bubbloop.engine.playing && window.bubbloop.engine.mode === 'song'), 'song mode plays');
 await wait(1500);
 await shot('7-song-playing');
+// FX automation over the song: record while it plays, from the FX tab
+await click('.tab[data-view="fx"]');
+await click('#btn-rec');
+await wait(150);
+{
+  const b = await page.locator('.fx[data-fx="filter"]').boundingBox();
+  await page.evaluate(([x, y]) => new Promise((done) => {
+    const el = document.elementFromPoint(x, y);
+    const fire = (type) => el.dispatchEvent(new PointerEvent(type, { pointerId: 78, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    fire('pointerdown'); setTimeout(() => { fire('pointerup'); done(); }, 350);
+  }), [b.x + b.width / 2, b.y + b.height / 2]);
+}
+check(await state(() => window.bubbloop.engine.mode === 'song' && window.bubbloop.project.song.some((b) => b.fx.some((f) => f.k === 'filter'))), 'FX recorded onto the song timeline from the FX tab');
 await click('#btn-play');
+await click('.tab[data-view="song"]');
 
 fs.writeFileSync(path.join(OUT, 'app-project.json'), await state(() => JSON.stringify(window.bubbloop.project, (k, v) => (k[0] === '_' ? undefined : v))));
 

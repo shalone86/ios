@@ -55,7 +55,7 @@ patterns to play over or edit.
 **Sections.** A, B, C… are different loops in the same song. Tap one while
 playing and it takes over at the next bar line. Long-press to copy or clear.
 
-**FX.** Eight hold-to-play effects on the FX tab: Cloud (reverb), Echo
+**FX.** Eight hold-to-play effects, on the whole mix or one track, on the FX tab: Cloud (reverb), Echo
 (delay), Squish (compressor), Crunch (distortion), Stutter, Glitch, Dive
 (filter) and Sleepy (tape stop). Slide across Stutter and Dive to change
 their setting. Hold one while recording to keep the move in the loop; tap the

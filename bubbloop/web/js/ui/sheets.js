@@ -6,6 +6,7 @@ import { INSTRUMENTS, instrumentById } from '../instruments.js';
 import { MASTERS } from '../graph.js';
 import { PATTERNS } from '../patterns.js';
 import * as S from '../state.js';
+import { FILLS } from '../seq.js';
 import { exportProject, FORMATS } from '../exporter.js';
 import { canShare, shareFile, saveFile, isNative } from '../platform.js';
 import { mountIcons, icon, mascot, GLYPHS, DONE_ART } from './art.js';
@@ -560,8 +561,9 @@ function spice(blockIdx, trackId) {
     show(`
       <h2>${esc(t.name)} in block ${blockIdx + 1}</h2>
       <p class="sub">Spice up this one spot without touching the loop itself.</p>
-      <div class="field"><span>Fill at the end</span><span style="flex:1"></span><button class="toggle ${sp.fill ? 'on' : ''}" data-sp="fill" aria-label="Fill"></button></div>
-      <p class="sub">${t.role === 'drums' ? 'A snare and tom roll over the last two beats.' : 'The last note repeats and quickens over the last two beats.'}</p>
+      <h3>Fill at the end</h3>
+      <div class="wrap">${[['', 'None'], ...FILLS].map(([id, n]) => `<button class="pill ${(sp.fill === true ? 'rep8' : sp.fill || '') === id ? 'on' : ''}" data-fill="${id}">${n}</button>`).join('')}</div>
+      <p class="sub" style="margin-top:8px">Reworks the last two beats out of what this track already plays.</p>
       <h3>Energy</h3>
       <div class="wrap">${[[0.55, 'Whisper'], [0.78, 'Soft'], [1, 'Normal'], [1.25, 'Hard']].map(([v, n]) => `<button class="pill ${Math.abs(vel - v) < 0.01 ? 'on' : ''}" data-vel="${v}">${n}</button>`).join('')}</div>
       <div class="field" style="margin-top:14px"><span>Playing</span><span style="flex:1"></span><button class="toggle ${b.off[trackId] ? '' : 'on'}" data-sp="on" aria-label="Playing"></button></div>
@@ -574,7 +576,7 @@ function spice(blockIdx, trackId) {
         if (!cur.fill && (!cur.vel || cur.vel === 1)) delete b.sp[trackId]; else b.sp[trackId] = cur;
         touch(); renderAll(); draw();
       };
-      on(root, '[data-sp="fill"]', () => edit((c) => { c.fill = !c.fill; }));
+      on(root, '[data-fill]', (n) => edit((c) => { c.fill = n.dataset.fill || undefined; }));
       on(root, '[data-vel]', (n) => edit((c) => { c.vel = +n.dataset.vel; }));
       on(root, '[data-sp="on"]', () => { S.pushUndo(p); if (b.off[trackId]) delete b.off[trackId]; else b.off[trackId] = true; touch(); renderAll(); draw(); });
     });

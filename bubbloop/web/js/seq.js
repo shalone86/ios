@@ -17,21 +17,37 @@ export function swingUnwarp(t, swing) {
   return base + (x < STEP + off ? (x * STEP) / (STEP + off) : STEP + ((x - STEP - off) * STEP) / (STEP - off));
 }
 
-// The last two beats of a loop, replaced by a fill: a snare-and-tom roll on
-// drums, a quickening repeat of the last note on anything else.
-const FILL_PADS = [2, 2, 14, 14, 13, 12, 11, 10];
-export function withFill(track, evs, len) {
-  const from = len - 2 * PPQ;
-  const out = evs.filter((e) => e.t < from);
-  let seed = null;
-  for (const e of evs) if (e.t <= from) seed = e;
-  seed = seed || evs[0];
-  for (let i = 0; i < 8; i++) {
-    const v = 0.5 + 0.06 * i;
-    if (track.role === 'drums') out.push({ t: from + i * STEP, d: STEP, r: Math.floor(FILL_PADS[i] / 5), c: FILL_PADS[i] % 5, v });
-    else if (seed && (i < 4 ? i % 2 === 0 : true)) out.push({ ...seed, t: from + i * STEP, d: STEP * (i < 4 ? 1.6 : 0.8), v, _p: undefined });
+// Fills rework the last two beats of a loop out of what is already there,
+// so they work the same on any track:
+//   rep8 / rep16  the first slice (an 8th or a 16th) repeats to the end
+//   stutter       the last beat retriggers in 32nds
+//   jumble        the 16th-note slices are played in a shuffled order
+export const FILLS = [['rep8', 'Repeat'], ['rep16', 'Repeat fast'], ['stutter', 'Stutter'], ['jumble', 'Jumble']];
+const JUMBLE = [3, 1, 6, 0, 5, 2, 7, 4];
+export function withFill(track, evs, len, kind) {
+  if (kind === true) kind = 'rep8';
+  const from = kind === 'stutter' ? len - PPQ : len - 2 * PPQ;
+  const keep = evs.filter((e) => e.t < from);
+  const inside = evs.filter((e) => e.t >= from);
+  const out = keep.slice();
+  if (kind === 'jumble') {
+    for (const e of inside) {
+      const slot = Math.floor((e.t - from) / STEP);
+      out.push({ ...e, t: from + JUMBLE.indexOf(slot) * STEP + ((e.t - from) % STEP), d: Math.min(e.d, STEP), _p: undefined });
+    }
+    return out.sort((x, y) => x.t - y.t);
   }
-  if (track.role === 'drums') out.push({ t: from, d: STEP, r: 0, c: 0, v: 0.9 });
+  const L = kind === 'rep16' ? STEP : kind === 'stutter' ? STEP / 2 : STEP * 2;
+  let src = inside.filter((e) => e.t < from + L).map((e) => ({ ...e, t: e.t - from }));
+  if (!src.length) {
+    const seed = keep[keep.length - 1] || evs[0];
+    if (!seed) return evs;
+    src = [{ ...seed, t: 0 }];
+  }
+  const n = Math.round((len - from) / L);
+  for (let i = 0; i < n; i++) {
+    for (const e of src) out.push({ ...e, t: from + i * L + e.t, d: Math.min(e.d, L * 0.9), v: Math.min(1, e.v * (0.6 + 0.4 * (i + 1) / n)), _p: undefined });
+  }
   return out.sort((x, y) => x.t - y.t);
 }
 
@@ -75,7 +91,7 @@ export function scheduleRange(g, project, seg, a, b, timeAt, hooks = {}) {
     // "spice" set on a song block: a level change and/or a fill at the end
     const sp = seg.sp && seg.sp[track.id];
     const gain = sp && sp.vel ? sp.vel : 1;
-    if (sp && sp.fill && seg.last) evs = withFill(track, evs, seg.len);
+    if (sp && sp.fill && seg.last) evs = withFill(track, evs, seg.len, sp.fill);
     for (let i = 0; i < evs.length; i++) {
       const ev = evs[i];
       const wt = swingWarp(ev.t, swing);

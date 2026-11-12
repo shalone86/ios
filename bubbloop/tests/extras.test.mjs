@@ -14,7 +14,7 @@ const r = await page.evaluate(async () => {
   const out = {};
   let p = base(); p.sections[0].fx = [{ t: 96, d: 192, k: 'crunch', tr: p.tracks[1].id }, { t: 400, d: 96, k: 'reverb', tr: p.tracks[0].id }, { t: 700, d: 96, k: 'stutter', p: 1, tr: p.tracks[3].id }];
   let x = await renderProject(p, { what: 'song' }); out.trackFx = [ok(x), diff(ref.channels[0], x.channels[0])];
-  p = base(); p.song[0].sp = { [p.tracks[0].id]: { fill: true }, [p.tracks[3].id]: { fill: true, vel: 0.55 } };
+  p = base(); p.song[0].sp = { [p.tracks[0].id]: { fill: 'jumble' }, [p.tracks[1].id]: { fill: 'stutter' }, [p.tracks[2].id]: { fill: 'rep16' }, [p.tracks[3].id]: { fill: 'rep8', vel: 0.55 } };
   x = await renderProject(p, { what: 'song' }); out.spice = [ok(x), diff(ref.channels[0], x.channels[0])];
   p = base(); for (const e of p.sections[0].ev[p.tracks[3].id]) e.a = 1; for (const e of p.sections[0].ev[p.tracks[2].id]) e.ch = 'thirteen';
   x = await renderProject(p, { what: 'song' }); out.notes = [ok(x), diff(ref.channels[0], x.channels[0])];
