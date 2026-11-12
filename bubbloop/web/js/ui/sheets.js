@@ -127,7 +127,7 @@ function project() {
       <button class="pill" data-act="demo">${icon('note')}Demo song</button>
       <button class="pill" data-act="export">${icon('share')}Export</button>
       <button class="pill" data-act="file">Save song file</button>
-      <button class="pill" data-act="open">Open song file</button>
+      <button class="pill" data-act="open">Import song file</button>
     </div>
     <input type="file" id="p-file" accept=".json,.bubbloop,application/json" hidden>
     ${others.length ? `<h3>Saved songs</h3><div class="list">${others.map((o) => `
@@ -136,8 +136,12 @@ function project() {
     <h3>Settings</h3>
     <div class="field"><span>Buzz on tap</span><span style="flex:1"></span><button class="toggle ${st.haptics ? 'on' : ''}" data-set="haptics" aria-label="Haptics"></button></div>
     <div class="field"><span>Show note names</span><span style="flex:1"></span><button class="toggle ${st.names ? 'on' : ''}" data-set="names" aria-label="Note names"></button></div>
-    <div class="field"><span>Smooth audio</span><span style="flex:1"></span><div class="wrap">${['auto', 'on', 'off'].map((v) => `<button class="pill small ${st.smooth === v ? 'on' : ''}" data-smooth="${v}">${v}</button>`).join('')}</div></div>
-    <p class="sub">Crackle on Bluetooth? Set this to on. It uses a bigger audio buffer: steadier sound, slightly slower response.</p>
+    <div class="field"><span>Advanced mode</span><span style="flex:1"></span><button class="toggle ${st.advanced ? 'on' : ''}" data-set="advanced" aria-label="Advanced mode"></button></div>
+    <p class="sub">Adds a chord type per bubble in the Chords menu.</p>
+    <div class="field"><span>Smooth audio</span><span style="flex:1"></span><button class="toggle ${st.smooth === 'on' ? 'on' : ''}" data-smooth="1" aria-label="Smooth audio"></button></div>
+    <p class="sub">Only for crackle on Bluetooth: a bigger audio buffer, steadier but slower to respond to taps.</p>
+    <div class="field"><span>Keep old versions</span><span style="flex:1"></span><button class="toggle ${st.versions ? 'on' : ''}" data-set="versions" aria-label="Keep old versions"></button></div>
+    <p class="sub">Off: saving or exporting under the same name replaces the file. On: each save gets a new number.</p>
     <div class="field"><span>Click while playing</span><span style="flex:1"></span><button class="toggle ${st.metroPlay ? 'on' : ''}" data-set="metroPlay" aria-label="Metronome during playback"></button></div>
     <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="160" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
     <p class="sub">If recorded notes land late, nudge tap timing up; if early, down.</p>
@@ -162,9 +166,9 @@ function project() {
       if (k === 'names') renderAll();
     });
     on(root, '[data-smooth]', (b) => {
-      st.smooth = b.dataset.smooth;
+      st.smooth = st.smooth === 'on' ? 'off' : 'on';
       S.saveSettings(st);
-      root.querySelectorAll('[data-smooth]').forEach((n) => n.classList.toggle('on', n === b));
+      b.classList.toggle('on', st.smooth === 'on');
       app.engine.smooth = st.smooth;
       app.engine.reopen();
     });
@@ -314,16 +318,54 @@ function instrument(track) {
 }
 
 function chord() {
-  const t = curTrack();
+  const t = curTrack(), p = app.project;
+  const adv = app.settings.advanced;
+  const own = t.chords || {};
+  const sc = SCALES.find((x) => x.id === p.scale) || SCALES[0];
   show(`
     <h2>Chords</h2>
     <p class="sub">One bubble, a whole chord. They are built from the song's key, so they always fit.</p>
     <div class="list">${CHORDS.map((c) => `<button class="item ${c.id === t.chord ? 'on' : ''}" data-chord="${c.id}"><span class="sp"><b>${c.name}</b><small>${c.hint}</small></span>${c.id === t.chord ? icon('check') : ''}</button>`).join('')}</div>
+    ${adv ? `<h3>Per bubble (advanced)</h3>
+    <p class="sub">Give a column its own chord type. "Track" means it follows the choice above.</p>
+    ${[0, 1, 2, 3, 4].map((c) => `<div class="field" style="align-items:flex-start"><span style="min-width:34px;padding-top:8px">${KEY_NAMES[(p.key + sc.steps[c]) % 12]}</span><div class="scroll-x" style="flex:1;padding:2px 0">
+      <button class="pill small ${own[c] ? '' : 'on'}" data-own="${c}:">Track</button>${CHORDS.map((k) => `<button class="pill small ${own[c] === k.id ? 'on' : ''}" data-own="${c}:${k.id}">${k.name}</button>`).join('')}</div></div>`).join('')}` : '<p class="sub" style="margin-top:10px">Want a different chord type on each bubble? Turn on Advanced mode in the song menu settings.</p>'}
   `, (root) => {
     on(root, '[data-chord]', (b) => {
       t.chord = b.dataset.chord;
-      closeSheet();
+      if (!adv) closeSheet(); else chord();
       renderAll(); touch(); preview(t, true);
+    });
+    on(root, '[data-own]', (b) => {
+      const [c, id] = b.dataset.own.split(':');
+      t.chords = t.chords || {};
+      if (id) t.chords[c] = id; else delete t.chords[c];
+      renderAll(); touch(); chord();
+      const e = app.engine;
+      if (e.ready) e.g.playCell(t, 1, +c, S.chordOf(t, +c), 0.75, e.now + 0.03, 0.6);
+    });
+  });
+}
+
+// Copying a song block: choose where the copy goes.
+function copyBlock(i) {
+  const p = app.project;
+  show(`
+    <h2>Copy block ${i + 1}</h2>
+    <p class="sub">The copy keeps this block's fills, energy and recorded FX.</p>
+    <div class="list">
+      <button class="item" data-at="${i + 1}"><span class="sp"><b>Right after it</b></span></button>
+      <button class="item" data-at="${p.song.length}"><span class="sp"><b>At the end of the song</b></span></button>
+      <button class="item" data-at="0"><span class="sp"><b>At the start</b></span></button>
+    </div>
+    <p class="sub" style="margin-top:8px">Then use the arrows to nudge it into place.</p>
+  `, (root) => {
+    on(root, '[data-at]', (b) => {
+      const at = +b.dataset.at;
+      S.addBlock(p, at, i);
+      app.songSel = at;
+      app.engine.songFrom = at;
+      closeSheet(); renderAll(); touch();
     });
   });
 }
@@ -391,6 +433,8 @@ function track(t) {
     <input type="text" id="k-name" maxlength="18" value="${esc(t.name)}" aria-label="Track name">
     <div class="wrap" style="margin-top:10px">
       ${t.role === 'drums' ? '<button class="pill" data-act="grooves">Grooves</button>' : `<button class="pill" data-act="inst">${esc(instrumentById(t.inst).name)} ▾</button>`}
+      <button class="pill" data-act="left">${icon('left')}Move</button>
+      <button class="pill" data-act="right">Move${icon('right')}</button>
       <button class="pill" data-act="snap">Snap to grid</button>
       ${t.role === 'drums' ? '' : `<button class="pill ${t.duck ? 'on' : ''}" data-act="duck">Duck under kick${t.duck ? ': ' + (t.duck >= 1 ? 'hard' : 'soft') : ''}</button>`}
       <button class="pill" data-act="clear">Clear this loop</button>
@@ -404,6 +448,7 @@ function track(t) {
       if (act === 'inst') instrument(t);
       else if (act === 'duck') { t.duck = !t.duck ? 0.6 : t.duck < 1 ? 1 : 0; touch(); track(t); toast(t.duck ? 'Dips every time a kick lands' : 'Ducking off'); }
       else if (act === 'grooves') { selectTrack(t.id); grooves(); }
+      else if (act === 'left' || act === 'right') { if (S.moveTrack(p, t.id, act === 'left' ? -1 : 1)) { renderAll(); touch(); } }
       else if (act === 'snap') { S.quantizeTrack(p, p.cur, t.id, p.quant || STEP); afterEdit(); closeSheet(); toast('Snapped to the grid'); }
       else if (act === 'clear') { S.clearTrack(p, p.cur, t.id); afterEdit(); closeSheet(); toast(`${t.name} cleared`); }
       else if (act === 'del') {
@@ -614,4 +659,4 @@ function spice(blockIdx, trackId) {
   draw();
 }
 
-export const openSheets = { spice, space,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };
+export const openSheets = { spice, space, copyBlock,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };

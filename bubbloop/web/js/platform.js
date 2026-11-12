@@ -32,7 +32,10 @@ function base64(bytes) {
 // Save a finished file. Resolves to { where, uri } on success.
 export async function saveFile(name, mime, bytes, onProgress) {
   if (N) {
-    const id = N.beginFile(name, mime);
+    let keep = false;
+    try { keep = !!JSON.parse(localStorage.getItem('bubbloop.settings') || '{}').versions; } catch (e) { /* default */ }
+    // by default a file of the same name is replaced, not numbered (1), (2)...
+    const id = N.beginFileEx ? N.beginFileEx(name, mime, keep) : N.beginFile(name, mime);
     if (!id) throw new Error('Could not create the file');
     for (let i = 0; i < bytes.length; i += CHUNK) {
       if (!N.appendFile(id, base64(bytes.subarray(i, Math.min(bytes.length, i + CHUNK))))) {

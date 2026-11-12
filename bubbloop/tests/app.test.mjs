@@ -79,7 +79,7 @@ check(grooveCount === 30, `groove fills the 2-bar loop (${grooveCount} hits)`);
 await shot('2-grooves');
 await page.evaluate(() => document.getElementById('scrim').click());
 await click(`[data-mute="${drumTrack}"]`);
-check(await state(() => window.bubbloop.project.tracks[0].mute), 'drums muted from the pod');
+check(await state(() => { const p = window.bubbloop.project; return !!p.sections[p.cur].mute[p.tracks[0].id]; }), 'drums muted from the pod, in this section only');
 await click(`[data-mute="${drumTrack}"]`);
 await click('#btn-undo');
 check(await state(() => window.bubbloop.project.sections[0].ev[window.bubbloop.trackId].length) === 2, 'undo brings back the hand-played drums');

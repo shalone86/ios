@@ -28,6 +28,7 @@ export const app = {
   focus: { r: 0, c: 0 },
   stepsOn: false,
   stepBar: 0,
+  stepLen: STEP,            // how long a note placed in the step editor rings
   eraser: false,
   songSel: -1,
   fxTrack: false,           // FX pads act on the current track rather than the whole mix
@@ -123,10 +124,10 @@ function drawTracks() {
   const p = app.project;
   const cur = curTrack();
   let html = p.tracks.map((t) => `
-    <button class="pod ${t.id === cur.id ? 'cur' : ''} ${t.mute ? 'muted' : ''}" data-track="${t.id}">
+    <button class="pod ${t.id === cur.id ? 'cur' : ''} ${S.isMuted(p, t) ? 'muted' : ''}" data-track="${t.id}">
       ${trackMascot(t)}
       <span class="name">${esc(t.name)}</span>
-      <span class="mute" data-mute="${t.id}" role="button" aria-label="Mute ${esc(t.name)}">${t.mute ? 'zzz' : 'on'}</span>
+      <span class="mute" data-mute="${t.id}" role="button" aria-label="Mute ${esc(t.name)}">${S.isMuted(p, t) ? 'zzz' : 'on'}</span>
     </button>`).join('');
   if (p.tracks.length < S.MAX_TRACKS) html += '<button class="pod add" data-track="add" aria-label="Add track">+</button>';
   el.tracks.innerHTML = html;
@@ -144,7 +145,8 @@ function drawTools() {
     else {
       html += chip('inst', esc(instrumentById(t.inst).name) + ' ▾');
       const ch = CHORDS.find((c) => c.id === t.chord) || CHORDS[0];
-      html += chip('chord', (t.chord === 'off' ? 'Chords: off' : 'Chords: ' + ch.name) + ' ▾', t.chord !== 'off');
+      const mixed = t.chords && Object.keys(t.chords).length > 0;
+      html += chip('chord', (mixed ? 'Chords: mixed' : t.chord === 'off' ? 'Chords: off' : 'Chords: ' + ch.name) + ' ▾', mixed || t.chord !== 'off');
       html += chip('acc', engine.acc > 0 ? '♯ sharp' : engine.acc < 0 ? '♭ flat' : '♮', engine.acc !== 0);
       html += `<span class="stepper"><button data-tool="oct-">−</button><span>oct ${t.oct > 0 ? '+' : ''}${t.oct}</span><button data-tool="oct+">+</button></span>`;
     }
@@ -184,7 +186,6 @@ function drawTools() {
 function renderGrid() {
   const p = app.project, t = curTrack();
   const drums = t.role === 'drums';
-  const chords = !drums && t.chord && t.chord !== 'off';
   const cells = [];
   for (let r = ROWS - 1; r >= 0; r--) {
     for (let c = 0; c < COLS; c++) {
@@ -196,7 +197,7 @@ function renderGrid() {
         label = pad.name;
       } else {
         cls = 'hue-' + c + (c === 0 ? ' root' : '');
-        if (chords) label = chordLabel(p, c, t.chord);
+        if (S.chordOf(t, c) !== 'off') label = chordLabel(p, c, S.chordOf(t, c));
         else if (app.settings.names) label = KEY_NAMES[cellNotes(p, t, r, c)[0] % 12];
       }
       const size = drums && !t.group ? 92 : 95 - r * 4;
@@ -281,17 +282,26 @@ function bindGrid() {
     if (!cell) return;
     e.preventDefault();
     if (!engine.ready) await engine.wake(app.project);
-    pointers.set(e.pointerId, { cell, id: pressCell(cell, e) });
+    pointers.set(e.pointerId, { cell, id: pressCell(cell, e), y0: e.clientY });
   });
   el.grid.addEventListener('pointermove', (e) => {
     const cur = pointers.get(e.pointerId);
     if (!cur) return;
     const hit = document.elementFromPoint(e.clientX, e.clientY);
     const cell = hit && hit.closest && hit.closest('#grid .cell');
-    if (!cell || cell === cur.cell) return;
+    if (!cell) return;
+    if (cell === cur.cell) {
+      // wiggling up and down on a bubble bends its pitch, up to a whole tone
+      const dy = cur.y0 - e.clientY, h = cell.getBoundingClientRect().height;
+      if (cur.id && (cur.bent || Math.abs(dy) > 6)) {
+        cur.bent = true;
+        engine.bend(cur.id, Math.max(-200, Math.min(200, (dy / h) * 260)));
+      }
+      return;
+    }
     // sliding across bubbles plays each one in turn
     releasePointer(e.pointerId);
-    pointers.set(e.pointerId, { cell, id: pressCell(cell, e) });
+    pointers.set(e.pointerId, { cell, id: pressCell(cell, e), y0: e.clientY });
   });
   const up = (e) => releasePointer(e.pointerId);
   window.addEventListener('pointerup', up);
@@ -308,10 +318,11 @@ function renderSteps() {
   app.stepBar = Math.min(app.stepBar, sec.bars - 1);
   const { r, c } = app.focus;
   const drums = t.role === 'drums';
-  const name = drums ? padFor(t, r, c).pad.name : (t.chord !== 'off' ? chordLabel(p, c, t.chord) : KEY_NAMES[cellNotes(p, t, r, c)[0] % 12]);
+  const name = drums ? padFor(t, r, c).pad.name : (S.chordOf(t, c) !== 'off' ? chordLabel(p, c, S.chordOf(t, c)) : KEY_NAMES[cellNotes(p, t, r, c)[0] % 12]);
   const list = S.trackEvents(p, p.cur, t.id);
   const base = app.stepBar * 16;
   let html = `<div class="head"><span>Steps for <b>${esc(name)}</b>. Tap a bubble to pick another.</span><span class="sp"></span>`;
+  if (!drums) html += `<button class="pill small" data-step="len">rings ${{ 24: '1/16', 48: '1/8', 96: '1/4', 192: '1/2', 384: '1 bar' }[app.stepLen]}</button>`;
   if (sec.bars > 1) html += `<span class="stepper"><button data-step="prev">‹</button><span>bar ${app.stepBar + 1}/${sec.bars}</span><button data-step="next">›</button></span>`;
   html += '</div><div class="row">';
   const cell = cellEl(r, c);
@@ -400,11 +411,11 @@ function drawMix() {
   const p = app.project, cur = curTrack();
   const slider = (id, key, val) => `<input type="range" min="0" max="100" value="${Math.round(val * 100)}" data-mix="${id}:${key}" style="--fill:${Math.round(val * 100)}%">`;
   el.mix.innerHTML = p.tracks.map((t) => `
-    <div class="strip ${t.id === cur.id ? 'cur' : ''} ${t.mute ? 'muted' : ''}" data-strip="${t.id}">
+    <div class="strip ${t.id === cur.id ? 'cur' : ''} ${S.isMuted(p, t) ? 'muted' : ''}" data-strip="${t.id}">
       <div class="row1">
         ${trackMascot(t)}
         <button class="who" data-mixinst="${t.id}"><b>${esc(t.name)}</b><small>${t.role === 'drums' ? 'Grooves' : esc(instrumentById(t.inst).name)} ▾</small></button>
-        <button class="pill small ${t.mute ? '' : 'on'}" data-mixmute="${t.id}">${t.mute ? 'zzz' : 'on'}</button>
+        <button class="pill small ${S.isMuted(p, t) ? '' : 'on'}" data-mixmute="${t.id}">${S.isMuted(p, t) ? 'zzz' : 'on'}</button>
         <button class="pill round small" data-mixmore="${t.id}" aria-label="More">⋯</button>
       </div>
       <div class="sliders">
@@ -496,7 +507,7 @@ function bindSong() {
     const p = app.project;
     if (d.song === 'build') {
       S.pushUndo(p);
-      p.sections.forEach((s, i) => { if (!S.sectionIsEmpty(s) || i === 0) p.song.push({ sec: i, rep: 2, off: {}, fx: [] }); });
+      p.sections.forEach((s, i) => { if (!S.sectionIsEmpty(s) || i === 0) p.song.push({ sec: i, rep: 2, off: { ...(s.mute || {}) }, fx: [] }); });
       app.songSel = 0;
     } else if (d.song === 'add') {
       S.addBlock(p);
@@ -576,7 +587,7 @@ function drawMapLayer(secIdx) {
     const top = pad + i * laneH;
     if (t.id === cur.id) { g.fillStyle = 'rgba(255,255,255,.1)'; g.fillRect(0, top, W, laneH); }
     g.fillStyle = ROLE_COLOR[t.role];
-    g.globalAlpha = t.mute ? 0.3 : 1;
+    g.globalAlpha = (sec.mute && sec.mute[t.id]) ? 0.3 : 1;
     for (const e of sec.ev[t.id] || []) {
       const x = (e.t / len) * W;
       if (t.role === 'drums') {
@@ -714,8 +725,8 @@ export function selectTrack(id) {
 
 export function toggleMute(id) {
   const t = app.project.tracks.find((x) => x.id === id);
-  t.mute = !t.mute;
-  engine.syncTrack(t);
+  S.setMuted(app.project, t, !S.isMuted(app.project, t));
+  engine.refreshMutes();
   renderTracks();
   if (app.view === 'mix') renderMix();
   mapDirty = true;
@@ -727,6 +738,7 @@ export function setView(view) {
   app.view = view;
   if (view === 'song' && engine.mode !== 'song') { if (engine.playing) engine.stop(); engine.mode = 'song'; }
   if (view === 'play' && engine.mode !== 'loop') { if (engine.playing) engine.stop(); engine.mode = 'loop'; }
+  engine.refreshMutes();
   el.grid.hidden = view !== 'play';
   el.fx.hidden = view !== 'fx';
   el.mix.hidden = view !== 'mix';
@@ -861,13 +873,14 @@ function bind() {
     const b = e.target.closest('[data-step]');
     if (!b) return;
     const sec = curSection();
-    if (b.dataset.step === 'prev') app.stepBar = (app.stepBar + sec.bars - 1) % sec.bars;
+    if (b.dataset.step === 'len') app.stepLen = { 24: 48, 48: 96, 96: 192, 192: 384, 384: 24 }[app.stepLen];
+    else if (b.dataset.step === 'prev') app.stepBar = (app.stepBar + sec.bars - 1) % sec.bars;
     else if (b.dataset.step === 'next') app.stepBar = (app.stepBar + 1) % sec.bars;
     else {
       const t = curTrack();
-      const on = S.toggleStep(app.project, app.project.cur, t, app.focus.r, app.focus.c, +b.dataset.step);
+      const on = S.toggleStep(app.project, app.project.cur, t, app.focus.r, app.focus.c, +b.dataset.step, STEP, app.stepLen);
       if (on && !engine.playing && engine.ready) {
-        engine.g.playCell(t, app.focus.r, app.focus.c, t.role === 'drums' ? undefined : t.chord, 0.8, engine.now, 0.25);
+        engine.g.playCell(t, app.focus.r, app.focus.c, t.role === 'drums' ? undefined : S.chordOf(t, app.focus.c), 0.8, engine.now, 0.25);
       }
       if (app.settings.haptics) haptic();
       afterEdit();
@@ -914,7 +927,7 @@ function blockTool(tool) {
   else if (tool === 'blk-rep') { S.pushUndo(p); b.rep = { 1: 2, 2: 4, 4: 8, 8: 1 }[b.rep] || 1; }
   else if (tool === 'blk-left') app.songSel = S.moveBlock(p, i, -1);
   else if (tool === 'blk-right') app.songSel = S.moveBlock(p, i, 1);
-  else if (tool === 'blk-copy') { S.addBlock(p, i + 1, i); app.songSel = i + 1; }
+  else if (tool === 'blk-copy') { openSheets.copyBlock(i); return; }
   else if (tool === 'blk-del') { S.removeBlock(p, i); app.songSel = Math.min(i, p.song.length - 1); }
   engine.songFrom = Math.max(0, app.songSel);
   renderSong(); renderTools(); renderSections(); renderTransport(); touch();

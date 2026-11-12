@@ -76,6 +76,7 @@ function kit(ctx) {
       if (typeof type === 'string') o.type = type; else o.setPeriodicWave(type);
       o.frequency.value = freq;
       o.detune.value = detune;
+      o.baseDetune = detune;
       o.start(t);
       srcs.push(o);
       return o;
@@ -551,6 +552,10 @@ export function startVoice(ctx, sh, inst, dest, midi, vel, t, dur) {
     t,
     until: v.life ? t + v.life : Infinity,
     get ended() { return ended; },
+    // slide the pitch of a held note (cents)
+    bend(cents, at) {
+      for (const o of v.srcs) if (o.detune && o.baseDetune !== undefined) o.detune.setTargetAtTime(o.baseDetune + cents, at, 0.015);
+    },
     release(tr) {
       tr = Math.max(tr, t + 0.03);
       v.amp.gain.cancelScheduledValues(tr);

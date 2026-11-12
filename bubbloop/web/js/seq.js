@@ -86,6 +86,7 @@ export function scheduleRange(g, project, seg, a, b, timeAt, hooks = {}) {
 
   for (const track of project.tracks) {
     if (seg.off && seg.off[track.id]) continue;
+    if (seg.block < 0 && sec.mute && sec.mute[track.id]) continue;     // a section's own mutes
     let evs = sec.ev[track.id];
     if (!evs) continue;
     // "spice" set on a song block: a level change and/or a fill at the end

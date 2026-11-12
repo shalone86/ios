@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.SystemClock;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
@@ -335,11 +336,16 @@ public class MainActivity extends Activity {
         public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
             if (filePicker != null) filePicker.onReceiveValue(null);
             filePicker = callback;
-            Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+            Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             pick.addCategory(Intent.CATEGORY_OPENABLE);
             pick.setType("*/*");
+            if (Build.VERSION.SDK_INT >= 26) {
+                // start in the folder song files are saved to
+                pick.putExtra(DocumentsContract.EXTRA_INITIAL_URI, DocumentsContract.buildDocumentUri(
+                        "com.android.externalstorage.documents", "primary:" + Environment.DIRECTORY_DOWNLOADS + "/Bubbloop"));
+            }
             try {
-                startActivityForResult(Intent.createChooser(pick, getString(R.string.pick_file)), PICK_FILE);
+                startActivityForResult(pick, PICK_FILE);
             } catch (Exception e) {
                 filePicker = null;
                 return false;
@@ -360,6 +366,12 @@ public class MainActivity extends Activity {
         /** Start a new file in Music/Bubbloop (or Download/Bubbloop). Returns a handle, or "" on failure. */
         @JavascriptInterface
         public String beginFile(String name, String mime) {
+            return beginFileEx(name, mime, false);
+        }
+
+        /** keepOld: false replaces a file of the same name, true lets Android number it. */
+        @JavascriptInterface
+        public String beginFileEx(String name, String mime, boolean keepOld) {
             try {
                 String clean = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", " ").trim();
                 if (clean.isEmpty()) clean = "Bubbloop";
@@ -383,6 +395,15 @@ public class MainActivity extends Activity {
                             ? MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
                             : MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                     ContentResolver r = getContentResolver();
+                    if (!keepOld) {
+                        // remove our earlier file of this name, or Android would add "(1)"
+                        try {
+                            r.delete(collection, MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ? AND " + MediaStore.MediaColumns.DISPLAY_NAME + " = ?",
+                                    new String[]{folder + "/Bubbloop%", clean});
+                        } catch (Exception e) {
+                            Log.w(TAG, "could not replace " + clean, e);
+                        }
+                    }
                     s.uri = r.insert(collection, v);
                     if (s.uri == null) return "";
                     s.out = r.openOutputStream(s.uri);
@@ -393,6 +414,7 @@ public class MainActivity extends Activity {
                     File dir = new File(getExternalFilesDir(folder), "Bubbloop");
                     if (!dir.isDirectory() && !dir.mkdirs()) return "";
                     File f = new File(dir, clean);
+                    if (!keepOld && f.exists()) f.delete();
                     for (int i = 2; f.exists(); i++) {
                         f = new File(dir, dot >= 0 ? clean.substring(0, dot) + " " + i + clean.substring(dot) : clean + " " + i);
                     }

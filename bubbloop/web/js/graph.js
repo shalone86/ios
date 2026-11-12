@@ -501,7 +501,7 @@ export function buildGraph(ctx, project, kit, opts = {}) {
       else ch.bus.connect(ch.post);
       ch.instId = track.inst;
     }
-    const silent = opts.solo ? track.id !== opts.solo : track.mute;
+    const silent = opts.solo ? track.id !== opts.solo : !!(g.mutedIds && g.mutedIds.has(track.id));
     const set = (param, value, tau) => {
       // a brand-new channel takes its values at once; later changes glide
       if (ch.fresh) param.value = value; else param.setTargetAtTime(value, t, tau);
@@ -556,7 +556,7 @@ export function buildGraph(ctx, project, kit, opts = {}) {
     if (rate !== 1) src.playbackRate.value = rate;
     src.connect(gn).connect(ch.bus);
     src.start(t);
-    if (pad.kind === 'kick' && !track.mute) {
+    if (pad.kind === 'kick') {
       // sidechain: every kick pushes the ducked tracks down for a moment
       for (const other of g.project.tracks) {
         if (!other.duck || other.id === track.id) continue;

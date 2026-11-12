@@ -29,11 +29,11 @@ const ROLE_DEFAULTS = {
 
 export function makeTrack(role, inst) {
   const d = ROLE_DEFAULTS[role];
-  return { id: uid(), role, name: d.name, inst: inst || d.inst, vol: d.vol, pan: d.pan, mute: false, oct: 0, rev: d.rev, dly: d.dly, chord: d.chord };
+  return { id: uid(), role, name: d.name, inst: inst || d.inst, vol: d.vol, pan: d.pan, oct: 0, rev: d.rev, dly: d.dly, chord: d.chord };
 }
 
 export function makeSection(tracks) {
-  return { bars: 2, ev: Object.fromEntries(tracks.map((t) => [t.id, []])), fx: [] };
+  return { bars: 2, ev: Object.fromEntries(tracks.map((t) => [t.id, []])), fx: [], mute: {} };
 }
 
 export function newProject(name) {
@@ -170,10 +170,13 @@ export function repair(p) {
     s.bars = [1, 2, 4, 8].includes(s.bars) ? s.bars : 2;
     s.ev = s.ev || {};
     s.fx = s.fx || [];
+    s.mute = s.mute || {};
+    for (const t of p.tracks) if (t.mute) s.mute[t.id] = true;      // older saves muted a track everywhere
     for (const t of p.tracks) {
       s.ev[t.id] = (s.ev[t.id] || []).filter((e) => e && e.t >= 0 && e.t < s.bars * BAR).sort((a, b) => a.t - b.t);
     }
   }
+  for (const t of p.tracks) delete t.mute;
   p.cur = Math.min(p.cur || 0, p.sections.length - 1);
   p.song = (p.song || []).filter((b) => b.sec < p.sections.length);
   for (const b of p.song) { b.off = b.off || {}; b.fx = b.fx || []; b.rep = b.rep || 1; }
@@ -181,7 +184,9 @@ export function repair(p) {
 }
 
 export function loadSettings() {
-  return Object.assign({ haptics: true, names: false, tapOffset: 0, metroPlay: false, smooth: 'auto' }, readJSON(SETTINGS_KEY, {}));
+  const st = Object.assign({ haptics: true, names: false, tapOffset: 0, metroPlay: false, smooth: 'off', advanced: false, versions: false }, readJSON(SETTINGS_KEY, {}));
+  if (st.smooth !== 'on') st.smooth = 'off';      // the big buffer slows taps: only when asked for
+  return st;
 }
 export function saveSettings(s) {
   writeJSON(SETTINGS_KEY, s);
@@ -223,6 +228,30 @@ export const canUndo = () => undoStack.length > 0;
 export const canRedo = () => redoStack.length > 0;
 
 // ---------- editing ----------
+
+// Mutes belong to a section, so A can have the drums resting while B has them playing.
+export function isMuted(p, track, secIdx = p.cur) {
+  const m = p.sections[secIdx] && p.sections[secIdx].mute;
+  return !!(m && m[track.id]);
+}
+export function setMuted(p, track, on, secIdx = p.cur) {
+  const s = p.sections[secIdx];
+  s.mute = s.mute || {};
+  if (on) s.mute[track.id] = true; else delete s.mute[track.id];
+}
+
+// The chord a bubble plays: its own if one was set (advanced mode), else the track's.
+export function chordOf(track, col) {
+  return (track.chords && track.chords[col]) || track.chord || 'off';
+}
+
+export function moveTrack(p, id, dir) {
+  const i = p.tracks.findIndex((t) => t.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= p.tracks.length) return false;
+  pushUndo(p);
+  [p.tracks[i], p.tracks[j]] = [p.tracks[j], p.tracks[i]];
+  return true;
+}
 
 export function insertSorted(list, ev) {
   let lo = 0, hi = list.length;
@@ -347,7 +376,7 @@ export function removeTrack(p, id) {
   if (p.tracks.length <= 1) return false;
   pushUndo(p);
   p.tracks = p.tracks.filter((t) => t.id !== id);
-  for (const s of p.sections) { delete s.ev[id]; s.fx = s.fx.filter((f) => f.tr !== id); }
+  for (const s of p.sections) { delete s.ev[id]; if (s.mute) delete s.mute[id]; s.fx = s.fx.filter((f) => f.tr !== id); }
   for (const b of p.song) { delete b.off[id]; if (b.sp) delete b.sp[id]; b.fx = b.fx.filter((f) => f.tr !== id); }
   return true;
 }
@@ -363,14 +392,14 @@ export function quantizeTrack(p, secIdx, trackId, grid) {
 }
 
 // Step editing: flip one 16th for one bubble.
-export function toggleStep(p, secIdx, track, row, col, step, grid = STEP) {
+export function toggleStep(p, secIdx, track, row, col, step, grid = STEP, len = grid) {
   const list = trackEvents(p, secIdx, track.id);
   const t0 = step * grid;
   const hit = list.findIndex((e) => e.r === row && e.c === col && e.t >= t0 && e.t < t0 + grid);
   pushUndo(p);
   if (hit >= 0) { list.splice(hit, 1); return false; }
-  const ev = { t: t0, d: track.role === 'drums' ? STEP : grid, r: row, c: col, v: 0.85 };
-  if (track.role !== 'drums' && track.chord && track.chord !== 'off') ev.ch = track.chord;
+  const ev = { t: t0, d: track.role === 'drums' ? STEP : len, r: row, c: col, v: 0.85 };
+  if (track.role !== 'drums' && chordOf(track, col) !== 'off') ev.ch = chordOf(track, col);
   insertSorted(list, ev);
   return true;
 }
@@ -413,10 +442,15 @@ export function applyPattern(p, secIdx, trackId, patternId) {
 
 export function addBlock(p, at = p.song.length, from = null) {
   pushUndo(p);
-  const src = from != null ? p.song[from] : p.song[p.song.length - 1];
-  const b = src
-    ? { sec: src.sec, rep: src.rep, off: { ...src.off }, sp: JSON.parse(JSON.stringify(src.sp || {})), fx: [] }
-    : { sec: p.cur, rep: 1, off: {}, fx: [] };
+  // A copy takes everything, spice and recorded FX included. A plain "+"
+  // starts clean: the last block's section and repeats, that section's mutes.
+  let b;
+  if (from != null) b = JSON.parse(JSON.stringify(p.song[from], strip));
+  else {
+    const last = p.song[p.song.length - 1];
+    const sec = last ? last.sec : p.cur;
+    b = { sec, rep: last ? last.rep : 1, off: { ...(p.sections[sec].mute || {}) }, fx: [] };
+  }
   p.song.splice(at, 0, b);
   return b;
 }

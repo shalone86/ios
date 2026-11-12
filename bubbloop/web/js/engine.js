@@ -5,7 +5,7 @@ import { PPQ, STEP, BAR, quantizeTick } from './theory.js';
 import { getKit } from './drums.js';
 import { buildGraph } from './graph.js';
 import { songSegments, scheduleRange, swingUnwarp } from './seq.js';
-import { insertSorted, pushUndo } from './state.js';
+import { insertSorted, pushUndo, chordOf } from './state.js';
 
 const LOOKAHEAD = 0.12;   // seconds scheduled ahead of the clock
 const INTERVAL = 25;      // ms between scheduler runs
@@ -23,7 +23,7 @@ export class Engine {
     this.loopSong = false;
     this.tapOffset = 0;
     this.acc = 0;              // accidental applied to hand-played notes: -1, 0, +1
-    this.smooth = 'auto';      // 'auto' | 'on' | 'off': bigger audio buffer for Bluetooth        // user latency trim, seconds
+    this.smooth = 'off';       // 'on': bigger audio buffer, for Bluetooth crackle        // user latency trim, seconds
     this.metroPlay = false;
     this.viz = [];             // things the UI should animate, in time order
     this.listeners = new Set();
@@ -47,17 +47,9 @@ export class Engine {
   async wake(project) {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
-      const big = this.smooth === 'on' || (this.smooth === 'auto' && this.autoSmooth);
+      const big = this.smooth === 'on';
       this.ctx = new AC({ latencyHint: big ? 'playback' : 'interactive' });
       this.bigBuffer = big;
-      // Bluetooth outputs cannot keep up with the smallest buffer and crackle.
-      // They show up as a long output latency: if so, reopen with a safer one.
-      if (!big && this.smooth === 'auto') {
-        setTimeout(() => {
-          const c = this.ctx;
-          if (c && !this.playing && (c.outputLatency || 0) > 0.09) { this.autoSmooth = true; this.reopen(); }
-        }, 1500);
-      }
     }
     if (this.ctx.state !== 'running') {
       try { await this.ctx.resume(); } catch (e) { /* will retry on next touch */ }
@@ -89,6 +81,7 @@ export class Engine {
     const kit = await getKit(this.ctx.sampleRate, project.key);
     this.g = buildGraph(this.ctx, project, kit);
     this.applyLatches();
+    this.refreshMutes();
     this.idleNext = this.ctx.currentTime;
     this.idleIdx = 0;
     if (!this.timer) this.timer = setInterval(() => this.tick(), INTERVAL);
@@ -201,6 +194,7 @@ export class Engine {
       this.emit('queue');
     } else {
       p.cur = idx;
+      this.refreshMutes();
       this.emit('section');
     }
   }
@@ -298,6 +292,7 @@ export class Engine {
       next = this.loopSeg(idx, start);
       if (idx !== p.cur) {
         p.cur = idx;
+        this.refreshMutes();
         this.viz.push({ time: this.timeAt(start), kind: 'section', idx });
       }
     }
@@ -355,7 +350,7 @@ export class Engine {
     if (!this.ready) return 0;
     const now = this.now;
     const drums = track.role === 'drums';
-    const chord = drums ? undefined : track.chord;
+    const chord = drums ? undefined : chordOf(track, col);
     const acc = drums ? 0 : this.acc;
     const handles = this.g.playCell(track, row, col, chord, vel, now, undefined, acc);
     const id = ++this.nid;
@@ -381,6 +376,20 @@ export class Engine {
     }
     this.held.set(id, h);
     return id;
+  }
+
+  // Pitch-bend a held note (finger wiggling up and down on its bubble).
+  bend(id, cents) {
+    const h = this.held.get(id);
+    if (h) h.handles.forEach((x) => x.bend && x.bend(cents, this.now));
+  }
+
+  // Loop mode follows the current section's mutes; song mode uses the blocks'.
+  refreshMutes() {
+    if (!this.g) return;
+    const p = this.project, m = (this.mode === 'loop' && p.sections[p.cur].mute) || {};
+    this.g.mutedIds = new Set(Object.keys(m).filter((k) => m[k]));
+    this.syncAll();
   }
 
   noteOff(id) {
