@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A happy pink bubble with two friends. Everything sits inside the 66dp
+     safe zone so no launcher mask can clip it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- small friends -->
+    <path android:pathData="M78,37m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:centerX="75.5" android:centerY="34" android:gradientRadius="11" android:type="radial">
+                <item android:color="#FFFFFFFF" android:offset="0" />
+                <item android:color="#FF9BDCFF" android:offset="0.45" />
+                <item android:color="#FF4AA3E8" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M31,73m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:centerX="29" android:centerY="70.5" android:gradientRadius="8.500" android:type="radial">
+                <item android:color="#FFFFFFFF" android:offset="0" />
+                <item android:color="#FFFFD98A" android:offset="0.45" />
+                <item android:color="#FFF2A140" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- the big bubble -->
+    <path android:pathData="M53,57m-23,0a23,23 0,1 1,46 0a23,23 0,1 1,-46 0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:centerX="45" android:centerY="47" android:gradientRadius="34" android:type="radial">
+                <item android:color="#FFFFFFFF" android:offset="0" />
+                <item android:color="#FFFFC4DC" android:offset="0.22" />
+                <item android:color="#FFFF94BE" android:offset="0.6" />
+                <item android:color="#FFE85C93" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- shine -->
+    <path android:fillColor="#E6FFFFFF" android:pathData="M42,44m-4,0a4,3 0,1 1,8 0a4,3 0,1 1,-8 0" />
+    <!-- eyes -->
+    <path android:fillColor="#FF33205A" android:pathData="M45,57m-2.600,0a2.600,3.400 0,1 1,5.200 0a2.600,3.400 0,1 1,-5.200 0" />
+    <path android:fillColor="#FF33205A" android:pathData="M61,57m-2.600,0a2.600,3.400 0,1 1,5.200 0a2.600,3.400 0,1 1,-5.200 0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M46,55.600m-1,0a1,1 0,1 1,2 0a1,1 0,1 1,-2 0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M62,55.600m-1,0a1,1 0,1 1,2 0a1,1 0,1 1,-2 0" />
+    <!-- smile -->
+    <path
+        android:pathData="M49,63.500q4,4 8,0"
+        android:strokeColor="#FF33205A"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.900" />
+    <!-- cheeks -->
+    <path android:fillColor="#73FF5C93" android:pathData="M39,63.500m-3.400,0a3.400,2 0,1 1,6.800 0a3.400,2 0,1 1,-6.800 0" />
+    <path android:fillColor="#73FF5C93" android:pathData="M67,63.500m-3.400,0a3.400,2 0,1 1,6.800 0a3.400,2 0,1 1,-6.800 0" />
+</vector>

@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.bubbloop.app'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'com.bubbloop.app'
+        minSdk 24
+        targetSdk 35
+        versionCode 8
+        versionName '1.5'
+    }
+
+    // The whole app is the web folder; the Android side is a thin shell.
+    sourceSets {
+        main.assets.srcDirs = ['../../web']
+    }
+
+    // A fixed key kept in the repo so that every build (yours, CI's) can be
+    // installed over the last one. It is for sideloading only: publish to a
+    // store with a private key of your own.
+    signingConfigs {
+        sideload {
+            storeFile file('sideload.jks')
+            storePassword 'bubbloop'
+            keyAlias 'bubbloop'
+            keyPassword 'bubbloop'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.sideload
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.sideload
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
