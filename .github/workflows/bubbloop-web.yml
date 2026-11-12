@@ -1,10 +1,14 @@
 name: Bubbloop web
 
-# Publishes bubbloop/web as a web page with GitHub Pages, so the app can be
-# opened and installed from a link. Runs only when started by hand, because
-# it makes the app public. Before the first run: Settings -> Pages -> Source:
-# GitHub Actions.
+# Publishes bubbloop/web as a web page with GitHub Pages whenever bubbloop/web
+# changes on main, or when triggered by hand.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'bubbloop/web/**'
+      - '.github/workflows/bubbloop-web.yml'
   workflow_dispatch:
 
 permissions:
