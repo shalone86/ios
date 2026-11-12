@@ -86,6 +86,17 @@ check(await state(() => window.bubbloop.project.sections[0].ev[window.bubbloop.t
 await click('[data-tool="redo"]');
 check(await state(() => window.bubbloop.project.sections[0].ev[window.bubbloop.trackId].length) === 30, 'redo restores the groove');
 
+console.log('Your own grooves');
+await click('[data-tool="grooves"]');
+await page.fill('#g-name', 'Test beat');
+await click('#g-save');
+check(await state(() => JSON.parse(localStorage.getItem('bubbloop.grooves'))[0].name === 'Test beat'), 'a loop can be kept as a groove');
+await click('[data-tool="clear"]');
+await click('[data-tool="grooves"]');
+await click('[data-mine]');
+check(await state(() => window.bubbloop.project.sections[0].ev[window.bubbloop.trackId].length) === 30, 'and dropped back into a loop');
+await page.evaluate(() => document.getElementById('scrim').click());
+
 console.log('Steps and chords');
 await click('[data-tool="steps"]');
 await tap(1, 0);
@@ -197,6 +208,17 @@ await wait(150);
 check(await state(() => window.bubbloop.engine.mode === 'song' && window.bubbloop.project.song.some((b) => b.fx.some((f) => f.k === 'filter'))), 'FX recorded onto the song timeline from the FX tab');
 await click('#btn-play');
 await click('.tab[data-view="song"]');
+// a long song: the view has to follow the block that is playing
+await state(() => { const b = window.bubbloop; for (let i = 0; i < 12; i++) b.project.song.push({ sec: 0, rep: 1, off: {}, fx: [] }); b.engine.songFrom = 11; b.songSel = 11; });
+await click('.tab[data-view="mix"]'); await click('.tab[data-view="song"]');
+await click('#btn-play');
+await page.waitForFunction(() => window.bubbloop.nowBlock >= 11, null, { timeout: 8000 });
+await wait(700);
+check(await state(() => { const m = document.querySelector('#songview .matrix').getBoundingClientRect(); const c = document.querySelector('#songview thead [data-col="' + window.bubbloop.nowBlock + '"]').getBoundingClientRect(); return c.left >= m.left && c.right <= m.right + 1; }), 'song view scrolls to follow the playing block');
+check(await state(() => { const m = document.getElementById('sections').getBoundingClientRect(); const c = document.querySelector('#sections [data-block="' + window.bubbloop.nowBlock + '"]').getBoundingClientRect(); return c.left >= m.left - 1 && c.right <= m.right + 1; }), 'top strip follows it too');
+await click('#btn-play');
+await state(() => { const b = window.bubbloop; b.project.song.length = 2; b.engine.songFrom = 0; b.songSel = 0; });
+await click('.tab[data-view="mix"]'); await click('.tab[data-view="song"]');
 
 fs.writeFileSync(path.join(OUT, 'app-project.json'), await state(() => JSON.stringify(window.bubbloop.project, (k, v) => (k[0] === '_' ? undefined : v))));
 
@@ -258,7 +280,8 @@ const bars = await state(() => { const p = window.bubbloop.project; return p.sec
 check(Math.abs(loopDur - bars) < 0.002, `seamless loop is exactly ${bars.toFixed(3)}s (${loopDur.toFixed(3)}s)`);
 
 console.log('Persistence');
-await wait(900);
+await state(() => window.bubbloopPause());       // leaving the app saves at once
+await wait(300);
 const saved = await state(() => JSON.parse(localStorage.getItem('bubbloop.p.' + window.bubbloop.project.id)));
 check(saved && saved.song.length === 2 && saved.sections.length === 2, 'song autosaved');
 check(!JSON.stringify(saved).includes('"_p"'), 'no scratch fields in the save');
@@ -266,6 +289,16 @@ await page.reload();
 await click('#btn-start');
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.engine.ready);
 check(await state(() => window.bubbloop.project.sections.length) === 2, 'song comes back after a restart');
+
+console.log('Installable web app');
+await page.waitForFunction(() => navigator.serviceWorker.controller || navigator.serviceWorker.ready.then(() => true), null, { timeout: 15000 });
+await wait(1500);
+await context.setOffline(true);
+await page.reload();
+await click('#btn-start');
+check(await page.locator('#grid .cell').count() === 25, 'opens with no connection once visited');
+await context.setOffline(false);
+check(execFileSync('node', [new URL('../tools/make-web.mjs', import.meta.url).pathname, '--check']).toString().includes('up to date'), 'offline file list is current');
 
 check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
 await browser.close();

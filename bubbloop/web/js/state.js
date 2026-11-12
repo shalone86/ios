@@ -184,7 +184,7 @@ export function repair(p) {
 }
 
 export function loadSettings() {
-  const st = Object.assign({ haptics: true, names: false, tapOffset: 0, metroPlay: false, smooth: 'off', advanced: false, versions: false }, readJSON(SETTINGS_KEY, {}));
+  const st = Object.assign({ haptics: true, names: false, tapOffset: 0, metroPlay: false, smooth: 'off', advanced: false, versions: false, builtin: true }, readJSON(SETTINGS_KEY, {}));
   if (st.smooth !== 'on') st.smooth = 'off';      // the big buffer slows taps: only when asked for
   return st;
 }
@@ -402,6 +402,36 @@ export function toggleStep(p, secIdx, track, row, col, step, grid = STEP, len = 
   if (track.role !== 'drums' && chordOf(track, col) !== 'off') ev.ch = chordOf(track, col);
   insertSorted(list, ev);
   return true;
+}
+
+// ---------- your own grooves ----------
+// A loop you made can be kept as a groove and dropped into any song. Grooves
+// live on the device, not in a song.
+const GROOVES_KEY = 'bubbloop.grooves';
+export function listGrooves() {
+  return readJSON(GROOVES_KEY, []);
+}
+export function saveGroove(p, secIdx, track, name) {
+  const sec = p.sections[secIdx];
+  const ev = (sec.ev[track.id] || []).map((e) => ({ t: e.t, r: e.r, c: e.c, v: e.v }));
+  if (!ev.length) return null;
+  const g = { id: uid(), name: name || 'My groove', len: sectionLen(sec), kind: track.group || 'kit', swing: p.swing, ev };
+  const all = listGrooves();
+  all.unshift(g);
+  writeJSON(GROOVES_KEY, all);
+  return g;
+}
+export function deleteGroove(id) {
+  writeJSON(GROOVES_KEY, listGrooves().filter((g) => g.id !== id));
+}
+export function applyGroove(p, secIdx, trackId, g) {
+  pushUndo(p);
+  const sec = p.sections[secIdx], len = sectionLen(sec), out = [];
+  for (let off = 0; off < len; off += g.len) {
+    for (const e of g.ev) if (e.t + off < len) out.push({ t: e.t + off, d: STEP, r: e.r, c: e.c, v: e.v });
+  }
+  sec.ev[trackId] = out.sort((a, b) => a.t - b.t);
+  if (g.swing != null) p.swing = g.swing;
 }
 
 // Lay a preset drum groove across the whole section.

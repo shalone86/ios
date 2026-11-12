@@ -1,0 +1,36 @@
+name: Bubbloop web
+
+# Publishes bubbloop/web as a web page with GitHub Pages, so the app can be
+# opened and installed from a link. Runs only when started by hand, because
+# it makes the app public. Before the first run: Settings -> Pages -> Source:
+# GitHub Actions.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Refresh the offline file list
+        run: node bubbloop/tools/make-web.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: bubbloop/web
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -453,23 +453,47 @@ function copyBlock(i) {
 }
 
 function grooves() {
-  const p = app.project;
+  const p = app.project, st = app.settings;
   const t = curTrack().role === 'drums' ? curTrack() : p.tracks.find((x) => x.role === 'drums');
   if (!t) { toast('Add a drum track first'); return; }
+  const kind = t.group || 'kit';
+  const mine = S.listGrooves().filter((g) => g.kind === kind);
+  const hasNotes = S.trackEvents(p, p.cur, t.id).length > 0;
   show(`
     <h2>Drum grooves</h2>
     <p class="sub">Drop a beat into this loop, then change it: tap extra hits over the top, or open Steps to edit it note by note.</p>
-    <div class="cards">${PATTERNS.map((g) => `<button class="card" data-groove="${g.id}"><b>${g.name}</b><small>${g.mood}</small></button>`).join('')}</div>
+    <h3>Yours</h3>
+    ${mine.length ? `<div class="list">${mine.map((g) => `<div class="item"><button class="sp" data-mine="${g.id}" style="text-align:left"><b>${esc(g.name)}</b><small>${g.len / 384} bar${g.len > 384 ? 's' : ''}</small></button><button class="pill round small danger" data-gdel="${g.id}" aria-label="Delete ${esc(g.name)}">${icon('trash')}</button></div>`).join('')}</div>` : '<p class="sub">None yet. Make a beat you like, then keep it here to reuse in any song.</p>'}
+    <div class="field" style="margin-top:8px"><input type="text" id="g-name" maxlength="24" placeholder="Name this loop's beat" aria-label="Groove name"><button class="pill" id="g-save" ${hasNotes ? '' : 'disabled'}>Keep</button></div>
+    <div class="field" style="margin-top:14px"><span>Built-in grooves</span><span style="flex:1"></span><button class="toggle ${st.builtin ? 'on' : ''}" id="g-builtin" aria-label="Show built-in grooves"></button></div>
+    ${st.builtin ? `<div class="cards">${PATTERNS.map((g) => `<button class="card" data-groove="${g.id}"><b>${g.name}</b><small>${g.mood}</small></button>`).join('')}</div>` : '<p class="sub">Hidden. Only grooves you made are offered.</p>'}
   `, (root) => {
-    on(root, '[data-groove]', async (b) => {
-      const g = PATTERNS.find((x) => x.id === b.dataset.groove);
-      S.applyPattern(p, p.cur, t.id, g.id);
-      root.querySelectorAll('[data-groove]').forEach((n) => n.classList.toggle('on', n === b));
+    const start = async (label) => {
       afterEdit();
       await app.engine.wake(p);
       if (!app.engine.playing) app.engine.play();
-      toast(g.swing ? `${g.name} · swing ${Math.round(g.swing * 100)}%` : g.name);
+      toast(label);
+    };
+    on(root, '[data-groove]', (b) => {
+      const g = PATTERNS.find((x) => x.id === b.dataset.groove);
+      S.applyPattern(p, p.cur, t.id, g.id);
+      root.querySelectorAll('[data-groove]').forEach((n) => n.classList.toggle('on', n === b));
+      start(g.swing ? `${g.name} · swing ${Math.round(g.swing * 100)}%` : g.name);
     });
+    on(root, '[data-mine]', (b) => {
+      const g = mine.find((x) => x.id === b.dataset.mine);
+      S.applyGroove(p, p.cur, t.id, g);
+      start(g.name);
+    });
+    on(root, '[data-gdel]', (b) => {
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.classList.add('on'); toast('Tap again to delete it'); return; }
+      S.deleteGroove(b.dataset.gdel); grooves();
+    });
+    root.querySelector('#g-save').addEventListener('click', () => {
+      const name = root.querySelector('#g-name').value.trim() || `${p.name} ${S.SECTION_NAMES[p.cur]}`;
+      if (S.saveGroove(p, p.cur, t, name)) { toast(`Kept as "${name}"`); grooves(); }
+    });
+    root.querySelector('#g-builtin').addEventListener('click', () => { st.builtin = !st.builtin; S.saveSettings(st); grooves(); });
   });
 }
 

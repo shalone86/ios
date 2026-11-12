@@ -66,6 +66,13 @@ export function shareFile(saved, title) {
   if (N && saved && saved.uri) N.shareFile(saved.uri, saved.mime, title || '');
 }
 
+// On the web, keep an offline copy so the page can be installed and opened
+// without a connection. (The Android app already carries its own files.)
+export function goOffline() {
+  if (N || !('serviceWorker' in navigator) || !/^https:|^http:\/\/(localhost|127\.)/.test(location.href)) return;
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
 // Lets the Android back button close sheets before leaving the app.
 export function onBack(handler) {
   window.bubbloopBack = () => !!handler();

@@ -97,6 +97,19 @@ cd bubbloop/web && python3 -m http.server 8000
 # open http://localhost:8000 (Chrome works best; use the phone toolbar)
 ```
 
+## Share it as a web app
+
+`web/` is a complete installable web app (a manifest, icons and an offline
+copy kept by `sw.js`), so it can be shared as a link with no store involved.
+Host the folder anywhere that serves https: itch.io (upload a zip of `web/`
+as an HTML game), or GitHub Pages using the **Bubbloop web** workflow under
+Actions, which is started by hand. Visitors can use it in the browser or
+choose "Add to Home Screen" / "Install app" for a full-screen app that works
+offline.
+
+After changing anything in `web/`, run `node bubbloop/tools/make-web.mjs` so
+installed copies pick up the new version (the tests fail if you forget).
+
 ## Build the APK
 
 Needs JDK 17+ and the Android SDK (platform 35, build-tools 35.0.0).

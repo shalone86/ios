@@ -7,7 +7,7 @@ import { getSample } from '../samples.js';
 import { FX } from '../graph.js';
 import { instrumentById } from '../instruments.js';
 import * as S from '../state.js';
-import { haptic, keepAwake, onBack, onPause, exitApp } from '../platform.js';
+import { haptic, keepAwake, onBack, onPause, exitApp, goOffline } from '../platform.js';
 import { mountIcons, icon, FACE, mascot, ROLE_COLOR, ROLE_COLOR_LO, FX_ART } from './art.js';
 import { Particles } from './particles.js';
 import { openSheets, closeSheet, sheetIsOpen } from './sheets.js';
@@ -498,6 +498,23 @@ function drawSong() {
 
 function markSongColumn() {
   el.song.querySelectorAll('[data-col]').forEach((n) => n.classList.toggle('col-now', +n.dataset.col === app.nowBlock));
+  followBlock();
+}
+
+// While a song plays, keep the block that is sounding in view: both in the
+// strip at the top and in the matrix. Only sideways, and only if it is off
+// screen or near an edge, so it never fights a finger.
+function followBlock() {
+  if (app.nowBlock < 0) return;
+  const bring = (scroller, node, lead = 0) => {
+    if (!scroller || !node) return;
+    const s = scroller.getBoundingClientRect(), n = node.getBoundingClientRect();
+    if (n.left < s.left + lead || n.right > s.right - 8) {
+      scroller.scrollTo({ left: scroller.scrollLeft + (n.left - s.left) - lead - (s.width - lead - n.width) / 2, behavior: 'smooth' });
+    }
+  };
+  bring(el.sections, el.sections.querySelector(`[data-block="${app.nowBlock}"]`));
+  bring(el.song.querySelector('.matrix'), el.song.querySelector(`thead [data-col="${app.nowBlock}"]`), 46);
 }
 
 function bindSong() {
@@ -674,7 +691,7 @@ function frame() {
         el.count.innerHTML = '';
         if (v.seg.block !== app.nowBlock) {
           app.nowBlock = v.seg.block;
-          if (engine.mode === 'song') { renderSections(); markSongColumn(); mapDirty = true; }
+          if (engine.mode === 'song') { renderSections(); markSongColumn(); mapDirty = true; if (app.view === 'fx') renderTools(); }
         }
       }
       if (!el.steps.hidden) {
@@ -976,6 +993,7 @@ async function boot() {
   $('btn-start').onclick = start;
   el.splash.addEventListener('pointerdown', (e) => { if (e.target === el.splash) start(); });
   window.bubbloop = app;       // handy for tests and tinkering
+  goOffline();
 }
 
 boot();
