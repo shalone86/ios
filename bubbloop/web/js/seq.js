@@ -103,7 +103,7 @@ export function scheduleRange(g, project, seg, a, b, timeAt, hooks = {}) {
       const hs = g.playCell(track, ev.r, ev.c, ev.ch, Math.min(1, ev.v * gain), time, ev.d * spt, ev.a);
       // a recorded pitch bend plays back with its note
       if (ev.b) for (const [dt, cents] of ev.b) for (const h of hs) if (h.bend) h.bend(cents, time + dt * spt);
-      if (hooks.onNote) hooks.onNote(track, ev, time);
+      if (hooks.onNote) hooks.onNote(track, ev, time, gain);
     }
   }
 

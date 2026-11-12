@@ -25,6 +25,7 @@
     <button id="btn-project" class="pill grow" aria-label="Song menu"><span class="ico" data-ico="menu"></span><span id="project-name">Song</span></button>
     <button id="btn-tempo" class="pill" aria-label="Tempo"><span class="ico" data-ico="heart"></span><span id="tempo-label">92</span></button>
     <button id="btn-key" class="pill" aria-label="Key and scale"><span class="ico" data-ico="note"></span><span id="key-label">C major</span></button>
+    <button id="btn-midi" class="pill round midi-btn" aria-label="MIDI" hidden><span class="ico" data-ico="midi"></span></button>
     <button id="btn-export" class="pill round" aria-label="Export"><span class="ico" data-ico="share"></span></button>
   </header>
 
@@ -42,16 +43,20 @@
     <div id="hint"></div>
   </div>
 
-  <nav id="tracks" class="scroll-x"></nav>
-  <div id="tools" class="scroll-x"></div>
-  <div id="steps" hidden></div>
+  <div id="panel">
+    <nav id="tracks" class="scroll-x"></nav>
+    <div id="tools" class="scroll-x"></div>
+  </div>
+  <div id="workspace">
+    <div id="steps" hidden></div>
 
-  <main id="stage">
-    <div id="grid" class="view"></div>
-    <div id="fxview" class="view" hidden></div>
-    <div id="mixview" class="view" hidden></div>
-    <div id="songview" class="view" hidden></div>
-  </main>
+    <main id="stage">
+      <div id="grid" class="view"></div>
+      <div id="fxview" class="view" hidden></div>
+      <div id="mixview" class="view" hidden></div>
+      <div id="songview" class="view" hidden></div>
+    </main>
+  </div>
 
   <nav id="tabs">
     <button data-view="play" class="tab on"><span class="ico" data-ico="bubbles"></span><b>Play</b></button>

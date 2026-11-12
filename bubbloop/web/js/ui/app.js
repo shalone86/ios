@@ -7,7 +7,8 @@ import { getSample } from '../samples.js';
 import { FX } from '../graph.js';
 import { instrumentById } from '../instruments.js';
 import * as S from '../state.js';
-import { haptic, keepAwake, onBack, onPause, exitApp, goOffline } from '../platform.js';
+import { MidiController } from '../midi.js';
+import { haptic, keepAwake, onBack, onPause, exitApp, goOffline, isNative } from '../platform.js';
 import { mountIcons, icon, FACE, mascot, ROLE_COLOR, ROLE_COLOR_LO, FX_ART } from './art.js';
 import { Particles } from './particles.js';
 import { openSheets, closeSheet, sheetIsOpen } from './sheets.js';
@@ -37,6 +38,74 @@ export const app = {
 };
 const engine = app.engine;
 const particles = new Particles($('particles'));
+
+const midiHeldCells = new Map();
+let midiPulseTimer = null;
+function renderMidiButton() {
+  const btn = $('btn-midi');
+  if (!btn) return;
+  btn.hidden = !midi.supported;
+  if (!midi.supported) return;
+  const count = midi.inputs().length + midi.outputs().length;
+  btn.classList.toggle('has-midi', count > 0 || !!midi.settings().outId);
+  const active = midi.lastActivity && Date.now() - midi.lastActivity.at < 300;
+  btn.classList.toggle('on', !!active);
+  if (active) {
+    clearTimeout(midiPulseTimer);
+    midiPulseTimer = setTimeout(() => btn.classList.remove('on'), 240);
+  }
+}
+
+const midi = new MidiController({
+  getProject: () => app.project,
+  getCurTrack: () => curTrack(),
+  getSettings: () => app.settings.midi,
+  onNoteOn({ track, r, c, acc, vel }) {
+    if (!engine.ready) {
+      engine.wake(app.project).catch(() => {});
+      if (!engine.ready) { toast('Click anywhere once to unlock audio', 1600); return 0; }
+    }
+    const id = engine.noteOn(track, r, c, vel, { acc });
+    if (id && app.view === 'play' && track.id === curTrack().id) {
+      const cell = cellEl(r, c);
+      if (cell) {
+        cell.classList.add('on');
+        sparkle(cell, 3);
+        midiHeldCells.set(id, cell);
+      }
+    }
+    const pod = el.tracks.querySelector(`[data-track="${track.id}"]`);
+    if (pod && !pod.classList.contains('hit')) {
+      pod.classList.add('hit');
+      setTimeout(() => pod.classList.remove('hit'), 110);
+    }
+    if (app.stepsOn && track.id === curTrack().id && (app.focus.r !== r || app.focus.c !== c)) {
+      app.focus = { r, c };
+      renderSteps();
+      updateBadges();
+    }
+    return id;
+  },
+  onNoteOff(id) {
+    engine.noteOff(id);
+    const cell = midiHeldCells.get(id);
+    if (cell) {
+      midiHeldCells.delete(id);
+      const heldByMouse = [...pointers.values()].some((p) => p.cell === cell);
+      const heldByMidi = [...midiHeldCells.values()].includes(cell);
+      if (!heldByMouse && !heldByMidi) cell.classList.remove('on');
+    }
+  },
+  onBend(id, cents) {
+    engine.bend(id, cents);
+  },
+  onChange() {
+    renderMidiButton();
+    if (sheetIsOpen()) document.dispatchEvent(new CustomEvent('bubbloop:midi'));
+  },
+});
+app.midi = midi;
+engine.midiOut = midi;
 
 export const curTrack = () => app.project.tracks.find((t) => t.id === app.trackId) || app.project.tracks[0];
 const curSection = () => app.project.sections[app.project.cur];
@@ -216,12 +285,18 @@ function renderGrid() {
 
 const cellEl = (r, c) => el.grid.children[(ROWS - 1 - r) * COLS + c];
 
-// The grid is the largest square that fits the stage.
+// The grid fills the stage cleanly: square on portrait/narrow stages, and
+// stretched comfortably across wide landscape/desktop stages while keeping
+// every bubble circular.
 function fitGrid() {
   const b = el.stage.getBoundingClientRect();
-  const size = Math.max(150, Math.floor(Math.min(b.width, b.height)));
-  el.grid.style.width = el.grid.style.height = `${size}px`;
-  el.grid.style.setProperty('--cell', `${size / COLS}px`);
+  const cell = Math.max(30, Math.floor(Math.min(b.width / COLS, b.height / ROWS)));
+  const h = Math.max(150, Math.floor(Math.min(b.height, cell * ROWS)));
+  const wide = b.width > b.height * 1.08 && window.innerWidth >= 560;
+  const w = wide ? Math.max(h, Math.floor(Math.min(b.width, h * 1.45))) : h;
+  el.grid.style.width = `${w}px`;
+  el.grid.style.height = `${h}px`;
+  el.grid.style.setProperty('--cell', `${Math.min(w / COLS, h / ROWS)}px`);
 }
 
 function updateBadges() {
@@ -808,6 +883,7 @@ function bind() {
   $('btn-project').onclick = () => openSheets.project();
   $('btn-tempo').onclick = () => openSheets.tempo();
   $('btn-key').onclick = () => openSheets.key();
+  $('btn-midi').onclick = () => openSheets.midi();
   $('btn-export').onclick = () => openSheets.exporter();
 
   el.play.onclick = async () => {
@@ -940,6 +1016,25 @@ function bind() {
     return true;
   });
   onPause(() => { engine.suspend(); saveNow(); });
+  window.addEventListener('keydown', async (e) => {
+    if (e.key === 'Escape' && sheetIsOpen()) { closeSheet(); return; }
+    if (e.target && e.target.closest && e.target.closest('input, textarea, select')) return;
+    if (sheetIsOpen()) return;
+    if (e.code === 'Space' && !e.repeat) {
+      e.preventDefault();
+      await engine.wake(app.project);
+      if (engine.playing) engine.stop();
+      else if (engine.mode === 'song' && !app.project.song.length) toast('Add a block to your song first');
+      else engine.play();
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) { if (S.redo(app.project)) { afterStructureChange(); toast('Redone'); } }
+      else if (S.undo(app.project)) { afterStructureChange(); toast('Undone'); }
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      if (S.redo(app.project)) { afterStructureChange(); toast('Redone'); }
+    }
+  });
 }
 
 function blockTool(tool) {
@@ -978,12 +1073,15 @@ async function boot() {
   engine.tapOffset = (app.settings.tapOffset || 0) / 1000;
   engine.metroPlay = !!app.settings.metroPlay;
   engine.smooth = app.settings.smooth || 'auto';
+  engine.localSound = app.settings.midi.localSound !== false;
   engine.project = app.project;
   bind();
   el.app.hidden = false;
   renderAll();
+  renderMidiButton();
   fitGrid();
   requestAnimationFrame(frame);
+  if (midi.supported && !isNative) midi.connect().catch(() => {});
 
   const start = async () => {
     el.splash.classList.add('gone');

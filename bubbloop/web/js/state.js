@@ -183,9 +183,20 @@ export function repair(p) {
   return p;
 }
 
+export const DEFAULT_MIDI = {
+  inId: 'all',
+  outId: '',
+  inputMode: 'chromatic',
+  drumMode: 'gm',
+  routing: 'omni',
+  localSound: true,
+  clockOut: false,
+};
+
 export function loadSettings() {
   const st = Object.assign({ haptics: true, names: false, tapOffset: 0, metroPlay: false, smooth: 'off', advanced: false, versions: false, builtin: true }, readJSON(SETTINGS_KEY, {}));
   if (st.smooth !== 'on') st.smooth = 'off';      // the big buffer slows taps: only when asked for
+  st.midi = Object.assign({}, DEFAULT_MIDI, st.midi || {});
   return st;
 }
 export function saveSettings(s) {

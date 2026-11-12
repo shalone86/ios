@@ -133,6 +133,7 @@ function project() {
       <button class="pill" data-act="export">${icon('share')}Export</button>
       <button class="pill" data-act="file">Save song file</button>
       <button class="pill" data-act="open">Import song file</button>
+      ${app.midi && app.midi.supported ? `<button class="pill" data-act="midi">${icon('midi')}MIDI</button>` : ''}
     </div>
     <input type="file" id="p-file" accept=".json,.bubbloop,application/json" hidden>
     ${others.length ? `<h3>Saved songs</h3><div class="list">${others.map((o) => `
@@ -209,6 +210,7 @@ function project() {
       else if (act === 'dup') { closeSheet(); await openProject(S.duplicateProject(p)); toast('Working on a copy'); }
       else if (act === 'demo') { closeSheet(); await openProject(S.demoProject()); toast('Press play, then poke around'); }
       else if (act === 'export') exporter();
+      else if (act === 'midi') midiSheet();
       else if (act === 'open') file.click();
       else if (act === 'file') {
         try {
@@ -765,4 +767,97 @@ function spice(blockIdx, trackId) {
   draw();
 }
 
-export const openSheets = { spice, space, copyBlock, sampler,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };
+// ---------- MIDI ----------
+
+let midiListenerBound = false;
+function midiSheet() {
+  const m = app.midi;
+  const st = app.settings.midi;
+  if (!midiListenerBound) {
+    midiListenerBound = true;
+    document.addEventListener('bubbloop:midi', () => {
+      if (sheetIsOpen() && shownTitle === 'MIDI') midiSheet();
+    });
+  }
+  if (!m || !m.supported) {
+    show(`
+      <h2>MIDI</h2>
+      <p class="sub">This browser does not support Web MIDI. Open Bubbloop in Chrome, Edge, or Firefox on desktop to play with MIDI keyboards, drum pads, and external synths.</p>
+      <button class="pill primary" id="m-close">Got it</button>
+    `, (root) => root.querySelector('#m-close').addEventListener('click', closeSheet));
+    return;
+  }
+  if (!m.connected) {
+    show(`
+      <h2>MIDI</h2>
+      <p class="sub">Play Bubbloop from a USB MIDI keyboard or pad controller, or send loops out to your DAW or hardware synth.</p>
+      ${m.error ? `<p class="sub" style="color:#d43d62">${esc(m.error)}</p>` : ''}
+      <button class="pill primary" id="m-conn">Connect MIDI devices</button>
+    `, (root) => root.querySelector('#m-conn').addEventListener('click', async () => {
+      await m.connect();
+      midiSheet();
+    }));
+    return;
+  }
+
+  const ins = m.inputs();
+  const outs = m.outputs();
+  const act = m.lastActivity && Date.now() - m.lastActivity.at < 8000 ? m.lastActivity : null;
+
+  show(`
+    <h2>MIDI</h2>
+    <p class="sub">${act ? `${act.dir === 'in' ? 'In' : 'Out'}: <b>${esc(act.text)}</b>` : `${ins.length} input${ins.length === 1 ? '' : 's'} · ${outs.length} output${outs.length === 1 ? '' : 's'} connected`}</p>
+    <h3>MIDI input</h3>
+    <div class="wrap">
+      <button class="pill small ${st.inId === 'all' ? 'on' : ''}" data-in="all">All inputs</button>
+      <button class="pill small ${st.inId === '' ? 'on' : ''}" data-in="">Off</button>
+      ${ins.map((p) => `<button class="pill small ${st.inId === p.id ? 'on' : ''}" data-in="${esc(p.id)}">${esc(p.name)}</button>`).join('')}
+    </div>
+    ${ins.length === 0 ? '<p class="sub" style="margin-top:6px">Plug in a MIDI keyboard or pad controller and it will appear here automatically.</p>' : ''}
+    <h3>Keyboard mode</h3>
+    <div class="wrap">
+      <button class="pill small ${st.inputMode === 'chromatic' ? 'on' : ''}" data-imode="chromatic">Chromatic (exact notes)</button>
+      <button class="pill small ${st.inputMode === 'scale' ? 'on' : ''}" data-imode="scale">Scale snap</button>
+    </div>
+    <h3>Drum pads</h3>
+    <div class="wrap">
+      <button class="pill small ${st.drumMode === 'gm' ? 'on' : ''}" data-dmode="gm">GM drums</button>
+      <button class="pill small ${st.drumMode === 'grid' ? 'on' : ''}" data-dmode="grid">5×5 grid (C1–C3)</button>
+    </div>
+    <h3>Channel routing</h3>
+    <div class="wrap">
+      <button class="pill small ${st.routing === 'omni' ? 'on' : ''}" data-route="omni">Selected track (Omni)</button>
+      <button class="pill small ${st.routing === 'channel' ? 'on' : ''}" data-route="channel">Ch 1–12 per track</button>
+    </div>
+    <h3>MIDI output</h3>
+    <div class="wrap">
+      <button class="pill small ${!st.outId ? 'on' : ''}" data-out="">Off</button>
+      ${outs.map((p) => `<button class="pill small ${st.outId === p.id ? 'on' : ''}" data-out="${esc(p.id)}">${esc(p.name)}</button>`).join('')}
+    </div>
+    <div class="field" style="margin-top:14px"><span>Play Bubbloop sounds</span><span style="flex:1"></span><button class="toggle ${st.localSound ? 'on' : ''}" id="m-local" aria-label="Play Bubbloop sounds"></button></div>
+    <p class="sub">Turn off to drive an external synth or DAW without doubling Bubbloop's audio.</p>
+    <div class="field"><span>Send MIDI clock</span><span style="flex:1"></span><button class="toggle ${st.clockOut ? 'on' : ''}" id="m-clock" aria-label="Send MIDI clock"></button></div>
+    <div class="wrap" style="margin-top:12px"><button class="pill" id="m-panic">All notes off</button></div>
+  `, (root) => {
+    const save = () => { S.saveSettings(app.settings); midiSheet(); };
+    on(root, '[data-in]', (b) => { st.inId = b.dataset.in; save(); });
+    on(root, '[data-imode]', (b) => { st.inputMode = b.dataset.imode; save(); });
+    on(root, '[data-dmode]', (b) => { st.drumMode = b.dataset.dmode; save(); });
+    on(root, '[data-route]', (b) => { st.routing = b.dataset.route; save(); });
+    on(root, '[data-out]', (b) => {
+      m.panic();
+      st.outId = b.dataset.out;
+      m.sendProgramChanges();
+      save();
+    });
+    root.querySelector('#m-local').addEventListener('click', () => {
+      st.localSound = !st.localSound;
+      app.engine.setLocalSound(st.localSound);
+      save();
+    });
+    root.querySelector('#m-clock').addEventListener('click', () => { st.clockOut = !st.clockOut; save(); });
+    root.querySelector('#m-panic').addEventListener('click', () => { m.panic(); toast('MIDI notes cleared'); });
+  });
+}
+
+export const openSheets = { spice, space, copyBlock, sampler, project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter, midi: midiSheet };

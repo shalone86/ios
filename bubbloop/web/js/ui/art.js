@@ -31,6 +31,7 @@ export const ICONS = {
   gear: svg('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2.200"/>' + stroke('M12 3v2.500M12 18.500V21M3 12h2.500M18.500 12H21M5.600 5.600l1.800 1.800M16.600 16.600l1.800 1.800M5.600 18.400l1.800-1.800M16.600 7.400l1.800-1.800')),
   metro: svg(stroke('M8 20 10.500 4h3L16 20zM12 14l5-7')),
   loop: svg(stroke('M17 3l3 3-3 3M20 6H8a4 4 0 0 0-4 4v1M7 21l-3-3 3-3M4 18h12a4 4 0 0 0 4-4v-1')),
+  midi: svg('<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.1"/><circle cx="7.5" cy="12" r="1.2" fill="currentColor"/><circle cx="9.2" cy="8.8" r="1.2" fill="currentColor"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor"/><circle cx="14.8" cy="8.8" r="1.2" fill="currentColor"/><circle cx="16.5" cy="12" r="1.2" fill="currentColor"/>'),
 };
 
 export function mountIcons(root = document) {

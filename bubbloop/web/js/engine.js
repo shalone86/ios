@@ -26,6 +26,8 @@ export class Engine {
     this.acc = 0;              // accidental applied to hand-played notes: -1, 0, +1
     this.smooth = 'off';       // 'on': bigger audio buffer, for Bluetooth crackle        // user latency trim, seconds
     this.metroPlay = false;
+    this.localSound = true;
+    this.midiOut = null;
     this.viz = [];             // things the UI should animate, in time order
     this.listeners = new Set();
     this.held = new Map();
@@ -82,8 +84,10 @@ export class Engine {
     const kit = await getKit(this.ctx.sampleRate, project.key);
     try { await ensureSamples(sampleIds(project)); } catch (e) { /* storage unavailable: sampler tracks stay silent */ }
     this.g = buildGraph(this.ctx, project, kit);
+    this.g.master.output.gain.value = this.localSound ? 1 : 0;
     this.applyLatches();
     this.refreshMutes();
+    if (this.midiOut && this.midiOut.syncAll) this.midiOut.syncAll();
     this.idleNext = this.ctx.currentTime;
     this.idleIdx = 0;
     if (!this.timer) this.timer = setInterval(() => this.tick(), INTERVAL);
@@ -123,11 +127,15 @@ export class Engine {
     this.g.kit = await getKit(this.ctx.sampleRate, this.project.key);
   }
 
-  syncTrack(track) { if (this.g) this.g.syncTrack(track); }
-  syncAll() { if (this.g) this.project.tracks.forEach((t) => this.g.syncTrack(t)); }
+  syncTrack(track) { if (this.g) this.g.syncTrack(track); if (this.midiOut && this.midiOut.syncTrack) this.midiOut.syncTrack(track); }
+  syncAll() { if (this.g) this.project.tracks.forEach((t) => this.g.syncTrack(t)); if (this.midiOut && this.midiOut.syncAll) this.midiOut.syncAll(); }
   removeTrack(id) { if (this.g) this.g.removeTrack(id); }
   setMaster(id) { this.project.master = id; if (this.g) this.g.master.set(id); }
   setSpace(space) { this.project.space = space; if (this.g) this.g.rack.setSpace(space); }
+  setLocalSound(on) {
+    this.localSound = !!on;
+    if (this.g) this.g.master.output.gain.setTargetAtTime(this.localSound ? 1 : 0, this.now, 0.01);
+  }
 
   // ---------- transport ----------
 
@@ -158,6 +166,7 @@ export class Engine {
     this.playing = true;
     this.recording = record;
     this.undoMark = '';
+    if (this.midiOut && this.midiOut.start) this.midiOut.start();
     this.emit('transport');
     this.tick();
   }
@@ -175,6 +184,7 @@ export class Engine {
     this.queued = null;
     this.g.killAll(now);
     this.g.eachRack((r) => r.reset(now));
+    if (this.midiOut && this.midiOut.stop) this.midiOut.stop();
     this.applyLatches();
     this.viz.length = 0;
     this.idleNext = now;
@@ -262,12 +272,14 @@ export class Engine {
       }
       const end = Math.min(horizon, seg.start + seg.len);
       scheduleRange(g, p, seg, this.sched - seg.start, end - seg.start, timeAt, {
-        onNote: (track, ev, time) => {
+        onNote: (track, ev, time, gain = 1) => {
           this.viz.push({ time, kind: 'note', track: track.id, r: ev.r, c: ev.c, d: ev.d * this.spt });
+          if (this.midiOut && this.midiOut.scheduleNote) this.midiOut.scheduleNote(track, ev, time, this.now, ev.d * this.spt, gain);
         },
         onStep: (step, time) => {
           click(step, time);
           this.viz.push({ time, kind: 'step', step, seg });
+          if (this.midiOut && this.midiOut.clockStep) this.midiOut.clockStep(time, this.now, this.spt);
         },
       });
       this.sched = end;
@@ -348,14 +360,15 @@ export class Engine {
     pushUndo(this.project);
   }
 
-  noteOn(track, row, col, vel = 0.85) {
+  noteOn(track, row, col, vel = 0.85, opts = {}) {
     if (!this.ready) return 0;
     const now = this.now;
     const drums = track.role === 'drums';
     const chord = drums ? undefined : chordOf(track, col);
-    const acc = drums ? 0 : this.acc;
+    const acc = drums ? 0 : (opts.acc !== undefined ? opts.acc : this.acc);
     const handles = this.g.playCell(track, row, col, chord, vel, now, undefined, acc);
     const id = ++this.nid;
+    if (this.midiOut && this.midiOut.noteOn) this.midiOut.noteOn(id, track, row, col, chord, vel, acc);
     const h = { handles, rec: null };
     const slot = this.mode === 'loop' ? this.recSlot(now) : null;
     if (slot) {
@@ -386,6 +399,7 @@ export class Engine {
     if (!h) return;
     const now = this.now;
     h.handles.forEach((x) => x.bend && x.bend(cents, now));
+    if (this.midiOut && this.midiOut.bend) this.midiOut.bend(id, cents);
     if (h.rec) {
       // keep the gesture with the note: [ticks after the note starts, cents]
       const { ev, seg, start } = h.rec;
@@ -411,6 +425,7 @@ export class Engine {
     this.held.delete(id);
     const now = this.now;
     h.handles.forEach((x) => x.release(now));
+    if (this.midiOut && this.midiOut.noteOff) this.midiOut.noteOff(id);
     this.closeRec(h, now);
   }
 
