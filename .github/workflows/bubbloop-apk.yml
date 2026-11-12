@@ -1,0 +1,32 @@
+name: Bubbloop APK
+
+# Builds the Android app whenever its source changes, and on demand.
+on:
+  push:
+    paths:
+      - 'bubbloop/web/**'
+      - 'bubbloop/android/**'
+      - '.github/workflows/bubbloop-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build
+        working-directory: bubbloop/android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Rename
+        run: cp bubbloop/android/app/build/outputs/apk/release/app-release.apk Bubbloop.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bubbloop-apk
+          path: Bubbloop.apk

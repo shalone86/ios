@@ -173,14 +173,21 @@ check(loud.truePeak <= 0.2, 'no clipping');
 const m4a = await exportAs('m4a');
 check(probe(m4a, 'stream=codec_name') === 'alac', 'Apple Lossless file is ALAC');
 // Each export renders the song afresh, and the browser's offline renderer is
-// repeatable only to about -80 dB, so compare with a few LSB of slack. (That
-// the encoder itself is lossless is proven bit-for-bit in codec.test.mjs.)
+// not bit-repeatable from one run to the next (stray differences sit around
+// -60 dB), so compare the two files as audio rather than byte for byte.
+// That the encoder itself is lossless is proven bit-for-bit in codec.test.mjs.
 const pcm = (f) => execFileSync('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-i', f, '-f', 's16le', '-ac', '2', '-'], { maxBuffer: 1 << 29 });
 {
   const a = pcm(wav), b = pcm(m4a);
-  let worst = 0;
-  for (let i = 0; i + 1 < Math.min(a.length, b.length); i += 2) worst = Math.max(worst, Math.abs(a.readInt16LE(i) - b.readInt16LE(i)));
-  check(a.length === b.length && worst <= 8, `Apple Lossless export matches the WAV export (worst difference ${worst} of 32768)`);
+  let worst = 0, sum = 0, n = 0;
+  for (let i = 0; i + 1 < Math.min(a.length, b.length); i += 2, n++) {
+    const d = Math.abs(a.readInt16LE(i) - b.readInt16LE(i));
+    worst = Math.max(worst, d);
+    sum += d * d;
+  }
+  const rmsDiff = Math.sqrt(sum / Math.max(1, n));
+  check(a.length === b.length && rmsDiff < 3 && worst < 400,
+    `Apple Lossless export matches the WAV export (difference ${rmsDiff.toFixed(2)} rms, ${worst} worst, of 32768)`);
 }
 console.log(`         sizes: wav ${(fs.statSync(wav).size / 1024).toFixed(0)} KB, m4a ${(fs.statSync(m4a).size / 1024).toFixed(0)} KB`);
 

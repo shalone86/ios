@@ -21,7 +21,7 @@ const FILTER_HZ = [180, 320, 560, 1000, 1800, 3200];
 
 export const MASTERS = [
   { id: 'raw',    name: 'Raw',    hint: 'untouched',        low: 0,   mid: 0,    high: 0,    thr: 0,   ratio: 1,   drive: 0,   lufs: null },
-  { id: 'sweet',  name: 'Sweet',  hint: 'balanced, shiny',  low: 1.5, mid: -1.5, high: 2.5,  thr: -18, ratio: 2.2, drive: 0.3, lufs: -14 },
+  { id: 'sweet',  name: 'Sweet',  hint: 'balanced, shiny',  low: 0.5, mid: -1.5, high: 3,    thr: -18, ratio: 2.2, drive: 0.3, lufs: -14 },
   { id: 'punchy', name: 'Punchy', hint: 'big drums',        low: 3,   mid: -2,   high: 2,    thr: -22, ratio: 3.5, drive: 0.5, lufs: -12 },
   { id: 'cozy',   name: 'Cozy',   hint: 'warm tape hug',    low: 2.5, mid: 0.5,  high: -2.5, thr: -20, ratio: 2.5, drive: 0.8, lufs: -14 },
   { id: 'loud',   name: 'Loud',   hint: 'turned up to 11',  low: 2,   mid: -1,   high: 3,    thr: -26, ratio: 4.5, drive: 0.7, lufs: -10 },
@@ -114,7 +114,7 @@ function buildRack(ctx, sh, project) {
   cShape.curve = sh.curves.hard; cShape.oversample = '2x';
   const cTone = ctx.createBiquadFilter();
   cTone.type = 'lowpass'; cTone.frequency.value = 5200;
-  const cPost = G(0.42);
+  const cPost = G(0.25);
   cPre.connect(cShape).connect(cTone).connect(cPost);
   const crunch = xfade(ctx, mix, cPre, cPost);
 
@@ -145,7 +145,7 @@ function buildRack(ctx, sh, project) {
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -34; comp.knee.value = 8; comp.ratio.value = 14;
   comp.attack.value = 0.003; comp.release.value = 0.09;
-  const makeup = G(2.6);
+  const makeup = G(1.8);
   comp.connect(makeup);
   const squish = xfade(ctx, tapeG, comp, makeup);
   const pump = G(1), gate = G(1), output = G(1);
@@ -204,7 +204,13 @@ function buildRack(ctx, sh, project) {
       tapeD.delayTime.cancelScheduledValues(t);
       tapeG.gain.cancelScheduledValues(t);
     }
-    tapeD.delayTime.setValueAtTime(0, t + 0.0002);
+    try {
+      tapeD.delayTime.setValueAtTime(0, t + 0.0002);
+    } catch (e) {
+      // a bend still in progress would refuse the reset; cut it short first
+      if (tapeD.delayTime.cancelAndHoldAtTime) tapeD.delayTime.cancelAndHoldAtTime(t);
+      tapeD.delayTime.setValueAtTime(0, t + 0.0002);
+    }
     tapeG.gain.setValueAtTime(0, t);
     tapeG.gain.setTargetAtTime(1, t + 0.003, 0.004);
   }
@@ -246,7 +252,7 @@ function buildRack(ctx, sh, project) {
     on(k, p, t, dur) {
       const seq = dur != null;
       switch (k) {
-        case 'reverb': hitRev.gain.setTargetAtTime(1, t, 0.012); break;
+        case 'reverb': hitRev.gain.setTargetAtTime(0.45, t, 0.012); break;
         case 'delay':
           hitDly.gain.setTargetAtTime(1, t, 0.008);
           fb.gain.setTargetAtTime(0.62, t, 0.02);

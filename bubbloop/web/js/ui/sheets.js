@@ -80,6 +80,7 @@ function project() {
     <div class="wrap" style="margin-top:10px">
       <button class="pill" data-act="new">${icon('plus')}New song</button>
       <button class="pill" data-act="dup">${icon('copy')}Duplicate</button>
+      <button class="pill" data-act="demo">${icon('note')}Demo song</button>
       <button class="pill" data-act="export">${icon('share')}Export</button>
       <button class="pill" data-act="file">Save song file</button>
       <button class="pill" data-act="open">Open song file</button>
@@ -142,6 +143,7 @@ function project() {
       const act = b.dataset.act;
       if (act === 'new') { closeSheet(); await openProject(S.newProject()); toast('Fresh song, fresh bubbles'); }
       else if (act === 'dup') { closeSheet(); await openProject(S.duplicateProject(p)); toast('Working on a copy'); }
+      else if (act === 'demo') { closeSheet(); await openProject(S.demoProject()); toast('Press play, then poke around'); }
       else if (act === 'export') exporter();
       else if (act === 'open') file.click();
       else if (act === 'file') {
@@ -421,6 +423,11 @@ function master() {
 
 const exportChoice = { format: 'wav', what: 'song', hires: false, seamless: false };
 
+function masterBlurb(m) {
+  const hint = m.hint[0].toUpperCase() + m.hint.slice(1);
+  return esc(m.lufs ? `${hint}. Levelled to ${m.lufs} LUFS with a peak limiter.` : `${hint}. Peaks are kept safe and nothing else is changed.`);
+}
+
 function exporter() {
   const p = app.project;
   const hasSong = p.song.length > 0;
@@ -441,7 +448,7 @@ function exporter() {
     ${c.format === 'midi' ? '' : `
     <h3>Mastering</h3>
     <div class="wrap">${MASTERS.map((m) => `<button class="pill ${p.master === m.id ? 'on' : ''}" data-master="${m.id}" ${c.format === 'stems' ? 'disabled' : ''}>${m.name}</button>`).join('')}</div>
-    <p class="sub" style="margin-top:8px">${c.format === 'stems' ? 'Stems are left unmastered so you can mix them yourself.' : esc(MASTERS.find((m) => m.id === p.master).hint) + (MASTERS.find((m) => m.id === p.master).lufs ? `, levelled to ${MASTERS.find((m) => m.id === p.master).lufs} LUFS with a peak limiter.` : ', peaks kept safe, nothing else.')}</p>
+    <p class="sub" style="margin-top:8px">${c.format === 'stems' ? 'Stems are left unmastered so you can mix them yourself.' : masterBlurb(MASTERS.find((m) => m.id === p.master))}</p>
     <h3>Options</h3>
     ${c.format === 'mp3' ? '' : `<div class="field"><span>24-bit</span><span style="flex:1"></span><button class="toggle ${c.hires ? 'on' : ''}" data-opt="hires" aria-label="24-bit"></button></div>`}
     ${c.what === 'loop' && c.format !== 'stems' ? `<div class="field"><span>Seamless loop</span><span style="flex:1"></span><button class="toggle ${c.seamless ? 'on' : ''}" data-opt="seamless" aria-label="Seamless loop"></button></div><p class="sub">On: the file loops perfectly in a DAW. Off: the last notes ring out.</p>` : ''}`}

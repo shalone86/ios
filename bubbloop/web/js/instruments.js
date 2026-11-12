@@ -217,8 +217,9 @@ function bassGuitar(ctx, sh, dest, midi, v, t) {
   const k = kit(ctx), f = midiToFreq(midi);
   const o = k.osc(sh.waves.bass, f, t);
   const lp = k.filter('lowpass', 1000, 1.2);
-  lp.frequency.setValueAtTime(Math.min(6000, f * (5 + 10 * v)), t);
-  lp.frequency.setTargetAtTime(f * 2.2 + 120, t, 0.14);
+  // the sustain keeps a few harmonics so the line survives small speakers
+  lp.frequency.setValueAtTime(Math.min(7000, f * (6 + 10 * v)), t);
+  lp.frequency.setTargetAtTime(f * 4 + 250, t, 0.16);
   const amp = k.gain();
   const peak = 0.54 * velGain(v);
   amp.gain.setValueAtTime(0, t);
@@ -243,7 +244,7 @@ function bassSynth(ctx, sh, dest, midi, v, t) {
   a.connect(mix); b.connect(bg);
   const lp1 = k.filter('lowpass', 800, 5);
   const lp2 = k.filter('lowpass', 800, 0.7);
-  const top = f * (2 + 10 * v) + 150, rest = f * 1.3 + 90;
+  const top = f * (3 + 10 * v) + 200, rest = f * 2.4 + 180;
   for (const lp of [lp1, lp2]) {
     lp.frequency.setValueAtTime(Math.min(12000, top), t);
     lp.frequency.setTargetAtTime(rest, t, 0.16);

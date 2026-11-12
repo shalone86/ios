@@ -62,6 +62,7 @@
     <p>pocket beats made of bubbles</p>
   </div>
   <button id="btn-start" class="start">tap to play</button>
+  <p id="old-msg" hidden>Bubbloop needs a newer web engine than this phone has. Update <b>Android System WebView</b> (or Chrome) in the Play Store, then open Bubbloop again.</p>
 </div>
 
 <div id="scrim" hidden></div>
@@ -70,5 +71,14 @@
 <div id="toast" hidden></div>
 
 <script type="module" src="js/ui/app.js"></script>
+<script>
+  // If the app has not come to life after a few seconds, the system WebView
+  // is too old to run it. Say so, rather than leaving a button that does nothing.
+  setTimeout(function () {
+    if (window.bubbloop) return;
+    document.getElementById('btn-start').hidden = true;
+    document.getElementById('old-msg').hidden = false;
+  }, 5000);
+</script>
 </body>
 </html>

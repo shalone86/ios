@@ -16,7 +16,7 @@ const el = {
   app: $('app'), splash: $('splash'), projectName: $('project-name'), tempo: $('tempo-label'), key: $('key-label'),
   sections: $('sections'), bars: $('btn-bars'), undo: $('btn-undo'), play: $('btn-play'), rec: $('btn-rec'),
   map: $('loopmap'), count: $('count'), hint: $('hint'), tracks: $('tracks'), tools: $('tools'), steps: $('steps'),
-  grid: $('grid'), fx: $('fxview'), mix: $('mixview'), song: $('songview'), tabs: $('tabs'), toast: $('toast'),
+  stage: $('stage'), grid: $('grid'), fx: $('fxview'), mix: $('mixview'), song: $('songview'), tabs: $('tabs'), toast: $('toast'),
 };
 
 export const app = {
@@ -102,7 +102,7 @@ function renderTransport() {
 function updateHint() {
   const empty = S.sectionIsEmpty(curSection());
   let text = '';
-  if (!engine.playing && empty && engine.mode === 'loop') text = 'Tap the bubbles to play · press the pink button to loop it';
+  if (!engine.playing && empty && engine.mode === 'loop') text = 'Tap bubbles to play · the pink button loops it';
   else if (engine.recording && empty && engine.mode === 'loop') text = 'Recording… play something!';
   el.hint.textContent = text;
 }
@@ -183,7 +183,7 @@ function renderGrid() {
       }
       const size = drums ? 92 : 95 - r * 4;
       const bob = 3.200 + ((idx * 37) % 17) / 10, delay = -((idx * 53) % 29) / 10;
-      cells.push(`<div class="cell ${cls}" data-r="${r}" data-c="${c}"><div class="bub ${label ? 'labeled' : ''}" style="--size:${size}%;--bob:${bob}s;--delay:${delay}s"><div class="face">${FACE}</div>${label ? `<span class="lbl">${esc(label)}</span>` : ''}<i class="badge"></i></div></div>`);
+      cells.push(`<div class="cell ${cls}" data-r="${r}" data-c="${c}"><div class="bub" style="--k:${size / 100};--bob:${bob}s;--delay:${delay}s"><div class="orb ${label ? 'labeled' : ''}"><div class="face">${FACE}</div>${label ? `<span class="lbl">${esc(label)}</span>` : ''}<i class="badge"></i></div></div></div>`);
     }
   }
   el.grid.innerHTML = cells.join('');
@@ -192,6 +192,14 @@ function renderGrid() {
 }
 
 const cellEl = (r, c) => el.grid.children[(ROWS - 1 - r) * COLS + c];
+
+// The grid is the largest square that fits the stage.
+function fitGrid() {
+  const b = el.stage.getBoundingClientRect();
+  const size = Math.max(150, Math.floor(Math.min(b.width, b.height)));
+  el.grid.style.width = el.grid.style.height = `${size}px`;
+  el.grid.style.setProperty('--cell', `${size / COLS}px`);
+}
 
 function updateBadges() {
   const list = S.trackEvents(app.project, app.project.cur, curTrack().id);
@@ -488,6 +496,18 @@ function bindSong() {
 // ---------- loop map ----------
 
 const mapLayer = document.createElement('canvas');
+
+// rounded bar, with a fallback for canvases that predate roundRect()
+function pill(g, x, y, w, h) {
+  const r = Math.min(h / 2, w / 2);
+  g.beginPath();
+  if (g.roundRect) g.roundRect(x, y, w, h, r);
+  else {
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  g.fill();
+}
 let mapDirty = true;
 
 function sizeMap() {
@@ -532,7 +552,7 @@ function drawMapLayer(secIdx) {
         const hgt = Math.max(2 * dpr, laneH * 0.4);
         const y = top + (laneH - hgt) * (1 - (e.r * COLS + e.c) / 24);
         const w = Math.max(3 * dpr, (e.d / len) * W - dpr);
-        g.beginPath(); g.roundRect(x, y, w, hgt, hgt / 2); g.fill();
+        pill(g, x, y, w, hgt);
       }
     }
     g.globalAlpha = 1;
@@ -541,13 +561,13 @@ function drawMapLayer(secIdx) {
   const blk = app.nowBlock >= 0 ? p.song[app.nowBlock] : null;
   g.fillStyle = 'rgba(255,255,255,.85)';
   for (const e of sec.fx) {
-    g.beginPath(); g.roundRect((e.t / len) * W, fxTop + laneH * 0.2, Math.max(3 * dpr, (e.d / len) * W), laneH * 0.6, laneH * 0.3); g.fill();
+    pill(g, (e.t / len) * W, fxTop + laneH * 0.2, Math.max(3 * dpr, (e.d / len) * W), laneH * 0.6);
   }
   if (blk && blk.fx.length) {
     g.fillStyle = '#ffd966';
     for (const e of blk.fx) {
       const local = e.t % len;
-      g.beginPath(); g.roundRect((local / len) * W, fxTop + laneH * 0.2, Math.max(3 * dpr, (e.d / len) * W), laneH * 0.6, laneH * 0.3); g.fill();
+      pill(g, (local / len) * W, fxTop + laneH * 0.2, Math.max(3 * dpr, (e.d / len) * W), laneH * 0.6);
     }
   }
   mapDirty = false;
@@ -680,6 +700,7 @@ export function setView(view) {
   el.tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
   for (const pid of [...pointers.keys()]) releasePointer(pid);
   renderSections(); renderTransport(); renderTools(); renderSteps();
+  fitGrid();
   if (view === 'mix') renderMix();
   if (view === 'song') renderSong();
   if (view === 'fx') renderFx();
@@ -781,7 +802,7 @@ function bind() {
     else if (tool === 'oct-' || tool === 'oct+') {
       t.oct = Math.max(-2, Math.min(2, t.oct + (tool === 'oct+' ? 1 : -1)));
       renderTools(); renderGrid(); touch();
-    } else if (tool === 'steps') { app.stepsOn = !app.stepsOn; renderTools(); renderSteps(); updateBadges(); }
+    } else if (tool === 'steps') { app.stepsOn = !app.stepsOn; renderTools(); renderSteps(); updateBadges(); fitGrid(); }
     else if (tool === 'eraser') {
       app.eraser = !app.eraser;
       renderTools();
@@ -830,7 +851,12 @@ function bind() {
     else if (type === 'songend') toast('That is the whole song!');
   });
 
-  window.addEventListener('resize', () => { mapDirty = true; });
+  window.addEventListener('resize', () => { mapDirty = true; fitGrid(); });
+  if (window.ResizeObserver) new ResizeObserver(fitGrid).observe(el.stage);
+  document.addEventListener('visibilitychange', () => {
+    // coming back to the app: wake the audio so the first tap is not swallowed
+    if (!document.hidden && engine.ctx && engine.ctx.state !== 'running') engine.ctx.resume().catch(() => {});
+  });
   onBack(() => {
     if (sheetIsOpen()) { closeSheet(); return true; }
     if (app.view !== 'play') { setView('play'); return true; }
@@ -839,7 +865,7 @@ function bind() {
     exitApp();
     return true;
   });
-  onPause(() => { engine.stop(); saveNow(); });
+  onPause(() => { engine.suspend(); saveNow(); });
 }
 
 function blockTool(tool) {
@@ -872,7 +898,7 @@ export function afterStructureChange(resync = true) {
 
 async function boot() {
   mountIcons();
-  $('logo-bubbles').innerHTML = [0, 1, 2, 3, 4].map((i) => `<div class="bub hue-${i}" style="--bob:${2.600 + i * 0.4}s;--delay:${-i * 0.7}s"><div class="face">${FACE}</div></div>`).join('');
+  $('logo-bubbles').innerHTML = [0, 1, 2, 3, 4].map((i) => `<div class="bub hue-${i}" style="--bob:${2.600 + i * 0.4}s;--delay:${-i * 0.7}s"><div class="orb"><div class="face">${FACE}</div></div></div>`).join('');
   app.project = S.loadLast() || S.newProject();
   app.trackId = (app.project.tracks.find((t) => t.role === 'melody') || app.project.tracks[0]).id;
   engine.tapOffset = (app.settings.tapOffset || 0) / 1000;
@@ -881,6 +907,7 @@ async function boot() {
   bind();
   el.app.hidden = false;
   renderAll();
+  fitGrid();
   requestAnimationFrame(frame);
 
   const start = async () => {

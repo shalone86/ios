@@ -45,6 +45,55 @@ export function newProject(name) {
   };
 }
 
+// A short ready-made song that shows what the pieces do: two sections,
+// four tracks, and an arrangement that brings them in one by one.
+export function demoProject() {
+  const p = newProject('Demo: Sleepy Boba');
+  const [drums, bass, pads, melody] = p.tracks;
+  p.bpm = 88; p.key = 0; p.scale = 'major';
+  melody.inst = 'kalimba'; melody.dly = 0.25;
+  const A = p.sections[0];
+  A.bars = 4;
+  applyPattern(p, 0, drums.id, 'lofi');
+  // C, Am, Em, G: one chord a bar
+  A.ev[pads.id] = [[0, 1, 0], [1, 0, 4], [2, 1, 2], [3, 1, 3]]
+    .map(([bar, r, c]) => ({ t: bar * BAR, d: BAR - 24, r, c, v: 0.7, ch: 'triad' }));
+  A.ev[bass.id] = [[0, 0, 3], [1, 4, 2], [2, 2, 3], [3, 3, 1]].flatMap(([bar, root, other]) => [
+    { t: bar * BAR, d: 130, r: 0, c: root, v: 0.85 },
+    { t: bar * BAR + 144, d: 40, r: 0, c: root, v: 0.7 },
+    { t: bar * BAR + 288, d: 80, r: 0, c: other, v: 0.8 },
+  ]);
+  const tune = [
+    [0, 0, 2, 2, 40], [0, 96, 2, 3, 40], [0, 144, 2, 4, 80], [0, 240, 2, 3, 90],
+    [1, 48, 2, 2, 80], [1, 144, 2, 1, 40], [1, 192, 2, 0, 150],
+    [2, 0, 2, 3, 40], [2, 96, 2, 4, 40], [2, 144, 3, 0, 80], [2, 240, 2, 4, 90],
+    [3, 48, 2, 3, 80], [3, 144, 2, 2, 40], [3, 192, 2, 1, 170],
+  ];
+  A.ev[melody.id] = tune.map(([bar, t, r, c, d]) => ({ t: bar * BAR + t, d, r, c, v: 0.8 }));
+
+  // B: the same chords with a busier beat and the tune an octave up
+  p.sections.push(JSON.parse(JSON.stringify(A)));
+  applyPattern(p, 1, drums.id, 'boombap');
+  const B = p.sections[1];
+  B.ev[melody.id] = tune.map(([bar, t, r, c, d]) => ({ t: bar * BAR + t, d, r: r + 1, c, v: 0.75 }));
+  B.ev[drums.id].push({ t: 3 * BAR + 336, d: STEP, r: 4, c: 4, v: 0.8 });   // a sparkle into the turnaround
+  B.ev[drums.id].sort((a, b) => a.t - b.t);
+  B.fx = [{ t: 3 * BAR + 288, d: 96, k: 'stutter', p: 1 }];
+
+  p.swing = 0.35;
+  const off = (...tracks) => Object.fromEntries(tracks.map((t) => [t.id, true]));
+  p.song = [
+    { sec: 0, rep: 1, off: off(drums, bass, melody), fx: [] },
+    { sec: 0, rep: 1, off: off(melody), fx: [] },
+    { sec: 0, rep: 2, off: {}, fx: [] },
+    { sec: 1, rep: 2, off: {}, fx: [] },
+    { sec: 0, rep: 1, off: off(drums), fx: [] },
+  ];
+  p.cur = 0;
+  clearUndo();
+  return p;
+}
+
 // ---------- persistence ----------
 
 const strip = (k, v) => (k[0] === '_' ? undefined : v);

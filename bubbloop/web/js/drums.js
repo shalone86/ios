@@ -9,16 +9,16 @@ import { makeShared } from './instruments.js';
 // under the thumbs, hats above, toms across the middle, cymbals and
 // shakers next, sparkly toys on top.
 export const DRUM_PADS = [
-  { id: 'kick1',  name: 'Boom',    kind: 'kick',  gm: 36, peak: 0.95, len: 1.1, pan: 0 },
-  { id: 'kick2',  name: 'Thump',   kind: 'kick',  gm: 35, peak: 0.95, len: 0.6, pan: 0 },
+  { id: 'kick1',  name: 'Boom',    kind: 'kick',  gm: 36, peak: 0.88, len: 1.1, pan: 0 },
+  { id: 'kick2',  name: 'Thump',   kind: 'kick',  gm: 35, peak: 0.88, len: 0.6, pan: 0 },
   { id: 'snare1', name: 'Crack',   kind: 'snare', gm: 38, peak: 0.8,  len: 0.6, pan: 0.05 },
   { id: 'snare2', name: 'Snap',    kind: 'snare', gm: 40, peak: 0.8,  len: 0.5, pan: -0.05 },
   { id: 'snare3', name: 'Brush',   kind: 'snare', gm: 38, peak: 0.6,  len: 0.6, pan: 0.05 },
 
-  { id: 'hat1',   name: 'Tick',    kind: 'hat',   gm: 42, peak: 0.42, len: 0.25, pan: 0.25, choke: 'hat' },
-  { id: 'hat2',   name: 'Tsk',     kind: 'hat',   gm: 42, peak: 0.36, len: 0.3,  pan: 0.25, choke: 'hat' },
-  { id: 'hat3',   name: 'Chick',   kind: 'hat',   gm: 44, peak: 0.34, len: 0.2,  pan: 0.25, choke: 'hat' },
-  { id: 'ohat',   name: 'Tsss',    kind: 'hat',   gm: 46, peak: 0.42, len: 1.2,  pan: 0.25, group: 'hat' },
+  { id: 'hat1',   name: 'Tick',    kind: 'hat',   gm: 42, peak: 0.5,  len: 0.25, pan: 0.25, choke: 'hat' },
+  { id: 'hat2',   name: 'Tsk',     kind: 'hat',   gm: 42, peak: 0.44, len: 0.3,  pan: 0.25, choke: 'hat' },
+  { id: 'hat3',   name: 'Chick',   kind: 'hat',   gm: 44, peak: 0.4,  len: 0.2,  pan: 0.25, choke: 'hat' },
+  { id: 'ohat',   name: 'Tsss',    kind: 'hat',   gm: 46, peak: 0.48, len: 1.2,  pan: 0.25, group: 'hat' },
   { id: 'clap',   name: 'Clap',    kind: 'snare', gm: 39, peak: 0.7,  len: 0.7,  pan: -0.1 },
 
   { id: 'tom1',   name: 'Tom 1',   kind: 'tom',   gm: 41, peak: 0.8,  len: 0.9, pan: 0.4 },
@@ -29,9 +29,9 @@ export const DRUM_PADS = [
 
   { id: 'ride',   name: 'Ride',    kind: 'cym',   gm: 51, peak: 0.42, len: 2.2, pan: -0.3 },
   { id: 'crash',  name: 'Crash',   kind: 'cym',   gm: 49, peak: 0.6,  len: 2.8, pan: 0.3 },
-  { id: 'shake1', name: 'Shaka',   kind: 'perc',  gm: 70, peak: 0.34, len: 0.3, pan: -0.35 },
-  { id: 'shake2', name: 'Shiki',   kind: 'perc',  gm: 82, peak: 0.34, len: 0.4, pan: 0.35 },
-  { id: 'tamb',   name: 'Jingle',  kind: 'perc',  gm: 54, peak: 0.42, len: 0.7, pan: 0.2 },
+  { id: 'shake1', name: 'Shaka',   kind: 'perc',  gm: 70, peak: 0.4, len: 0.3, pan: -0.35 },
+  { id: 'shake2', name: 'Shiki',   kind: 'perc',  gm: 82, peak: 0.4, len: 0.4, pan: 0.35 },
+  { id: 'tamb',   name: 'Jingle',  kind: 'perc',  gm: 54, peak: 0.46, len: 0.7, pan: 0.2 },
 
   { id: 'rain',   name: 'Rain',    kind: 'toy',   gm: 67, peak: 0.6,  len: 2.4, pan: 0, tuned: true },
   { id: 'rim',    name: 'Rim',     kind: 'toy',   gm: 37, peak: 0.6,  len: 0.2, pan: -0.15 },
@@ -113,14 +113,18 @@ function metal(ctx, dest, t, { ratio = 1, band = 9000, q = 0.8, high = 6500, lev
 }
 
 const RECIPES = {
+  // Both kicks carry a mid-range knock and a click as well as the low thump,
+  // so they still read on a phone speaker that cannot reproduce 50 Hz.
   kick1(ctx, sh, d, t) {
-    tone(ctx, d, t, { f0: 165, f1: 46, sweep: 0.035, level: 1, decay: 0.3 });
-    tone(ctx, d, t, { type: 'triangle', f0: 900, f1: 120, sweep: 0.006, level: 0.35, decay: 0.012 });
+    tone(ctx, d, t, { f0: 170, f1: 50, sweep: 0.035, level: 1, decay: 0.22 });
+    tone(ctx, d, t, { type: 'triangle', f0: 260, f1: 110, sweep: 0.02, level: 0.5, decay: 0.05 });
+    tone(ctx, d, t, { type: 'triangle', f0: 900, f1: 150, sweep: 0.006, level: 0.4, decay: 0.012 });
+    noise(ctx, sh, d, t, { type: 'highpass', freq: 2200, level: 0.3, decay: 0.006 });
   },
   kick2(ctx, sh, d, t) {
-    tone(ctx, d, t, { f0: 240, f1: 58, sweep: 0.02, level: 1, decay: 0.1 });
-    tone(ctx, d, t, { type: 'triangle', f0: 120, f1: 60, sweep: 0.03, level: 0.4, decay: 0.07 });
-    noise(ctx, sh, d, t, { type: 'highpass', freq: 3000, level: 0.3, decay: 0.004 });
+    tone(ctx, d, t, { f0: 250, f1: 62, sweep: 0.02, level: 1, decay: 0.1 });
+    tone(ctx, d, t, { type: 'triangle', f0: 320, f1: 130, sweep: 0.025, level: 0.55, decay: 0.06 });
+    noise(ctx, sh, d, t, { type: 'highpass', freq: 3000, level: 0.4, decay: 0.005 });
   },
   snare1(ctx, sh, d, t) {
     tone(ctx, d, t, { f0: 250, f1: 185, sweep: 0.02, level: 0.7, decay: 0.05 });
