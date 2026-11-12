@@ -132,6 +132,7 @@ export class Engine {
   syncAll() { if (this.g) this.project.tracks.forEach((t) => this.g.syncTrack(t)); }
   removeTrack(id) { if (this.g) this.g.removeTrack(id); }
   setMaster(id) { this.project.master = id; if (this.g) this.g.master.set(id); }
+  setSpace(space) { this.project.space = space; if (this.g) this.g.rack.setSpace(space); }
 
   // ---------- transport ----------
 

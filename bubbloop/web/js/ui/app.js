@@ -2,7 +2,7 @@
 
 import { ROWS, COLS, STEP, BAR, KEY_NAMES, scaleById, chordLabel, cellNotes, CHORDS } from '../theory.js';
 import { Engine } from '../engine.js';
-import { DRUM_PADS } from '../drums.js';
+import { padFor } from '../drums.js';
 import { FX } from '../graph.js';
 import { instrumentById } from '../instruments.js';
 import * as S from '../state.js';
@@ -86,7 +86,7 @@ function drawSections() {
   const p = app.project;
   let html = '';
   if (engine.mode === 'song') {
-    html = p.song.map((b, i) => `<button class="sec block ${i === app.nowBlock ? 'cur' : ''} ${i === app.songSel && i !== app.nowBlock ? 'queued-off sel' : ''}" data-block="${i}">${S.SECTION_NAMES[b.sec]}${b.rep > 1 ? `<small>×${b.rep}</small>` : ''}</button>`).join('');
+    html = p.song.map((b, i) => `<button class="sec block ${i === app.nowBlock ? 'cur' : ''} ${i === app.songSel ? 'sel' : ''}" data-block="${i}">${S.SECTION_NAMES[b.sec]}${b.rep > 1 ? `<small>×${b.rep}</small>` : ''}</button>`).join('');
     if (!p.song.length) html = '<span class="label" style="font-size:12.500px;opacity:.85;padding:0 4px">Song is empty: add blocks below</span>';
   } else {
     html = p.sections.map((s, i) => `<button class="sec ${i === p.cur ? 'cur' : ''} ${engine.queued === i ? 'queued' : ''} ${S.sectionIsEmpty(s) ? '' : 'has'}" data-sec="${i}">${S.SECTION_NAMES[i]}</button>`).join('');
@@ -156,7 +156,11 @@ function drawTools() {
     const n = curSection().fx.length + p.song.reduce((a, b) => a + b.fx.length, 0);
     html += chip('fxtarget', app.fxTrack ? `On: ${esc(t.name)} only` : 'On: whole mix', app.fxTrack);
     html += '<span class="label">Hold a pad. Record to keep it.</span>';
-    if (n) html += chip('clearfx', `Clear ${n} recorded`);
+    // clear just the part you are on, or everything
+    const blk = engine.mode === 'song' ? p.song[app.nowBlock >= 0 ? app.nowBlock : app.songSel] : null;
+    if (blk && blk.fx.length) html += chip('clearfx-block', `Clear this block (${blk.fx.length})`);
+    if (engine.mode !== 'song' && curSection().fx.length) html += chip('clearfx-sec', `Clear ${S.SECTION_NAMES[p.cur]} (${curSection().fx.length})`);
+    if (n) html += chip('clearfx', `Clear all ${n}`);
   } else if (app.view === 'mix') {
     html += '<span class="label">Balance your band</span>';
   } else if (app.view === 'song') {
@@ -187,14 +191,15 @@ function renderGrid() {
       const idx = r * COLS + c;
       let cls, label = '';
       if (drums) {
-        cls = 'kind-' + DRUM_PADS[idx].kind;
-        label = DRUM_PADS[idx].name;
+        const pad = padFor(t, r, c).pad;
+        cls = 'kind-' + pad.kind;
+        label = pad.name;
       } else {
         cls = 'hue-' + c + (c === 0 ? ' root' : '');
         if (chords) label = chordLabel(p, c, t.chord);
         else if (app.settings.names) label = KEY_NAMES[cellNotes(p, t, r, c)[0] % 12];
       }
-      const size = drums ? 92 : 95 - r * 4;
+      const size = drums && !t.group ? 92 : 95 - r * 4;
       const bob = 3.200 + ((idx * 37) % 17) / 10, delay = -((idx * 53) % 29) / 10;
       cells.push(`<div class="cell ${cls}" data-r="${r}" data-c="${c}"><div class="bub" style="--k:${size / 100};--bob:${bob}s;--delay:${delay}s"><div class="orb ${label ? 'labeled' : ''}"><div class="face">${FACE}</div>${label ? `<span class="lbl">${esc(label)}</span>` : ''}<i class="badge"></i></div></div></div>`);
     }
@@ -303,7 +308,7 @@ function renderSteps() {
   app.stepBar = Math.min(app.stepBar, sec.bars - 1);
   const { r, c } = app.focus;
   const drums = t.role === 'drums';
-  const name = drums ? DRUM_PADS[r * COLS + c].name : (t.chord !== 'off' ? chordLabel(p, c, t.chord) : KEY_NAMES[cellNotes(p, t, r, c)[0] % 12]);
+  const name = drums ? padFor(t, r, c).pad.name : (t.chord !== 'off' ? chordLabel(p, c, t.chord) : KEY_NAMES[cellNotes(p, t, r, c)[0] % 12]);
   const list = S.trackEvents(p, p.cur, t.id);
   const base = app.stepBar * 16;
   let html = `<div class="head"><span>Steps for <b>${esc(name)}</b>. Tap a bubble to pick another.</span><span class="sp"></span>`;
@@ -411,6 +416,7 @@ function drawMix() {
     <div class="mixfoot">
       ${p.tracks.length < S.MAX_TRACKS ? '<button class="pill small" data-mixadd="1">+ Add a track</button>' : ''}
       <button class="pill small" data-mixmaster="1">Mastering: ${esc(p.master)} ▾</button>
+      <button class="pill small" data-mixspace="1">Cloud & Echo type ▾</button>
     </div>`;
 }
 
@@ -432,6 +438,7 @@ function bindMix() {
     else if (d.mixmore) openSheets.track(app.project.tracks.find((t) => t.id === d.mixmore));
     else if (d.mixadd) openSheets.addTrack();
     else if (d.mixmaster) openSheets.master();
+    else if (d.mixspace) openSheets.space();
   });
 }
 
@@ -799,6 +806,7 @@ function bind() {
       app.songSel = +b.dataset.block;
       engine.songFrom = app.songSel;
       renderSections(); renderTools();
+      toast(`Starts from block ${app.songSel + 1}`, 900);
       if (app.view === 'song') renderSong();
     } else if (b.dataset.sec === 'add') openSheets.addSection();
     else {
@@ -843,6 +851,8 @@ function bind() {
       afterEdit();
       toast(`${t.name} cleared · undo to bring it back`);
     } else if (tool === 'redo') { if (S.redo(p)) { afterStructureChange(); toast('Redone'); } }
+    else if (tool === 'clearfx-block') { const b = p.song[app.nowBlock >= 0 ? app.nowBlock : app.songSel]; if (b) { S.clearFxIn(p, b.fx); afterEdit(); renderTools(); toast('Block cleared · undo brings it back'); } }
+    else if (tool === 'clearfx-sec') { S.clearFxIn(p, curSection().fx); afterEdit(); renderTools(); }
     else if (tool === 'clearfx') { S.clearFx(p, p.cur); afterEdit(); renderTools(); }
     else if (tool.startsWith('blk-')) blockTool(tool);
   });

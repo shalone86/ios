@@ -3,7 +3,7 @@
 // so what you hear while jamming is what gets exported.
 
 import { makeShared, instrumentById, makeInsert, startVoice } from './instruments.js';
-import { DRUM_PADS } from './drums.js';
+import { DRUM_PADS, padFor } from './drums.js';
 import { cellNotes } from './theory.js';
 
 export const FX = [
@@ -35,7 +35,22 @@ function rand01(n) {
   return (x >>> 0) / 4294967296;
 }
 
-function makeImpulse(ctx, seconds) {
+// Reverb and echo characters for the two send buses, chosen per song.
+export const REVERBS = [
+  { id: 'room',  name: 'Room',      hint: 'small and close',   secs: 0.8, dark: 3.5, gain: 1.3 },
+  { id: 'hall',  name: 'Hall',      hint: 'the default glow',  secs: 2.6, dark: 2.4, gain: 1.6 },
+  { id: 'plate', name: 'Plate',     hint: 'bright and smooth', secs: 1.7, dark: 0.6, gain: 1.4 },
+  { id: 'sky',   name: 'Cathedral', hint: 'huge and slow',     secs: 5.0, dark: 1.6, gain: 1.7 },
+];
+export const ECHOES = [
+  { id: 'ping', name: 'Ping-pong', hint: 'bounces side to side', fb: 0.42, tone: 3400, mult: 1,    wide: true },
+  { id: 'tape', name: 'Tape',      hint: 'dark, long, centred',  fb: 0.55, tone: 1700, mult: 1,    wide: false },
+  { id: 'slap', name: 'Slap',      hint: 'one quick bounce',     fb: 0.12, tone: 4500, mult: 0.34, wide: false },
+  { id: 'dub',  name: 'Dub',       hint: 'keeps on going',       fb: 0.7,  tone: 2200, mult: 1,    wide: true },
+];
+const pick = (list, id, dflt) => list.find((x) => x.id === id) || list[dflt];
+
+function makeImpulse(ctx, seconds, dark = 2.4) {
   const sr = ctx.sampleRate, n = Math.floor(sr * seconds);
   const buf = ctx.createBuffer(2, n, sr);
   const pre = Math.floor(sr * 0.012);
@@ -46,7 +61,7 @@ function makeImpulse(ctx, seconds) {
       seed = (seed * 16807) % 2147483647;
       const w = seed / 1073741823.5 - 1;
       const x = (i - pre) / sr;
-      const a = 0.12 + 0.75 * Math.exp(-x * 2.4);   // highs fade first
+      const a = 0.12 + 0.75 * Math.exp(-x * dark);   // highs fade first
       lp += a * (w - lp);
       d[i] = lp * Math.exp((-6.9 * x) / seconds) * Math.min(1, x / 0.003);
       e += d[i] * d[i];
@@ -85,11 +100,11 @@ function buildRack(ctx, sh, project, lite = null) {
 
   // reverb bus (track sends + the Cloud hit)
   const revIn = G();
+  let conv = null, revOut = null, echo = ECHOES[0];
   if (!lite) {
-    const conv = ctx.createConvolver();
+    conv = ctx.createConvolver();
     conv.normalize = false;
-    conv.buffer = makeImpulse(ctx, 2.6);
-    const revOut = G(1.6);
+    revOut = G(1.6);
     revIn.connect(conv).connect(revOut).connect(mix);
   }
   const hitRev = G(0);
@@ -109,6 +124,7 @@ function buildRack(ctx, sh, project, lite = null) {
     dlyIn.connect(dL); dL.connect(dR);
     dR.connect(dTone).connect(dHp).connect(fb).connect(dL);
     dL.connect(merger, 0, 0); dR.connect(merger, 0, 1);
+
     merger.connect(dlyOut).connect(mix);
   }
   const hitDly = G(0);
@@ -250,13 +266,25 @@ function buildRack(ctx, sh, project, lite = null) {
 
     echoTime(p, t) {
       echoBeats = [0.5, 0.75, 1][p ?? 1] ?? 0.75;
-      dL.delayTime.setTargetAtTime(spb * echoBeats, t, 0.02);
-      dR.delayTime.setTargetAtTime(spb * echoBeats, t, 0.02);
+      dL.delayTime.setTargetAtTime(spb * echoBeats * echo.mult, t, 0.02);
+      dR.delayTime.setTargetAtTime(spb * echoBeats * echo.mult, t, 0.02);
+    },
+
+    // Choose the reverb and echo character (project.space).
+    setSpace(space = {}) {
+      if (lite) return;
+      const r = pick(REVERBS, space.rev, 1);
+      conv.buffer = makeImpulse(ctx, r.secs, r.dark);
+      revOut.gain.value = r.gain;
+      echo = pick(ECHOES, space.dly, 0);
+      fb.gain.value = echo.fb;
+      dTone.frequency.value = echo.tone;
+      rack.echoTime(null, 0);
     },
 
     setTempo(bpm, t = 0) {
       spb = 60 / bpm;
-      const d = spb * echoBeats;
+      const d = spb * echoBeats * echo.mult;
       dL.delayTime.setTargetAtTime(d, t, 0.05);
       dR.delayTime.setTargetAtTime(d, t, 0.05);
     },
@@ -272,7 +300,7 @@ function buildRack(ctx, sh, project, lite = null) {
           if (lite) { lite.echo(p, t); lite.send('dly', true, t); break; }
           rack.echoTime(p, t);
           hitDly.gain.setTargetAtTime(1, t, 0.008);
-          fb.gain.setTargetAtTime(0.62, t, 0.02);
+          fb.gain.setTargetAtTime(Math.min(0.85, echo.fb + 0.2), t, 0.02);
           break;
         case 'crunch': crunch.set(true, t); break;
         case 'filter':
@@ -315,7 +343,7 @@ function buildRack(ctx, sh, project, lite = null) {
         case 'delay':
           if (lite) { lite.send('dly', false, t); break; }
           hitDly.gain.setTargetAtTime(0, t, 0.01);
-          fb.gain.setTargetAtTime(0.42, t, 0.6);
+          fb.gain.setTargetAtTime(echo.fb, t, 0.6);
           break;
         case 'crunch': crunch.set(false, t); break;
         case 'filter':
@@ -355,6 +383,7 @@ function buildRack(ctx, sh, project, lite = null) {
       windows.squish.length = 0;
     },
   };
+  rack.setSpace(project.space);
   rack.setTempo(project.bpm);
   return rack;
 }
@@ -448,7 +477,8 @@ export function buildGraph(ctx, project, kit, opts = {}) {
     ch.pan = ctx.createStereoPanner();
     ch.rev = ctx.createGain();
     ch.dly = ctx.createGain();
-    ch.post.connect(ch.vol).connect(ch.mute).connect(ch.pan).connect(rack.input);
+    ch.duck = ctx.createGain();          // dips when a kick lands, if the track asks for it
+    ch.post.connect(ch.vol).connect(ch.duck).connect(ch.mute).connect(ch.pan).connect(rack.input);
     ch.pan.connect(ch.rev).connect(rack.revIn);
     ch.pan.connect(ch.dly).connect(rack.dlyIn);
     g.channels.set(track.id, ch);
@@ -498,7 +528,7 @@ export function buildGraph(ctx, project, kit, opts = {}) {
   g.playCell = (track, row, col, chord, vel, t, dur, acc = 0) => {
     const ch = channel(track);
     const inst = instrumentById(track.inst);
-    if (inst.id === 'drums') return [g.playDrum(track, row * 5 + col, vel, t)];
+    if (inst.id === 'drums') { const p = padFor(track, row, col); return [g.playDrum(track, p.idx, vel, t, p.rate)]; }
     const notes = cellNotes(g.project, track, row, col, chord, acc);
     // steal the oldest voices if this would exceed the instrument's polyphony
     ch.voices = ch.voices.filter((v) => !v.ended && v.until > t);
@@ -514,7 +544,7 @@ export function buildGraph(ctx, project, kit, opts = {}) {
     }).filter(Boolean);
   };
 
-  g.playDrum = (track, padIdx, vel, t) => {
+  g.playDrum = (track, padIdx, vel, t, rate = 1) => {
     const ch = channel(track);
     const pad = DRUM_PADS[padIdx];
     const buffer = g.kit && g.kit.buffers[padIdx];
@@ -523,10 +553,21 @@ export function buildGraph(ctx, project, kit, opts = {}) {
     src.buffer = buffer;
     const gn = ctx.createGain();
     gn.gain.value = 0.2 + 0.8 * vel * vel;
+    if (rate !== 1) src.playbackRate.value = rate;
     src.connect(gn).connect(ch.bus);
     src.start(t);
+    if (pad.kind === 'kick' && !track.mute) {
+      // sidechain: every kick pushes the ducked tracks down for a moment
+      for (const other of g.project.tracks) {
+        if (!other.duck || other.id === track.id) continue;
+        const oc = g.channels.get(other.id);
+        if (!oc) continue;
+        oc.duck.gain.setTargetAtTime(1 - 0.75 * other.duck, t, 0.004);
+        oc.duck.gain.setTargetAtTime(1, t + 0.04, 0.07);
+      }
+    }
     const h = {
-      t, until: t + buffer.duration,
+      t, until: t + buffer.duration / rate,
       release() {},
       kill(tk) {
         const at = Math.max(tk, ctx.currentTime);

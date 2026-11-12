@@ -3,7 +3,7 @@
 
 import { KEY_NAMES, SCALES, CHORDS, STEP } from '../theory.js';
 import { INSTRUMENTS, instrumentById } from '../instruments.js';
-import { MASTERS } from '../graph.js';
+import { MASTERS, REVERBS, ECHOES } from '../graph.js';
 import { PATTERNS } from '../patterns.js';
 import * as S from '../state.js';
 import { FILLS } from '../seq.js';
@@ -356,8 +356,18 @@ function addTrack() {
   show(`
     <h2>Add a track</h2>
     <p class="sub">Same bubbles, a new bandmate. You can have up to ${S.MAX_TRACKS}.</p>
-    <div class="cards">${roles.map(([r, n, h]) => `<button class="card" data-role="${r}">${mascot(r, app.project.tracks.filter((t) => t.role === r).length)}<b>${n}</b><small>${h}</small></button>`).join('')}</div>
+    <div class="cards">${roles.map(([r, n, h]) => `<button class="card" data-role="${r}">${mascot(r, app.project.tracks.filter((t) => t.role === r).length)}<b>${n}</b><small>${h}</small></button>`).join('')}
+      <button class="card" data-split="1">${mascot('drums', 3)}<b>Drums ×4</b><small>kicks, snares, hats, perc on their own tracks</small></button></div>
   `, (root) => {
+    on(root, '[data-split]', () => {
+      const made = S.addDrumSplit(app.project);
+      if (!made) { toast('Not enough room: remove a track first'); return; }
+      made.forEach((t) => app.engine.syncTrack(t));
+      closeSheet();
+      afterStructureChange(false);
+      selectTrack(made[0].id);
+      toast('Four drum tracks. Rows retune each sound.');
+    });
     on(root, '[data-role]', (b) => {
       const role = b.dataset.role;
       const taken = app.project.tracks.filter((t) => t.role === role).map((t) => t.inst);
@@ -382,6 +392,7 @@ function track(t) {
     <div class="wrap" style="margin-top:10px">
       ${t.role === 'drums' ? '<button class="pill" data-act="grooves">Grooves</button>' : `<button class="pill" data-act="inst">${esc(instrumentById(t.inst).name)} ▾</button>`}
       <button class="pill" data-act="snap">Snap to grid</button>
+      ${t.role === 'drums' ? '' : `<button class="pill ${t.duck ? 'on' : ''}" data-act="duck">Duck under kick${t.duck ? ': ' + (t.duck >= 1 ? 'hard' : 'soft') : ''}</button>`}
       <button class="pill" data-act="clear">Clear this loop</button>
       <button class="pill danger" data-act="del">${icon('trash')}Remove track</button>
     </div>
@@ -391,6 +402,7 @@ function track(t) {
     on(root, '[data-act]', (b) => {
       const act = b.dataset.act;
       if (act === 'inst') instrument(t);
+      else if (act === 'duck') { t.duck = !t.duck ? 0.6 : t.duck < 1 ? 1 : 0; touch(); track(t); toast(t.duck ? 'Dips every time a kick lands' : 'Ducking off'); }
       else if (act === 'grooves') { selectTrack(t.id); grooves(); }
       else if (act === 'snap') { S.quantizeTrack(p, p.cur, t.id, p.quant || STEP); afterEdit(); closeSheet(); toast('Snapped to the grid'); }
       else if (act === 'clear') { S.clearTrack(p, p.cur, t.id); afterEdit(); closeSheet(); toast(`${t.name} cleared`); }
@@ -468,6 +480,24 @@ function master() {
     on(root, '[data-master]', (b) => {
       app.engine.setMaster(b.dataset.master);
       closeSheet(); renderAll(); touch();
+    });
+  });
+}
+
+function space() {
+  const p = app.project;
+  const cur = p.space || { rev: 'hall', dly: 'ping' };
+  const list = (items, key) => items.map((m) => `<button class="item ${m.id === cur[key] ? 'on' : ''}" data-space="${key}:${m.id}"><span class="sp"><b>${m.name}</b><small>${m.hint}</small></span>${m.id === cur[key] ? icon('check') : ''}</button>`).join('');
+  show(`
+    <h2>Cloud & Echo type</h2>
+    <p class="sub">The character of this song's reverb and echo: the mixer sliders and the FX pads both use them.</p>
+    <h3>Cloud (reverb)</h3><div class="list">${list(REVERBS, 'rev')}</div>
+    <h3>Echo (delay)</h3><div class="list">${list(ECHOES, 'dly')}</div>
+  `, (root) => {
+    on(root, '[data-space]', (b) => {
+      const [key, id] = b.dataset.space.split(':');
+      app.engine.setSpace({ ...cur, [key]: id });
+      touch(); space();
     });
   });
 }
@@ -584,4 +614,4 @@ function spice(blockIdx, trackId) {
   draw();
 }
 
-export const openSheets = { spice,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };
+export const openSheets = { spice, space,  project, tempo, key, instrument, chord, grooves, addTrack, track, addSection, section, master, exporter };

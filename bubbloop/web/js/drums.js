@@ -38,7 +38,31 @@ export const DRUM_PADS = [
   { id: 'bell',   name: 'Moo',     kind: 'toy',   gm: 56, peak: 0.5,  len: 0.6, pan: 0.15 },
   { id: 'pop',    name: 'Pop',     kind: 'toy',   gm: 76, peak: 0.6,  len: 0.3, pan: -0.2 },
   { id: 'chime',  name: 'Sparkle', kind: 'toy',   gm: 81, peak: 0.42, len: 2.4, pan: 0, tuned: true },
+
+  // extra kicks, reached only from a split "Kicks" track
+  { id: 'kick3',  name: 'Sub',     kind: 'kick',  gm: 36, peak: 0.88, len: 1.4, pan: 0 },
+  { id: 'kick4',  name: 'Knock',   kind: 'kick',  gm: 35, peak: 0.88, len: 0.4, pan: 0 },
+  { id: 'kick5',  name: 'Dusty',   kind: 'kick',  gm: 36, peak: 0.8,  len: 0.6, pan: 0 },
 ];
+
+// A drum kit can be split into four tracks, one per family. On a split
+// track the five columns are five sounds and the rows retune them, so a
+// "Kicks" track really is twenty-five kicks.
+export const DRUM_GROUPS = {
+  kick:  { name: 'Kicks',  pads: ['kick1', 'kick2', 'kick3', 'kick4', 'kick5'] },
+  snare: { name: 'Snares', pads: ['snare1', 'snare2', 'snare3', 'clap', 'rim'] },
+  cym:   { name: 'Hats',   pads: ['hat1', 'hat2', 'ohat', 'ride', 'crash'] },
+  perc:  { name: 'Perc',   pads: ['tom3', 'shake1', 'tamb', 'bell', 'pop'] },
+};
+const ROW_SEMIS = [-5, -2, 0, 3, 7];
+
+// Which sound a bubble plays on a drum track: { idx, pad, rate }.
+export function padFor(track, r, c) {
+  const grp = track && DRUM_GROUPS[track.group];
+  if (!grp) { const idx = r * 5 + c; return { idx, pad: DRUM_PADS[idx], rate: 1 }; }
+  const idx = DRUM_PADS.findIndex((p) => p.id === grp.pads[c]);
+  return { idx, pad: DRUM_PADS[idx], rate: Math.pow(2, ROW_SEMIS[r] / 12) };
+}
 
 export const PAD_INDEX = Object.fromEntries(DRUM_PADS.map((p, i) => [p.id, i]));
 
@@ -224,6 +248,20 @@ function tomRecipe(freq, decay) {
 }
 [['tom1', 78, 0.2], ['tom2', 104, 0.18], ['tom3', 138, 0.16], ['tom4', 184, 0.14], ['tom5', 245, 0.12]]
   .forEach(([id, f, dec]) => { RECIPES[id] = tomRecipe(f, dec); });
+RECIPES.kick3 = (ctx, sh, d, t) => {
+  tone(ctx, d, t, { f0: 120, f1: 42, sweep: 0.06, level: 1, decay: 0.42 });
+  tone(ctx, d, t, { type: 'triangle', f0: 200, f1: 84, sweep: 0.03, level: 0.4, decay: 0.08 });
+  noise(ctx, sh, d, t, { type: 'highpass', freq: 2500, level: 0.2, decay: 0.004 });
+};
+RECIPES.kick4 = (ctx, sh, d, t) => {
+  tone(ctx, d, t, { f0: 320, f1: 70, sweep: 0.012, level: 1, decay: 0.06 });
+  tone(ctx, d, t, { type: 'square', f0: 180, f1: 90, sweep: 0.01, level: 0.3, decay: 0.03 });
+  noise(ctx, sh, d, t, { type: 'bandpass', freq: 3500, q: 1, level: 0.6, decay: 0.006 });
+};
+RECIPES.kick5 = (ctx, sh, d, t) => {
+  tone(ctx, d, t, { f0: 150, f1: 55, sweep: 0.03, level: 1, decay: 0.13, attack: 0.004 });
+  noise(ctx, sh, d, t, { type: 'lowpass', freq: 900, level: 0.35, decay: 0.05, attack: 0.003 });
+};
 
 // Tuned toys follow the song's key so they never clash.
 function rainRecipe(key) {

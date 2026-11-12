@@ -2,7 +2,7 @@
 // committed to audio; a song is note data until the moment it is exported.
 
 import { BAR, STEP } from './theory.js';
-import { DRUM_PADS, PAD_INDEX } from './drums.js';
+import { DRUM_PADS, PAD_INDEX, DRUM_GROUPS } from './drums.js';
 import { PATTERNS } from './patterns.js';
 
 const INDEX_KEY = 'bubbloop.index';
@@ -10,7 +10,7 @@ const LAST_KEY = 'bubbloop.last';
 const SETTINGS_KEY = 'bubbloop.settings';
 const P = (id) => 'bubbloop.p.' + id;
 
-export const MAX_TRACKS = 8;
+export const MAX_TRACKS = 12;
 export const MAX_SECTIONS = 8;
 export const SECTION_NAMES = 'ABCDEFGH';
 
@@ -41,7 +41,7 @@ export function newProject(name) {
   return {
     v: 1, id: uid(), name: name || `${pick(ADJ)} ${pick(NOUN)}`, created: Date.now(), modified: Date.now(),
     bpm: 92, swing: 0, key: 0, scale: 'major', quant: STEP, metro: true, master: 'sweet',
-    tracks, sections: [makeSection(tracks)], cur: 0, song: [], latch: {},
+    tracks, sections: [makeSection(tracks)], cur: 0, song: [], latch: {}, space: { rev: 'hall', dly: 'ping' },
   };
 }
 
@@ -154,6 +154,7 @@ export function serialize(p) {
 export function repair(p) {
   if (!p || !Array.isArray(p.tracks) || !Array.isArray(p.sections)) return null;
   const base = newProject(p.name);
+  if (!p.space) p.space = { rev: 'hall', dly: 'ping' };
   for (const k of ['bpm', 'swing', 'key', 'scale', 'quant', 'metro', 'master', 'latch', 'cur', 'song']) {
     if (p[k] === undefined) p[k] = base[k];
   }
@@ -322,6 +323,26 @@ export function addTrack(p, role, inst) {
   return t;
 }
 
+// Four drum tracks, one per family of sounds, each with its own fader and FX.
+export function addDrumSplit(p) {
+  const keys = Object.keys(DRUM_GROUPS);
+  if (p.tracks.length + keys.length > MAX_TRACKS) return null;
+  pushUndo(p);
+  return keys.map((k) => {
+    const t = makeTrack('drums');
+    t.group = k;
+    t.name = DRUM_GROUPS[k].name;
+    p.tracks.push(t);
+    for (const s of p.sections) s.ev[t.id] = [];
+    return t;
+  });
+}
+
+export function clearFxIn(p, lane) {
+  pushUndo(p);
+  lane.length = 0;
+}
+
 export function removeTrack(p, id) {
   if (p.tracks.length <= 1) return false;
   pushUndo(p);
@@ -363,6 +384,9 @@ export function applyPattern(p, secIdx, trackId, patternId) {
   const len = sectionLen(sec);
   const out = [];
   const patLen = pat.steps * STEP;
+  // on a split track only that family's sounds are laid down
+  const track = p.tracks.find((t) => t.id === trackId);
+  const grp = track && DRUM_GROUPS[track.group];
   for (let off = 0; off < len; off += patLen) {
     for (const [padId, line] of Object.entries(pat.rows)) {
       const idx = PAD_INDEX[padId];
@@ -373,7 +397,10 @@ export function applyPattern(p, secIdx, trackId, patternId) {
         const t = off + s * STEP;
         if (t >= len) continue;
         const v = ch === 'X' ? 1 : ch === 'x' ? 0.78 : 0.45;
-        out.push({ t, d: STEP, r: Math.floor(idx / 5), c: idx % 5, v });
+        if (grp) {
+          const c = grp.pads.indexOf(padId === 'hat3' ? 'hat1' : padId === 'kick1' || padId === 'kick2' ? padId : padId);
+          if (c >= 0) out.push({ t, d: STEP, r: 2, c, v });
+        } else out.push({ t, d: STEP, r: Math.floor(idx / 5), c: idx % 5, v });
       }
     }
   }
