@@ -89,7 +89,11 @@ export class MidiController {
   }
 
   get supported() {
-    return typeof navigator !== 'undefined' && typeof navigator.requestMIDIAccess === 'function';
+    try {
+      return typeof navigator !== 'undefined' && typeof navigator.requestMIDIAccess === 'function';
+    } catch (e) {
+      return false;
+    }
   }
 
   get connected() {

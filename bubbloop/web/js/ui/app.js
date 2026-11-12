@@ -883,7 +883,7 @@ function bind() {
   $('btn-project').onclick = () => openSheets.project();
   $('btn-tempo').onclick = () => openSheets.tempo();
   $('btn-key').onclick = () => openSheets.key();
-  $('btn-midi').onclick = () => openSheets.midi();
+  if ($('btn-midi')) $('btn-midi').onclick = () => openSheets.midi();
   $('btn-export').onclick = () => openSheets.exporter();
 
   el.play.onclick = async () => {
@@ -1073,15 +1073,17 @@ async function boot() {
   engine.tapOffset = (app.settings.tapOffset || 0) / 1000;
   engine.metroPlay = !!app.settings.metroPlay;
   engine.smooth = app.settings.smooth || 'auto';
-  engine.localSound = app.settings.midi.localSound !== false;
+  engine.localSound = !app.settings.midi || app.settings.midi.localSound !== false;
   engine.project = app.project;
   bind();
   el.app.hidden = false;
   renderAll();
-  renderMidiButton();
+  try { renderMidiButton(); } catch (e) { /* MIDI UI unavailable */ }
   fitGrid();
   requestAnimationFrame(frame);
-  if (midi.supported && !isNative) midi.connect().catch(() => {});
+  try {
+    if (midi.supported && !isNative) midi.connect().catch(() => {});
+  } catch (e) { /* Web MIDI unavailable */ }
 
   const start = async () => {
     el.splash.classList.add('gone');
