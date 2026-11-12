@@ -18,8 +18,9 @@ A ready-built APK is in [`dist/Bubbloop.apk`](dist/Bubbloop.apk).
 2. Android will ask whether to allow installing from this source. Allow it.
 3. Open **Bubbloop**.
 
-It needs Android 7 or newer, asks for no permissions and never uses the
-network. Exports are saved to `Music/Bubbloop` on the phone.
+It needs Android 7 or newer and never uses the network. The only permission is
+the microphone, asked for the first time you record into the sampler.
+Exports are saved to `Music/Bubbloop` on the phone.
 
 ## How it works
 

@@ -84,6 +84,7 @@ export async function buildPack(project, onStatus = () => {}) {
     const frac = (v) => (ti + v) / tracks.length;
     const label = `Sampling ${track.name}`;
     onStatus(label, frac(0));
+    if (track.inst === 'sampler') continue;       // already your own audio; nothing to sample
 
     if (track.role === 'drums' || track.inst === 'drums') {
       const seen = new Set();
