@@ -68,7 +68,9 @@ wake that track for that block. Play runs the song from the selected block.
 **Export.** WAV, Apple Lossless (.m4a), MP3, MIDI, or stems (one WAV per
 track). Mastering presets set the tone and bring the song to a streaming
 loudness target (EBU R128) with a look-ahead peak limiter. A loop can be
-exported seamless, ready to drop into a DAW.
+exported seamless, ready to drop into a DAW. **Instrument pack** is a ZIP with
+each track's sound sampled every three semitones plus an `.sfz` map (drums
+keyed by GM note), so the same sounds can play MIDI in a DAW sampler.
 
 ## Layout
 
@@ -77,7 +79,7 @@ bubbloop/
   web/        the whole app: plain HTML, CSS and ES modules, no build step
     js/         theory, instruments, drums, graph (FX + mastering), engine,
                 seq, render, state, exporter, platform
-    js/codec/   WAV, Apple Lossless, MIDI writers; mastering; export worker
+    js/codec/   WAV, Apple Lossless, MIDI, ZIP/SFZ writers; mastering; export worker
     js/ui/      the interface
     vendor/     lamejs (MP3 encoder, LGPL)
   android/    a thin Java shell: one WebView that serves web/ and saves files

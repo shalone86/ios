@@ -2,6 +2,7 @@
 
 import { renderProject } from './render.js';
 import { encodeMidi } from './codec/midi.js';
+import { buildPack } from './codec/sfz.js';
 import { masterById } from './graph.js';
 import { saveFile } from './platform.js';
 import { SECTION_NAMES } from './state.js';
@@ -12,6 +13,7 @@ export const FORMATS = [
   { id: 'mp3',   name: 'MP3',            hint: 'small, plays anywhere',   ext: 'mp3', mime: 'audio/mpeg' },
   { id: 'stems', name: 'Stems',          hint: 'a WAV per track',         ext: 'wav', mime: 'audio/wav' },
   { id: 'midi',  name: 'MIDI',           hint: 'just the notes',          ext: 'mid', mime: 'audio/midi' },
+  { id: 'pack',  name: 'Instrument pack', hint: 'these sounds for your DAW', ext: 'zip', mime: 'application/zip' },
 ];
 
 let worker = null, jobId = 0;
@@ -56,6 +58,14 @@ export async function exportProject(project, options, onStatus = () => {}) {
     onStatus('Writing notes', 0.5);
     const name = `${base}.mid`;
     files.push({ name, ...(await saveFile(name, fmt.mime, encodeMidi(project, what))) });
+    return { files, info: null };
+  }
+
+  if (fmt.id === 'pack') {
+    const pack = await buildPack(project, onStatus);
+    onStatus('Saving', 0.98);
+    const name = `${safe(project.name)} instruments.zip`;
+    files.push({ name, ...(await saveFile(name, fmt.mime, pack.bytes)) });
     return { files, info: null };
   }
 

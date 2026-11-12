@@ -652,7 +652,7 @@ function exporter() {
     ${hasSong ? '' : '<p class="sub" style="margin-top:8px">To export a whole song, arrange your loops in the Song tab first.</p>'}
     <h3>Format</h3>
     <div class="cards">${FORMATS.map((f) => `<button class="card ${c.format === f.id ? 'on' : ''}" data-format="${f.id}"><b>${f.name}</b><small>${f.hint}</small></button>`).join('')}</div>
-    ${c.format === 'midi' ? '' : `
+    ${c.format === 'midi' || c.format === 'pack' ? '' : `
     <h3>Mastering</h3>
     <div class="wrap">${MASTERS.map((m) => `<button class="pill ${p.master === m.id ? 'on' : ''}" data-master="${m.id}" ${c.format === 'stems' ? 'disabled' : ''}>${m.name}</button>`).join('')}</div>
     <p class="sub" style="margin-top:8px">${c.format === 'stems' ? 'Stems are left unmastered so you can mix them yourself.' : masterBlurb(MASTERS.find((m) => m.id === p.master))}</p>
