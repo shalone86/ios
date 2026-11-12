@@ -32,6 +32,8 @@ function show(html, bind) {
   const title = (root.querySelector('h2') || {}).textContent || '';
   const same = !sheet.hidden && title === shownTitle;
   const keep = same ? sheet.scrollTop : 0;
+  // sideways strips inside the sheet keep their place too
+  const strips = same ? [...body.querySelectorAll('.scroll-x')].map((n) => n.scrollLeft) : [];
   body.textContent = '';
   body.appendChild(root);
   shownTitle = title;
@@ -44,6 +46,7 @@ function show(html, bind) {
     sheet.style.animation = '';
   }
   sheet.scrollTop = keep;            // redrawing a sheet keeps your place in it
+  root.querySelectorAll('.scroll-x').forEach((n, i) => { if (strips[i]) n.scrollLeft = strips[i]; });
   mountIcons(root);
   if (bind) bind(root);
 }

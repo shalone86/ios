@@ -25,6 +25,9 @@ export const CHORDS = [
   { id: 'off',    name: 'Single', hint: 'one note' },
   { id: 'triad',  name: 'Triad',  hint: 'three-note chord' },
   { id: 'seven',  name: '7th',    hint: 'jazzy four notes' },
+  { id: 'maj7',   name: 'Maj7',   hint: 'always a major seventh' },
+  { id: 'min7',   name: 'Min7',   hint: 'always a minor seventh' },
+  { id: 'dom7',   name: 'Dom7',   hint: 'always a dominant seventh' },
   { id: 'nine',   name: '9th',    hint: 'lush five notes' },
   { id: 'eleven', name: '11th',   hint: 'airy and suspended' },
   { id: 'thirteen', name: '13th', hint: 'big band colour' },
@@ -32,6 +35,8 @@ export const CHORDS = [
   { id: 'power',  name: 'Power',  hint: 'root + fifth' },
   { id: 'stack',  name: 'Stack',  hint: 'pentatonic cluster' },
 ];
+
+const FIXED = { maj7: [0, 4, 7, 11], min7: [0, 3, 7, 10], dom7: [0, 4, 7, 10] };
 
 // Lowest note of the bottom row, per role. The root is placed at the first
 // pitch of the key at or above this MIDI note.
@@ -70,6 +75,9 @@ export function cellNotes(project, track, row, col, chord = 'off', acc = 0) {
       return base + sc.steps[i % 5] + 12 * Math.floor(i / 5);
     });
   }
+  // fixed shapes: the same quality on any bubble, even if it steps outside the key
+  const fixed = FIXED[chord];
+  if (fixed) return fixed.map((semi) => root + semi);
   const pi = sc.parent.indexOf(sc.steps[col]);
   const deg = (k) => {
     const i = pi + k;
@@ -93,6 +101,7 @@ export function chordLabel(project, col, chord) {
   const rootPc = (project.key + sc.steps[col]) % 12;
   const name = KEY_NAMES[rootPc];
   if (chord === 'power') return name + '5';
+  if (FIXED[chord]) return name + { maj7: 'maj7', min7: 'm7', dom7: '7' }[chord];
   if (chord === 'stack') return name + '△';
   const pi = sc.parent.indexOf(sc.steps[col]);
   const iv = (k) => {

@@ -23,6 +23,7 @@ const r = await page.evaluate(async () => {
   const tr = { role: 'pads', oct: 0 }, proj = { key: 0, scale: 'major' };
   out.ninth = T.cellNotes(proj, tr, 0, 0, 'nine').map((m) => m % 12).join();
   out.sharp = T.cellNotes(proj, tr, 0, 0, 'off', 1)[0] % 12;
+  out.maj7 = T.cellNotes(proj, tr, 0, 1, 'maj7').map((m) => m % 12).join() + ' ' + T.chordLabel(proj, 1, 'maj7');
   out.label = T.chordLabel(proj, 0, 'nine') + ' ' + T.chordLabel(proj, 4, 'eleven');
   return out;
 });
@@ -31,6 +32,7 @@ check(r.spice[0] && r.spice[1] > 0.05, `fills and energy on a song block render 
 check(r.notes[0] && r.notes[1] > 0.05, `accidentals and 13th chords render (${(r.notes[1] * 100).toFixed(0)}%)`);
 check(r.bend[0] && r.bend[1] > 0.05, `recorded pitch bends play back (${(r.bend[1] * 100).toFixed(0)}%)`);
 check(r.ninth === '0,4,7,11,2' && r.sharp === 1, `C ninth is C E G B D, sharp C is C sharp (${r.ninth}; ${r.sharp}; ${r.label})`);
+check(r.maj7 === '2,6,9,1 Dmaj7', `Maj7 is a major seventh on any bubble (${r.maj7})`);
 check(errors.length === 0, 'no page errors ' + errors.join('|'));
 await browser.close(); server.close();
 console.log(failed ? `${failed} failed` : 'all extras passed'); process.exit(failed ? 1 : 0);
