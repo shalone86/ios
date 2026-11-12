@@ -18,6 +18,8 @@ const r = await page.evaluate(async () => {
   x = await renderProject(p, { what: 'song' }); out.spice = [ok(x), diff(ref.channels[0], x.channels[0])];
   p = base(); for (const e of p.sections[0].ev[p.tracks[3].id]) e.a = 1; for (const e of p.sections[0].ev[p.tracks[2].id]) e.ch = 'thirteen';
   x = await renderProject(p, { what: 'song' }); out.notes = [ok(x), diff(ref.channels[0], x.channels[0])];
+  p = base(); for (const e of p.sections[0].ev[p.tracks[3].id]) e.b = [[4, 60], [12, 150], [24, -100], [36, 0]];
+  x = await renderProject(p, { what: 'song' }); out.bend = [ok(x), diff(ref.channels[0], x.channels[0])];
   const tr = { role: 'pads', oct: 0 }, proj = { key: 0, scale: 'major' };
   out.ninth = T.cellNotes(proj, tr, 0, 0, 'nine').map((m) => m % 12).join();
   out.sharp = T.cellNotes(proj, tr, 0, 0, 'off', 1)[0] % 12;
@@ -27,6 +29,7 @@ const r = await page.evaluate(async () => {
 check(r.trackFx[0] && r.trackFx[1] > 0.05, `FX aimed at single tracks render and change the mix (${(r.trackFx[1] * 100).toFixed(0)}%)`);
 check(r.spice[0] && r.spice[1] > 0.05, `fills and energy on a song block render (${(r.spice[1] * 100).toFixed(0)}%)`);
 check(r.notes[0] && r.notes[1] > 0.05, `accidentals and 13th chords render (${(r.notes[1] * 100).toFixed(0)}%)`);
+check(r.bend[0] && r.bend[1] > 0.05, `recorded pitch bends play back (${(r.bend[1] * 100).toFixed(0)}%)`);
 check(r.ninth === '0,4,7,11,2' && r.sharp === 1, `C ninth is C E G B D, sharp C is C sharp (${r.ninth}; ${r.sharp}; ${r.label})`);
 check(errors.length === 0, 'no page errors ' + errors.join('|'));
 await browser.close(); server.close();

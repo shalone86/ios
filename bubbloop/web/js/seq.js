@@ -100,7 +100,9 @@ export function scheduleRange(g, project, seg, a, b, timeAt, hooks = {}) {
       if (wt >= b) break;
       if (ev._p === seg.pass) continue;          // just played by hand this pass
       const time = timeAt(seg.start + wt);
-      g.playCell(track, ev.r, ev.c, ev.ch, Math.min(1, ev.v * gain), time, ev.d * spt, ev.a);
+      const hs = g.playCell(track, ev.r, ev.c, ev.ch, Math.min(1, ev.v * gain), time, ev.d * spt, ev.a);
+      // a recorded pitch bend plays back with its note
+      if (ev.b) for (const [dt, cents] of ev.b) for (const h of hs) if (h.bend) h.bend(cents, time + dt * spt);
       if (hooks.onNote) hooks.onNote(track, ev, time);
     }
   }

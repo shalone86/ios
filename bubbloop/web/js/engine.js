@@ -381,7 +381,18 @@ export class Engine {
   // Pitch-bend a held note (finger wiggling up and down on its bubble).
   bend(id, cents) {
     const h = this.held.get(id);
-    if (h) h.handles.forEach((x) => x.bend && x.bend(cents, this.now));
+    if (!h) return;
+    const now = this.now;
+    h.handles.forEach((x) => x.bend && x.bend(cents, now));
+    if (h.rec) {
+      // keep the gesture with the note: [ticks after the note starts, cents]
+      const { ev, seg, start } = h.rec;
+      const at = Math.max(0, Math.round(this.tickAt(now - this.latency()) - seg.start - start));
+      const b = ev.b || (ev.b = []);
+      const last = b[b.length - 1];
+      if (last && at - last[0] < 3) last[1] = Math.round(cents);
+      else if (b.length < 200) b.push([at, Math.round(cents)]);
+    }
   }
 
   // Loop mode follows the current section's mutes; song mode uses the blocks'.
