@@ -46,7 +46,7 @@ export async function saveFile(name, mime, bytes, onProgress) {
     }
     const res = JSON.parse(N.finishFile(id) || '{}');
     if (!res.ok) throw new Error(res.error || 'Could not save the file');
-    return { where: res.where || 'Music/Bubbloop', uri: res.uri, mime };
+    return { where: res.where || 'Music/Boba Beats', uri: res.uri, mime };
   }
   const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
   const a = document.createElement('a');

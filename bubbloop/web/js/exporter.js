@@ -43,7 +43,7 @@ function encode(msg, transfer, onProgress) {
   });
 }
 
-const safe = (s) => s.replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Bubbloop';
+const safe = (s) => s.replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Boba Beats';
 
 // options: { format, what: 'song'|'loop', master, bits, kbps, seamless }
 // onStatus(label, fraction) is called as work moves along.

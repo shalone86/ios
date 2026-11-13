@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Bubbloop</string>
+    <string name="app_name">Boba Beats</string>
     <string name="share_title">Share your song</string>
     <string name="pick_file">Open a song file</string>
-    <string name="web_engine_broken">Bubbloop runs on this phone\'s web engine, and it keeps stopping.\n\nUpdate \"Android System WebView\" in the Play Store, then open Bubbloop again.</string>
+    <string name="web_engine_broken">Boba Beats runs on this phone\'s web engine, and it keeps stopping.\n\nUpdate \"Android System WebView\" in the Play Store, then open Boba Beats again.</string>
 </resources>

@@ -1,4 +1,4 @@
-name: Bubbloop APK
+name: Boba Beats APK
 
 # Builds the Android app whenever its source changes, and on demand.
 on:
@@ -25,8 +25,8 @@ jobs:
         working-directory: bubbloop/android
         run: ./gradlew assembleRelease --no-daemon
       - name: Rename
-        run: cp bubbloop/android/app/build/outputs/apk/release/app-release.apk Bubbloop.apk
+        run: cp bubbloop/android/app/build/outputs/apk/release/app-release.apk BobaBeats.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Bubbloop-apk
-          path: Bubbloop.apk
+          name: BobaBeats-apk
+          path: BobaBeats.apk

@@ -12,9 +12,9 @@ Build instructions at https://median.co/docs/build-ios-from-source
 
 Licensing information available at https://median.co/license
 
-Bubbloop
+Boba Beats
 ------------
 
-This repository also holds [Bubbloop](bubbloop/), a pentatonic bubble beat
+This repository also holds [Boba Beats](bubbloop/), a pentatonic bubble beat
 maker for Android. It is separate from the iOS code above. An installable
-build is at [bubbloop/dist/Bubbloop.apk](bubbloop/dist/Bubbloop.apk).
+build is at [bubbloop/dist/BobaBeats.apk](bubbloop/dist/BobaBeats.apk).

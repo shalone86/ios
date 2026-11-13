@@ -1,4 +1,4 @@
-# Bubbloop
+# Boba Beats
 
 Pocket beats made of bubbles. A loop-based beat maker for Android where every
 instrument is played on the same grid of 25 singing bubbles, tuned to a
@@ -11,16 +11,16 @@ as many times as you like, or taken into a DAW as MIDI and stems.
 
 ## Install on your phone
 
-A ready-built APK is in [`dist/Bubbloop.apk`](dist/Bubbloop.apk).
+A ready-built APK is in [`dist/BobaBeats.apk`](dist/BobaBeats.apk).
 
 1. Open that file on your Android phone (download it from GitHub, or send it
    to yourself).
 2. Android will ask whether to allow installing from this source. Allow it.
-3. Open **Bubbloop**.
+3. Open **Boba Beats**.
 
 It needs Android 7 or newer and never uses the network. The only permission is
 the microphone, asked for the first time you record into the sampler.
-Exports are saved to `Music/Bubbloop` on the phone.
+Exports are saved to `Music/Boba Beats` on the phone.
 
 ## How it works
 
@@ -110,7 +110,7 @@ cd bubbloop/web && python3 -m http.server 8000
 `web/` is a complete installable web app (a manifest, icons and an offline
 copy kept by `sw.js`), so it can be shared as a link with no store involved.
 Host the folder anywhere that serves https: itch.io (upload a zip of `web/`
-as an HTML game), or GitHub Pages using the **Bubbloop web** workflow under
+as an HTML game), or GitHub Pages using the **Boba Beats web** workflow under
 Actions, which is started by hand. Visitors can use it in the browser or
 choose "Add to Home Screen" / "Install app" for a full-screen app that works
 offline.
@@ -133,7 +133,7 @@ The build is signed with `android/app/sideload.jks`, a key kept in the repo
 for sideloading only. To publish on a store, sign with a private key of your
 own.
 
-Pushing to GitHub also builds the APK: see the **Bubbloop APK** workflow
+Pushing to GitHub also builds the APK: see the **Boba Beats APK** workflow
 under Actions, which attaches it to each run.
 
 ## Tests
@@ -155,3 +155,10 @@ ffmpeg's EBU R128 reading.
 - Type: [Fredoka](https://github.com/hafontia/Fredoka-One), SIL Open Font License.
 - MP3 encoding: [lamejs](https://github.com/shijinyu/lamejs), LGPL.
 - All sounds are synthesised in the app; there are no samples.
+
+## Names
+
+The app was first called Bubbloop. The code folder (`bubbloop/`), the
+Android app ID (`com.bubbloop.app`), the native bridge and the storage keys
+keep that name on purpose: changing them would make phones treat it as a new
+app and leave saved songs behind. Everything a person sees says Boba Beats.

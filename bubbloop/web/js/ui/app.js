@@ -1,4 +1,4 @@
-// Bubbloop UI: wires the bubbles, pads and buttons to the engine.
+// Boba Beats UI: wires the bubbles, pads and buttons to the engine.
 
 import { ROWS, COLS, STEP, BAR, KEY_NAMES, scaleById, chordLabel, cellNotes, CHORDS } from '../theory.js';
 import { Engine } from '../engine.js';

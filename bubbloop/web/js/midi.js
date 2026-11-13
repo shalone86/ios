@@ -1,5 +1,5 @@
 // Web MIDI input and output for desktop browsers.
-// Input lets MIDI keyboards and drum pads play and record Bubbloop's grid.
+// Input lets MIDI keyboards and drum pads play and record Boba Beats' grid.
 // Output sends live taps and sequenced loops out to external synths or a DAW.
 
 import { ROWS, COLS, cellNotes, midiName } from './theory.js';

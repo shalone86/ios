@@ -88,7 +88,7 @@ export async function buildPack(project, onStatus = () => {}) {
 
     if (track.role === 'drums' || track.inst === 'drums') {
       const seen = new Set();
-      const lines = ['// Bubbloop drums: one pad per key, played in full.', '<group> loop_mode=one_shot ampeg_release=0.02'];
+      const lines = ['// Boba Beats drums: one pad per key, played in full.', '<group> loop_mode=one_shot ampeg_release=0.02'];
       DRUM_PADS.forEach((pad, i) => {
         if (seen.has(pad.gm)) return;
         seen.add(pad.gm);
@@ -113,7 +113,7 @@ export async function buildPack(project, onStatus = () => {}) {
     }
     // one gain for the whole track keeps the notes' levels in proportion
     const k = PEAK / (Math.max(...takes.map(peakOf)) || 1);
-    const lines = [`// Bubbloop ${inst.name}: a sample every ${STEP} semitones.`, '<group> loop_mode=no_loop ampeg_release=0.4'];
+    const lines = [`// Boba Beats ${inst.name}: a sample every ${STEP} semitones.`, '<group> loop_mode=no_loop ampeg_release=0.4'];
     notes.forEach((m, i) => {
       const file = `${pad3(m)}.wav`;
       files.push({ name: `${dir}/${file}`, bytes: wavBytes(takes[i], k) });

@@ -135,7 +135,7 @@ function project() {
       <button class="pill" data-act="open">Import song file</button>
       ${app.midi && app.midi.supported ? `<button class="pill" data-act="midi">${icon('midi')}MIDI</button>` : ''}
     </div>
-    <input type="file" id="p-file" accept=".json,.bubbloop,application/json" hidden>
+    <input type="file" id="p-file" accept=".json,.bobabeats,.bubbloop,application/json" hidden>
     ${others.length ? `<h3>Saved songs</h3><div class="list">${others.map((o) => `
       <div class="item"><button class="sp" data-open="${o.id}" style="text-align:left"><b>${esc(o.name)}</b><small>${Math.round(o.bpm)} bpm · ${ago(o.modified)}</small></button>
       <button class="pill round small danger" data-del="${o.id}" aria-label="Delete ${esc(o.name)}">${icon('trash')}</button></div>`).join('')}</div>` : ''}
@@ -151,7 +151,7 @@ function project() {
     <div class="field"><span>Click while playing</span><span style="flex:1"></span><button class="toggle ${st.metroPlay ? 'on' : ''}" data-set="metroPlay" aria-label="Metronome during playback"></button></div>
     <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="160" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
     <p class="sub">If recorded notes land late, nudge tap timing up; if early, down.</p>
-    <p class="sub center" style="margin-top:14px">Bubbloop · songs stay on this device</p>
+    <p class="sub center" style="margin-top:14px">Boba Beats · songs stay on this device</p>
   `, (root) => {
     const name = root.querySelector('#p-name');
     name.addEventListener('input', () => { p.name = name.value.trim() || 'Untitled'; document.getElementById('project-name').textContent = p.name; touch(); });
@@ -202,7 +202,7 @@ function project() {
         closeSheet();
         await openProject(loaded);
         toast(`Opened ${loaded.name}`);
-      } catch (e) { toast('That file is not a Bubbloop song'); }
+      } catch (e) { toast('That file is not a Boba Beats song'); }
     });
     on(root, '[data-act]', async (b) => {
       const act = b.dataset.act;
@@ -214,7 +214,7 @@ function project() {
       else if (act === 'open') file.click();
       else if (act === 'file') {
         try {
-          const saved = await saveFile(`${p.name.replace(/[\\/:*?"<>|]/g, ' ')}.bubbloop.json`, 'application/json', new TextEncoder().encode(JSON.stringify({ ...JSON.parse(S.serialize(p)), samples: await packSamples(sampleIds(p)) })));
+          const saved = await saveFile(`${p.name.replace(/[\\/:*?"<>|]/g, ' ')}.bobabeats.json`, 'application/json', new TextEncoder().encode(JSON.stringify({ ...JSON.parse(S.serialize(p)), samples: await packSamples(sampleIds(p)) })));
           toast(`Saved to ${saved.where}`);
         } catch (e) { toast(e.message); }
       }
@@ -798,7 +798,7 @@ function midiSheet() {
   if (!m || !m.supported) {
     show(`
       <h2>MIDI</h2>
-      <p class="sub">This browser does not support Web MIDI. Open Bubbloop in Chrome, Edge, or Firefox on desktop to play with MIDI keyboards, drum pads, and external synths.</p>
+      <p class="sub">This browser does not support Web MIDI. Open Boba Beats in Chrome, Edge, or Firefox on desktop to play with MIDI keyboards, drum pads, and external synths.</p>
       <button class="pill primary" id="m-close">Got it</button>
     `, (root) => root.querySelector('#m-close').addEventListener('click', closeSheet));
     return;
@@ -806,7 +806,7 @@ function midiSheet() {
   if (!m.connected) {
     show(`
       <h2>MIDI</h2>
-      <p class="sub">Play Bubbloop from a USB MIDI keyboard or pad controller, or send loops out to your DAW or hardware synth.</p>
+      <p class="sub">Play Boba Beats from a USB MIDI keyboard or pad controller, or send loops out to your DAW or hardware synth.</p>
       ${m.error ? `<p class="sub" style="color:#d43d62">${esc(m.error)}</p>` : ''}
       <button class="pill primary" id="m-conn">Connect MIDI devices</button>
     `, (root) => root.querySelector('#m-conn').addEventListener('click', async () => {
@@ -850,8 +850,8 @@ function midiSheet() {
       <button class="pill small ${!st.outId ? 'on' : ''}" data-out="">Off</button>
       ${outs.map((p) => `<button class="pill small ${st.outId === p.id ? 'on' : ''}" data-out="${esc(p.id)}">${esc(p.name)}</button>`).join('')}
     </div>
-    <div class="field" style="margin-top:14px"><span>Play Bubbloop sounds</span><span style="flex:1"></span><button class="toggle ${st.localSound ? 'on' : ''}" id="m-local" aria-label="Play Bubbloop sounds"></button></div>
-    <p class="sub">Turn off to drive an external synth or DAW without doubling Bubbloop's audio.</p>
+    <div class="field" style="margin-top:14px"><span>Play Boba Beats sounds</span><span style="flex:1"></span><button class="toggle ${st.localSound ? 'on' : ''}" id="m-local" aria-label="Play Boba Beats sounds"></button></div>
+    <p class="sub">Turn off to drive an external synth or DAW without doubling Boba Beats' audio.</p>
     <div class="field"><span>Send MIDI clock</span><span style="flex:1"></span><button class="toggle ${st.clockOut ? 'on' : ''}" id="m-clock" aria-label="Send MIDI clock"></button></div>
     <div class="wrap" style="margin-top:12px"><button class="pill" id="m-panic">All notes off</button></div>
   `, (root) => {
