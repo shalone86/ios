@@ -3,6 +3,9 @@
 // to samples by id. Decoded buffers are cached so playback is instant and the
 // offline renderer can use the very same audio.
 
+import { ROWS, COLS, cellNotes } from './theory.js';
+import { chordOf } from './state.js';
+
 const DB = 'bubbloop-samples', STORE = 'samples';
 const cache = new Map();          // id -> { id, name, root, buffer }
 export const MAX_SECONDS = 12;
@@ -167,6 +170,106 @@ export async function unpackSamples(packed) {
     await tx('readwrite', (s) => s.put({ id, name: r.name, sr: r.sr, data, root: r.root, pitched: r.pitched, made: Date.now() }));
     cache.set(id, { id, name: r.name, root: r.root, pitched: r.pitched, buffer: toBuffer(data, r.sr) });
   }
+}
+
+// ---------- natural pitch (formants kept) ----------
+// In keyboard mode each note the song can play is prepared ahead of time by
+// a background worker and kept here. Until a note is ready the sampler plays
+// it the old way (sped up or slowed down), so nothing ever waits.
+
+const shifted = new Map();        // key -> AudioBuffer
+const queued = new Set();         // keys a worker is busy with
+let worker = null, jobN = 0, busy = 0;
+const waiters = new Set();        // resolve functions waiting for the queue to drain
+
+const noteKey = (s, m, formant) => `${s.id}|${s.root.toFixed(3)}|${m}|${formant}`;
+
+export function naturalBuffer(sample, m, formant = 0) {
+  return shifted.get(noteKey(sample, m, formant)) || null;
+}
+
+function settle() {
+  if (busy > 0) return;
+  for (const w of waiters) w();
+  waiters.clear();
+}
+
+function getWorker() {
+  if (worker !== null) return worker;
+  try {
+    worker = new Worker(new URL('./dsp/shift-worker.js', import.meta.url), { type: 'module' });
+    worker.onmessage = (e) => {
+      const { id, out, done, error } = e.data;
+      if (out) {
+        const b = new AudioBuffer({ length: Math.max(1, out.length), sampleRate: pending.get(id) || 44100, numberOfChannels: 1 });
+        b.copyToChannel(out, 0);
+        shifted.set(id, b);
+        queued.delete(id);
+        pending.delete(id);
+      }
+      if (done || error) { busy--; settle(); }
+    };
+    worker.onerror = () => { worker = false; busy = 0; queued.clear(); settle(); };
+  } catch (e) {
+    worker = false;               // no module workers here: keep the old way
+  }
+  return worker;
+}
+const pending = new Map();        // key -> sample rate, for jobs in flight
+
+// Every note a keyboard-mode sampler track could play: each bubble with its
+// chord, a semitone either side (accidentals), and anything already recorded.
+function wantedNotes(project, track) {
+  const want = new Map();         // midi -> priority (lower first)
+  const add = (list, pri) => { for (const m of list) if (!want.has(m) || want.get(m) > pri) want.set(m, pri); };
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      add(cellNotes(project, track, r, c, 'off', 0), 0);
+      add(cellNotes(project, track, r, c, chordOf(track, c), 0), 1);
+      add(cellNotes(project, track, r, c, 'off', 1), 2);
+      add(cellNotes(project, track, r, c, 'off', -1), 2);
+    }
+  }
+  for (const sec of project.sections) {
+    for (const e of sec.ev[track.id] || []) add(cellNotes(project, track, e.r, e.c, e.ch, e.a), 0);
+  }
+  return [...want.entries()].sort((a, b) => a[1] - b[1]).map(([m]) => m);
+}
+
+// Make sure every note the project needs is prepared (or on its way).
+// Resolves when the queue is empty. evict: drop notes no longer needed.
+export function prepareNatural(project, { evict = false } = {}) {
+  const keep = new Set();
+  const jobs = new Map();         // sample id -> { sample, notes: [] }
+  for (const t of project.tracks) {
+    const smp = t.smp;
+    if (t.inst !== 'sampler' || !smp || smp.mode === 'kit' || smp.shift === 'classic' || !smp.key) continue;
+    const sample = cache.get(smp.key);
+    if (!sample) continue;
+    const formant = smp.formant || 0;
+    for (const m of wantedNotes(project, t)) {
+      const key = noteKey(sample, m, formant);
+      keep.add(key);
+      if (shifted.has(key) || queued.has(key)) continue;
+      const semis = m - sample.root;
+      if (Math.abs(semis) < 0.02 && formant === 0) continue;       // already the right note
+      const j = jobs.get(sample.id) || { sample, notes: [] };
+      j.notes.push({ id: key, semis, formant });
+      jobs.set(sample.id, j);
+    }
+  }
+  if (evict) for (const k of [...shifted.keys()]) if (!keep.has(k)) shifted.delete(k);
+  const w = jobs.size ? getWorker() : null;
+  if (w) {
+    for (const { sample, notes } of jobs.values()) {
+      const data = sample.buffer.getChannelData(0).slice();
+      for (const n of notes) { queued.add(n.id); pending.set(n.id, sample.buffer.sampleRate); }
+      busy++;
+      const f0 = sample.pitched ? 440 * Math.pow(2, (sample.root - 69) / 12) : 0;
+      w.postMessage({ job: ++jobN, key: `${sample.id}|${sample.root.toFixed(3)}`, data, sr: sample.buffer.sampleRate, f0, notes }, [data.buffer]);
+    }
+  }
+  return busy > 0 ? new Promise((resolve) => waiters.add(resolve)) : Promise.resolve();
 }
 
 // ---------- getting sound in ----------

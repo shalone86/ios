@@ -66,6 +66,14 @@ lock to leave one switched on.
 (which section, how many times), each row a track. Tap a bubble to rest or
 wake that track for that block. Play runs the song from the selected block.
 
+**Sampler.** Choose Sampler as a track's instrument, then record with the
+microphone or import a file (up to 12 s). Keyboard mode tunes the sound and
+spreads it across the bubbles; Kit mode puts a different sound on each
+bubble. In keyboard mode, Natural pitch keeps the sound's formants where they
+were, so a voice moved up stays a voice instead of a chipmunk; the Formant
+control slides them on purpose (lower is bigger and darker). Notes are
+prepared in the background; until one is ready it plays the classic way.
+
 **Export.** WAV, Apple Lossless (.m4a), MP3, MIDI, or stems (one WAV per
 track). Mastering presets set the tone and bring the song to a streaming
 loudness target (EBU R128) with a look-ahead peak limiter. A loop can be

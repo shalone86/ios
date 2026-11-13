@@ -6,7 +6,7 @@ import { INSTRUMENTS, instrumentById } from '../instruments.js';
 import { MASTERS, REVERBS, ECHOES } from '../graph.js';
 import { PATTERNS } from '../patterns.js';
 import * as S from '../state.js';
-import { addSample, getSample, setRoot, recordMic, decodeFile, sampleIds, packSamples, unpackSamples, ensureSamples } from '../samples.js';
+import { addSample, getSample, setRoot, prepareNatural, recordMic, decodeFile, sampleIds, packSamples, unpackSamples, ensureSamples } from '../samples.js';
 import { midiName } from '../theory.js';
 import { FILLS } from '../seq.js';
 import { exportProject, FORMATS } from '../exporter.js';
@@ -370,6 +370,7 @@ function sampler(t) {
     if (!made) { toast('That was silent: try again, a little louder'); return; }
     if (kit) t.smp.kit[slot] = made.id; else t.smp.key = made.id;
     touch(); renderAll(); sampler(t);
+    if (!kit) prepareNatural(p);
     if (e.ready) e.g.playSample(t, kit ? app.focus.r : 1, kit ? app.focus.c : 0, 'off', 0.9, e.now + 0.05, 1.2);
   };
   show(`
@@ -384,6 +385,12 @@ function sampler(t) {
     <div class="item" style="margin:6px 0 12px"><span class="sp"><b>${cur ? esc(cur.name) : 'Nothing here yet'}</b>
       <small>${cur ? `${cur.buffer.duration.toFixed(1)} s${kit ? '' : ` · heard as ${midiName(Math.round(cur.root))}${cur.pitched ? '' : ' (no clear pitch found)'}`}` : 'Record something or bring in a file'}</small></span>
       ${cur && !kit ? '<span class="stepper"><button data-root="-1">−</button><span>tune</span><button data-root="1">+</button></span>' : ''}</div>
+    ${kit ? '' : `<h3>Pitch</h3>
+    <div class="wrap">
+      <button class="pill small ${t.smp.shift === 'classic' ? '' : 'on'}" data-shift="natural">Natural: keeps the voice</button>
+      <button class="pill small ${t.smp.shift === 'classic' ? 'on' : ''}" data-shift="classic">Classic: chipmunk and giant</button>
+    </div>
+    ${t.smp.shift === 'classic' ? '' : `<div class="field"><span>Formant</span><span class="stepper"><button data-formant="-1">−</button><span>${(t.smp.formant || 0) > 0 ? '+' : ''}${t.smp.formant || 0}</span><button data-formant="1">+</button></span><span class="sub" style="margin:0">${(t.smp.formant || 0) < 0 ? 'bigger, darker' : (t.smp.formant || 0) > 0 ? 'smaller, brighter' : 'as recorded'}</span></div>`}`}
     <button class="pill primary" id="s-rec">${recorder ? 'Stop' : 'Record with the microphone'}</button>
     <div class="progress" ${recorder ? '' : 'hidden'}><i id="s-level"></i></div>
     <div class="wrap" style="margin-top:10px">
@@ -393,6 +400,15 @@ function sampler(t) {
     <input type="file" id="s-input" accept="audio/*" hidden>
     <p class="sub" style="margin-top:10px">Up to 12 seconds. Silence at the ends is trimmed for you.</p>
   `, (root) => {
+    const hear = async () => {
+      await prepareNatural(p);
+      if (e.ready) e.g.playSample(t, 1, 2, 'off', 0.9, e.now + 0.03, 0.9);
+    };
+    on(root, '[data-shift]', (b) => { t.smp.shift = b.dataset.shift; touch(); sampler(t); hear(); });
+    on(root, '[data-formant]', (b) => {
+      t.smp.formant = Math.max(-12, Math.min(12, (t.smp.formant || 0) + +b.dataset.formant));
+      touch(); sampler(t); hear();
+    });
     on(root, '[data-mode]', (b) => { t.smp.mode = b.dataset.mode; touch(); renderAll(); sampler(t); });
     on(root, '[data-root]', (b) => { setRoot(cur.id, cur.root - +b.dataset.root); sampler(t); if (e.ready) e.g.playSample(t, 1, 0, 'off', 0.9, e.now + 0.03, 0.8); });
     root.querySelector('#s-rec').addEventListener('click', async () => {

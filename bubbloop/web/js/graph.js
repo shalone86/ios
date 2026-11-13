@@ -5,7 +5,7 @@
 import { makeShared, instrumentById, makeInsert, startVoice } from './instruments.js';
 import { DRUM_PADS, padFor } from './drums.js';
 import { cellNotes } from './theory.js';
-import { getSample } from './samples.js';
+import { getSample, naturalBuffer } from './samples.js';
 
 export const FX = [
   { id: 'reverb',  name: 'Cloud',   sub: 'reverb', zones: ['mist', 'deep'] },
@@ -560,8 +560,10 @@ export function buildGraph(ctx, project, kit, opts = {}) {
     const scale = notes.length > 1 ? 1 / Math.sqrt(notes.length * 0.75) : 1;
     return notes.map((m) => {
       const src = ctx.createBufferSource();
-      src.buffer = sample.buffer;
-      const rate = m == null ? 1 : Math.pow(2, (m - sample.root) / 12);
+      // natural pitch: a version prepared with the formants kept, if ready
+      const nat = m != null && smp.shift !== 'classic' ? naturalBuffer(sample, m, smp.formant || 0) : null;
+      src.buffer = nat || sample.buffer;
+      const rate = m == null || nat ? 1 : Math.pow(2, (m - sample.root) / 12);
       src.playbackRate.value = rate;
       const gn = ctx.createGain();
       const peak = (0.25 + 0.75 * vel * vel) * scale * 0.8;
@@ -570,7 +572,7 @@ export function buildGraph(ctx, project, kit, opts = {}) {
       src.connect(gn).connect(ch.bus);
       src.start(t);
       const h = {
-        t, until: t + sample.buffer.duration / rate,
+        t, until: t + src.buffer.duration / rate,
         release(tr) {
           if (kit) return;                       // kit sounds ring out like drums
           tr = Math.max(tr, t + 0.03);
