@@ -1,0 +1,14 @@
+// Serves Boba Beats at shalonely.com/boba as a Cloudflare Worker. Only the
+// /boba path is routed here; the rest of the domain is untouched.
+// The app's files are bundled into the Worker by build.mjs (about 1 MB), so
+// deploying needs nothing but an API token:
+//   node build.mjs && npx wrangler deploy
+{
+  "name": "boba-beats",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-11-01",
+  "routes": [
+    { "pattern": "shalonely.com/boba", "zone_name": "shalonely.com" },
+    { "pattern": "shalonely.com/boba/*", "zone_name": "shalonely.com" }
+  ]
+}

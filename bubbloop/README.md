@@ -118,6 +118,20 @@ offline.
 After changing anything in `web/`, run `node bubbloop/tools/make-web.mjs` so
 installed copies pick up the new version (the tests fail if you forget).
 
+### On shalonely.com/boba (Cloudflare)
+
+`cloudflare/` deploys the app as a Worker routed to `shalonely.com/boba`
+only, leaving the rest of the domain alone. The app's files are bundled into
+the Worker script, so the only thing deploying needs is an API token with
+the "Edit Cloudflare Workers" permissions:
+
+```sh
+cd bubbloop/cloudflare
+npm install
+node build.mjs
+CLOUDFLARE_API_TOKEN=... npx wrangler deploy
+```
+
 ## Build the APK
 
 Needs JDK 17+ and the Android SDK (platform 35, build-tools 35.0.0).
