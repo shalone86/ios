@@ -6,7 +6,7 @@ import { INSTRUMENTS, instrumentById } from '../instruments.js';
 import { MASTERS, REVERBS, ECHOES } from '../graph.js';
 import { PATTERNS } from '../patterns.js';
 import * as S from '../state.js';
-import { addSample, getSample, setRoot, recordMic, decodeFile, sampleIds, packSamples, unpackSamples, ensureSamples } from '../samples.js';
+import { addSample, getSample, setRoot, prepareNatural, recordMic, decodeFile, sampleIds, packSamples, unpackSamples, ensureSamples } from '../samples.js';
 import { midiName } from '../theory.js';
 import { FILLS } from '../seq.js';
 import { exportProject, FORMATS } from '../exporter.js';
@@ -135,7 +135,7 @@ function project() {
       <button class="pill" data-act="open">Import song file</button>
       ${app.midi && app.midi.supported ? `<button class="pill" data-act="midi">${icon('midi')}MIDI</button>` : ''}
     </div>
-    <input type="file" id="p-file" accept=".json,.bubbloop,application/json" hidden>
+    <input type="file" id="p-file" accept=".json,.bobabeats,.bubbloop,application/json" hidden>
     ${others.length ? `<h3>Saved songs</h3><div class="list">${others.map((o) => `
       <div class="item"><button class="sp" data-open="${o.id}" style="text-align:left"><b>${esc(o.name)}</b><small>${Math.round(o.bpm)} bpm · ${ago(o.modified)}</small></button>
       <button class="pill round small danger" data-del="${o.id}" aria-label="Delete ${esc(o.name)}">${icon('trash')}</button></div>`).join('')}</div>` : ''}
@@ -151,7 +151,7 @@ function project() {
     <div class="field"><span>Click while playing</span><span style="flex:1"></span><button class="toggle ${st.metroPlay ? 'on' : ''}" data-set="metroPlay" aria-label="Metronome during playback"></button></div>
     <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="160" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
     <p class="sub">If recorded notes land late, nudge tap timing up; if early, down.</p>
-    <p class="sub center" style="margin-top:14px">Bubbloop · songs stay on this device</p>
+    <p class="sub center" style="margin-top:14px">Boba Beats · songs stay on this device</p>
   `, (root) => {
     const name = root.querySelector('#p-name');
     name.addEventListener('input', () => { p.name = name.value.trim() || 'Untitled'; document.getElementById('project-name').textContent = p.name; touch(); });
@@ -202,7 +202,7 @@ function project() {
         closeSheet();
         await openProject(loaded);
         toast(`Opened ${loaded.name}`);
-      } catch (e) { toast('That file is not a Bubbloop song'); }
+      } catch (e) { toast('That file is not a Boba Beats song'); }
     });
     on(root, '[data-act]', async (b) => {
       const act = b.dataset.act;
@@ -214,7 +214,7 @@ function project() {
       else if (act === 'open') file.click();
       else if (act === 'file') {
         try {
-          const saved = await saveFile(`${p.name.replace(/[\\/:*?"<>|]/g, ' ')}.bubbloop.json`, 'application/json', new TextEncoder().encode(JSON.stringify({ ...JSON.parse(S.serialize(p)), samples: await packSamples(sampleIds(p)) })));
+          const saved = await saveFile(`${p.name.replace(/[\\/:*?"<>|]/g, ' ')}.bobabeats.json`, 'application/json', new TextEncoder().encode(JSON.stringify({ ...JSON.parse(S.serialize(p)), samples: await packSamples(sampleIds(p)) })));
           toast(`Saved to ${saved.where}`);
         } catch (e) { toast(e.message); }
       }
@@ -370,6 +370,7 @@ function sampler(t) {
     if (!made) { toast('That was silent: try again, a little louder'); return; }
     if (kit) t.smp.kit[slot] = made.id; else t.smp.key = made.id;
     touch(); renderAll(); sampler(t);
+    if (!kit) prepareNatural(p);
     if (e.ready) e.g.playSample(t, kit ? app.focus.r : 1, kit ? app.focus.c : 0, 'off', 0.9, e.now + 0.05, 1.2);
   };
   show(`
@@ -384,6 +385,12 @@ function sampler(t) {
     <div class="item" style="margin:6px 0 12px"><span class="sp"><b>${cur ? esc(cur.name) : 'Nothing here yet'}</b>
       <small>${cur ? `${cur.buffer.duration.toFixed(1)} s${kit ? '' : ` · heard as ${midiName(Math.round(cur.root))}${cur.pitched ? '' : ' (no clear pitch found)'}`}` : 'Record something or bring in a file'}</small></span>
       ${cur && !kit ? '<span class="stepper"><button data-root="-1">−</button><span>tune</span><button data-root="1">+</button></span>' : ''}</div>
+    ${kit ? '' : `<h3>Pitch</h3>
+    <div class="wrap">
+      <button class="pill small ${t.smp.shift === 'classic' ? '' : 'on'}" data-shift="natural">Natural: keeps the voice</button>
+      <button class="pill small ${t.smp.shift === 'classic' ? 'on' : ''}" data-shift="classic">Classic: chipmunk and giant</button>
+    </div>
+    ${t.smp.shift === 'classic' ? '' : `<div class="field"><span>Formant</span><span class="stepper"><button data-formant="-1">−</button><span>${(t.smp.formant || 0) > 0 ? '+' : ''}${t.smp.formant || 0}</span><button data-formant="1">+</button></span><span class="sub" style="margin:0">${(t.smp.formant || 0) < 0 ? 'bigger, darker' : (t.smp.formant || 0) > 0 ? 'smaller, brighter' : 'as recorded'}</span></div>`}`}
     <button class="pill primary" id="s-rec">${recorder ? 'Stop' : 'Record with the microphone'}</button>
     <div class="progress" ${recorder ? '' : 'hidden'}><i id="s-level"></i></div>
     <div class="wrap" style="margin-top:10px">
@@ -393,6 +400,15 @@ function sampler(t) {
     <input type="file" id="s-input" accept="audio/*" hidden>
     <p class="sub" style="margin-top:10px">Up to 12 seconds. Silence at the ends is trimmed for you.</p>
   `, (root) => {
+    const hear = async () => {
+      await prepareNatural(p);
+      if (e.ready) e.g.playSample(t, 1, 2, 'off', 0.9, e.now + 0.03, 0.9);
+    };
+    on(root, '[data-shift]', (b) => { t.smp.shift = b.dataset.shift; touch(); sampler(t); hear(); });
+    on(root, '[data-formant]', (b) => {
+      t.smp.formant = Math.max(-12, Math.min(12, (t.smp.formant || 0) + +b.dataset.formant));
+      touch(); sampler(t); hear();
+    });
     on(root, '[data-mode]', (b) => { t.smp.mode = b.dataset.mode; touch(); renderAll(); sampler(t); });
     on(root, '[data-root]', (b) => { setRoot(cur.id, cur.root - +b.dataset.root); sampler(t); if (e.ready) e.g.playSample(t, 1, 0, 'off', 0.9, e.now + 0.03, 0.8); });
     root.querySelector('#s-rec').addEventListener('click', async () => {
@@ -782,7 +798,7 @@ function midiSheet() {
   if (!m || !m.supported) {
     show(`
       <h2>MIDI</h2>
-      <p class="sub">This browser does not support Web MIDI. Open Bubbloop in Chrome, Edge, or Firefox on desktop to play with MIDI keyboards, drum pads, and external synths.</p>
+      <p class="sub">This browser does not support Web MIDI. Open Boba Beats in Chrome, Edge, or Firefox on desktop to play with MIDI keyboards, drum pads, and external synths.</p>
       <button class="pill primary" id="m-close">Got it</button>
     `, (root) => root.querySelector('#m-close').addEventListener('click', closeSheet));
     return;
@@ -790,7 +806,7 @@ function midiSheet() {
   if (!m.connected) {
     show(`
       <h2>MIDI</h2>
-      <p class="sub">Play Bubbloop from a USB MIDI keyboard or pad controller, or send loops out to your DAW or hardware synth.</p>
+      <p class="sub">Play Boba Beats from a USB MIDI keyboard or pad controller, or send loops out to your DAW or hardware synth.</p>
       ${m.error ? `<p class="sub" style="color:#d43d62">${esc(m.error)}</p>` : ''}
       <button class="pill primary" id="m-conn">Connect MIDI devices</button>
     `, (root) => root.querySelector('#m-conn').addEventListener('click', async () => {
@@ -834,8 +850,8 @@ function midiSheet() {
       <button class="pill small ${!st.outId ? 'on' : ''}" data-out="">Off</button>
       ${outs.map((p) => `<button class="pill small ${st.outId === p.id ? 'on' : ''}" data-out="${esc(p.id)}">${esc(p.name)}</button>`).join('')}
     </div>
-    <div class="field" style="margin-top:14px"><span>Play Bubbloop sounds</span><span style="flex:1"></span><button class="toggle ${st.localSound ? 'on' : ''}" id="m-local" aria-label="Play Bubbloop sounds"></button></div>
-    <p class="sub">Turn off to drive an external synth or DAW without doubling Bubbloop's audio.</p>
+    <div class="field" style="margin-top:14px"><span>Play Boba Beats sounds</span><span style="flex:1"></span><button class="toggle ${st.localSound ? 'on' : ''}" id="m-local" aria-label="Play Boba Beats sounds"></button></div>
+    <p class="sub">Turn off to drive an external synth or DAW without doubling Boba Beats' audio.</p>
     <div class="field"><span>Send MIDI clock</span><span style="flex:1"></span><button class="toggle ${st.clockOut ? 'on' : ''}" id="m-clock" aria-label="Send MIDI clock"></button></div>
     <div class="wrap" style="margin-top:12px"><button class="pill" id="m-panic">All notes off</button></div>
   `, (root) => {

@@ -1,9 +1,9 @@
-// Bubbloop UI: wires the bubbles, pads and buttons to the engine.
+// Boba Beats UI: wires the bubbles, pads and buttons to the engine.
 
 import { ROWS, COLS, STEP, BAR, KEY_NAMES, scaleById, chordLabel, cellNotes, CHORDS } from '../theory.js';
 import { Engine } from '../engine.js';
 import { padFor } from '../drums.js';
-import { getSample } from '../samples.js';
+import { getSample, prepareNatural } from '../samples.js';
 import { FX } from '../graph.js';
 import { instrumentById } from '../instruments.js';
 import * as S from '../state.js';
@@ -118,7 +118,10 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&
 let saveTimer = null;
 export function touch() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => S.saveProject(app.project), 700);
+  saveTimer = setTimeout(() => {
+    S.saveProject(app.project);
+    prepareNatural(app.project, { evict: true });     // new notes for the sampler, if any
+  }, 700);
 }
 function saveNow() {
   clearTimeout(saveTimer);

@@ -287,7 +287,7 @@ function container(packets, { sampleRate, channels, bits, totalSamples, title })
     const trak = box('trak',
       full('tkhd', 0, 7, u32(0), u32(0), u32(1), u32(0), u32(totalSamples), zeros(8), u16(0), u16(0), u16(0x0100), u16(0), MATRIX, u32(0), u32(0)),
       mdia);
-    const ilst = box('ilst', ...(title ? [tag('\xa9nam', title)] : []), tag('\xa9too', 'Bubbloop'));
+    const ilst = box('ilst', ...(title ? [tag('\xa9nam', title)] : []), tag('\xa9too', 'Boba Beats'));
     const udta = box('udta', full('meta', 0, 0,
       full('hdlr', 0, 0, u32(0), ascii('mdir'), ascii('appl'), zeros(8), u8(0)),
       ilst));

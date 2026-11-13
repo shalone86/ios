@@ -1,6 +1,6 @@
 {
-  "name": "Bubbloop",
-  "short_name": "Bubbloop",
+  "name": "Boba Beats",
+  "short_name": "Boba Beats",
   "description": "Pocket beats made of bubbles",
   "start_url": "./index.html",
   "scope": "./",

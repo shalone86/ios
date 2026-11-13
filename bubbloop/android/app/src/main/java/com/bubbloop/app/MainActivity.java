@@ -55,13 +55,15 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Bubbloop is a web app (the files in /web, packed as assets) inside a single
+ * Boba Beats is a web app (the files in /web, packed as assets) inside a single
  * full-screen WebView. This activity does the few things a page cannot do for
  * itself: serve those files under a real https origin, save exported songs to
  * the phone's Music folder, share them, and buzz on a tap.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "Bubbloop";
+    // where exports and song files go, under Music/ and Download/
+    private static final String FOLDER = "Boba Beats";
     private static final String HOST = "appassets.androidplatform.net";
     private static final String HOME = "https://" + HOST + "/index.html";
     private static final int PICK_FILE = 7;
@@ -359,7 +361,7 @@ public class MainActivity extends Activity {
             if (Build.VERSION.SDK_INT >= 26) {
                 // start in the folder song files are saved to
                 pick.putExtra(DocumentsContract.EXTRA_INITIAL_URI, DocumentsContract.buildDocumentUri(
-                        "com.android.externalstorage.documents", "primary:" + Environment.DIRECTORY_DOWNLOADS + "/Bubbloop"));
+                        "com.android.externalstorage.documents", "primary:" + Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER));
             }
             try {
                 startActivityForResult(pick, PICK_FILE);
@@ -395,7 +397,7 @@ public class MainActivity extends Activity {
     // ---------- what the page can ask for ----------
 
     private final class Bridge {
-        /** Start a new file in Music/Bubbloop (or Download/Bubbloop). Returns a handle, or "" on failure. */
+        /** Start a new file in Music/Boba Beats (or Download/Boba Beats). Returns a handle, or "" on failure. */
         @JavascriptInterface
         public String beginFile(String name, String mime) {
             return beginFileEx(name, mime, false);
@@ -406,7 +408,7 @@ public class MainActivity extends Activity {
         public String beginFileEx(String name, String mime, boolean keepOld) {
             try {
                 String clean = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", " ").trim();
-                if (clean.isEmpty()) clean = "Bubbloop";
+                if (clean.isEmpty()) clean = "Boba Beats";
                 int dot = clean.lastIndexOf('.');
                 String ext = dot >= 0 ? clean.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
                 // use the type Android itself associates with the extension, so the
@@ -421,7 +423,7 @@ public class MainActivity extends Activity {
                     ContentValues v = new ContentValues();
                     v.put(MediaStore.MediaColumns.DISPLAY_NAME, clean);
                     v.put(MediaStore.MediaColumns.MIME_TYPE, type);
-                    v.put(MediaStore.MediaColumns.RELATIVE_PATH, folder + "/Bubbloop");
+                    v.put(MediaStore.MediaColumns.RELATIVE_PATH, folder + "/" + FOLDER);
                     v.put(MediaStore.MediaColumns.IS_PENDING, 1);
                     Uri collection = audio
                             ? MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -431,7 +433,7 @@ public class MainActivity extends Activity {
                         // remove our earlier file of this name, or Android would add "(1)"
                         try {
                             r.delete(collection, MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ? AND " + MediaStore.MediaColumns.DISPLAY_NAME + " = ?",
-                                    new String[]{folder + "/Bubbloop%", clean});
+                                    new String[]{folder + "/" + FOLDER + "%", clean});
                         } catch (Exception e) {
                             Log.w(TAG, "could not replace " + clean, e);
                         }
@@ -439,11 +441,11 @@ public class MainActivity extends Activity {
                     s.uri = r.insert(collection, v);
                     if (s.uri == null) return "";
                     s.out = r.openOutputStream(s.uri);
-                    s.where = folder + "/Bubbloop";
+                    s.where = folder + "/" + FOLDER;
                 } else {
                     // Before Android 10 a shared folder needs a storage permission;
                     // the app's own folder does not.
-                    File dir = new File(getExternalFilesDir(folder), "Bubbloop");
+                    File dir = new File(getExternalFilesDir(folder), FOLDER);
                     if (!dir.isDirectory() && !dir.mkdirs()) return "";
                     File f = new File(dir, clean);
                     if (!keepOld && f.exists()) f.delete();

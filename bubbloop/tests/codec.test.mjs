@@ -92,7 +92,7 @@ for (const [bits, nch, sr, secs] of [[16, 2, 44100, 6], [24, 2, 48000, 6], [16, 
   const ratio = bytes.length / (n * 4);
   check(same(decode(file, 16, 2), ints), 'tonal music: decodes bit-for-bit');
   check(ratio < 0.6, `tonal music compresses (${(ratio * 100).toFixed(0)}% of PCM)`);
-  check(probe(file, 'format_tags=title') === '' && /Bubbloop/.test(probe(file, 'format_tags=encoder')), 'carries the encoder tag');
+  check(probe(file, 'format_tags=title') === '' && /Boba Beats/.test(probe(file, 'format_tags=encoder')), 'carries the encoder tag');
   check(Math.abs(parseFloat(probe(file, 'format=duration')) - 4) < 0.01, 'reports the right duration');
 }
 

@@ -77,6 +77,7 @@ console.log('MidiController I/O');
   const outputPort = {
     id: 'out-1', name: 'Test Synth', manufacturer: 'Acme', state: 'connected',
     send(bytes, ts) { sent.push({ bytes: [...bytes], ts }); },
+    clear() { sent.push({ cleared: true }); },
   };
   const fakeNav = {
     async requestMIDIAccess() {
@@ -140,7 +141,11 @@ console.log('MidiController I/O');
   check(sent.filter((m) => (m.bytes[0] & 0xf0) === 0x80).length === 3, 'scheduleNote() schedules 3 Note Offs');
 
   midi.stop();
-  check(sent.some((m) => m.bytes[0] === 0xfc) && sent.some((m) => m.bytes[1] === 123), 'stop() sends All Notes Off + MIDI Stop');
+  check(sent.some((m) => m.bytes && m.bytes[0] === 0xfc) && sent.some((m) => m.bytes && m.bytes[1] === 123), 'stop() sends All Notes Off + MIDI Stop');
+  {
+    const ci = sent.findIndex((m) => m.cleared), oi = sent.findIndex((m, i) => i > ci && m.bytes && m.bytes[1] === 123);
+    check(ci >= 0 && oi > ci, 'stop() drops queued notes before All Notes Off, so none can hang');
+  }
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall MIDI checks passed');

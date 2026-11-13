@@ -1,5 +1,5 @@
 // Web MIDI input and output for desktop browsers.
-// Input lets MIDI keyboards and drum pads play and record Bubbloop's grid.
+// Input lets MIDI keyboards and drum pads play and record Boba Beats' grid.
 // Output sends live taps and sequenced loops out to external synths or a DAW.
 
 import { ROWS, COLS, cellNotes, midiName } from './theory.js';
@@ -373,8 +373,12 @@ export class MidiController {
   }
 
   stop() {
-    for (const id of [...this.activeOut.keys()]) this.noteOff(id);
     const out = this.activeOutput();
+    // Sequenced notes are sent up to a moment ahead with timestamps. Drop
+    // the ones still waiting, or a note-on could land after the all-off
+    // below and hang on the synth.
+    if (out && out.clear) { try { out.clear(); } catch (e) { /* not supported */ } }
+    for (const id of [...this.activeOut.keys()]) this.noteOff(id);
     if (!out) return;
     for (let ch = 0; ch < 16; ch++) {
       this.send(out, [0xb0 | ch, 123, 0]);
@@ -386,8 +390,9 @@ export class MidiController {
   panic() {
     for (const key of [...this.heldIn.keys()]) this.releaseInKey(key);
     this.sustainDown.clear();
-    for (const id of [...this.activeOut.keys()]) this.noteOff(id);
     const out = this.activeOutput();
+    if (out && out.clear) { try { out.clear(); } catch (e) { /* not supported */ } }
+    for (const id of [...this.activeOut.keys()]) this.noteOff(id);
     if (!out) return;
     for (let ch = 0; ch < 16; ch++) {
       this.send(out, [0xb0 | ch, 64, 0]);

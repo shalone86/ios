@@ -1,6 +1,6 @@
-name: Bubbloop web
+name: Boba Beats web
 
-# Publishes bubbloop/web as a web page with GitHub Pages whenever bubbloop/web
+# Publishes Boba Beats (bubbloop/web) as a web page with GitHub Pages whenever bubbloop/web
 # changes on main, or when triggered by hand.
 on:
   push:
