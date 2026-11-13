@@ -3,6 +3,8 @@
 //
 //   tape -> stabiliser -> dynamics -> imager -> glue compressor -> maximizer
 //
+// (with a steep sub-sonic high-pass at the start and a gentle one before the maximizer)
+//
 //   Tape        warm saturation with a low "head bump" and soft top end
 //   Stabiliser  slowly nudges the tonal balance toward a pop curve, one
 //               third-octave band at a time, so no region pokes out
@@ -100,6 +102,15 @@ function split3(x, sr, f1 = 120, f2 = 3000) {
   const low = allpass(lr4(x, 'lp', f1, sr), f2, sr);
   const rest = lr4(x, 'hp', f1, sr);
   return [low, lr4(rest, 'lp', f2, sr), lr4(rest, 'hp', f2, sr)];
+}
+
+// ---------- 0. subsonic filter ----------
+
+// Nothing below about 30 Hz is heard as a note, but it costs loudness
+// headroom and makes small speakers (phones especially) flap and rumble.
+// A steep (24 dB/octave) high-pass clears it.
+function subsonic(chs, sr, f) {
+  chs.forEach((c, i) => chs[i].set(lr4(c, 'hp', f, sr)));
 }
 
 // ---------- 1. tape ----------
@@ -483,10 +494,14 @@ export function masterChain(chs, sr, id, { ceilingDb = -1, seamless = false } = 
   }
   // start every song from the same level so the thresholds mean the same thing
   scale(work, dbToGain(-20 - before));
+  subsonic(work, sr, 30);
   tape(work, sr, p);
   stabilise(work, sr, p);
   dynamicsAndImage(work, sr, p, report);
   glue(work, sr, p, report);
+  // compression can stir up a little rumble of its own; a gentle 12 dB/octave
+  // cut here, since a steep one would rotate kick phase and raise its peaks
+  work.forEach((c, i) => work[i].set(run(c, design('hp', 22, sr))));
   maximize(work, sr, p, ceilingDb, report);
   if (seamless) chs.forEach((c, i) => c.set(work[i].subarray(n, 2 * n)));
   report.after = +loudness(chs, sr).toFixed(2);

@@ -134,6 +134,7 @@ function project() {
       <button class="pill" data-act="file">Save song file</button>
       <button class="pill" data-act="open">Import song file</button>
       ${app.midi && app.midi.supported ? `<button class="pill" data-act="midi">${icon('midi')}MIDI</button>` : ''}
+      ${isNative ? '' : `<a class="pill" href="BobaBeats.apk" download="BobaBeats.apk" data-apk>${icon('share')}Android app</a>`}
     </div>
     <input type="file" id="p-file" accept=".json,.bobabeats,.bubbloop,application/json" hidden>
     ${others.length ? `<h3>Saved songs</h3><div class="list">${others.map((o) => `

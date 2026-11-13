@@ -32,6 +32,7 @@ body {
   touch-action: manipulation;
 }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+a.pill { text-decoration: none; color: inherit; }
 [hidden] { display: none !important; }
 
 /* ---------- sky ---------- */
