@@ -243,8 +243,8 @@ const wavDur = parseFloat(probe(wav, 'format=duration'));
 check(probe(wav, 'stream=codec_name') === 'pcm_s16le', 'WAV is 16-bit PCM');
 check(wavDur >= songSeconds && wavDur < songSeconds + 4.5, `WAV length covers the song plus tail (${wavDur.toFixed(2)}s for a ${songSeconds.toFixed(2)}s song)`);
 const loud = measureLufs(wav);
-check(Math.abs(loud.lufs - -14) < 1.5, `mastered to about -14 LUFS (ffmpeg says ${loud.lufs}, true peak ${loud.truePeak} dB)`);
-check(loud.truePeak <= 0.2, 'no clipping');
+check(Math.abs(loud.lufs - -8) < 1.2, `Pop master is radio loud: about -8 LUFS (ffmpeg says ${loud.lufs}, true peak ${loud.truePeak} dBTP)`);
+check(loud.truePeak <= -0.9, 'true peak held under -1 dBTP');
 
 const m4a = await exportAs('m4a');
 check(probe(m4a, 'stream=codec_name') === 'alac', 'Apple Lossless file is ALAC');

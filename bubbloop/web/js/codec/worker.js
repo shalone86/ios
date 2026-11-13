@@ -4,7 +4,7 @@
 import { toInt } from './pcm.js';
 import { encodeWav } from './wav.js';
 import { encodeAlac } from './alac.js';
-import { finalize } from './master.js';
+import { masterChain } from './chain.js';
 
 let lame = null;
 
@@ -36,10 +36,12 @@ self.onmessage = async (e) => {
   const progress = (v) => self.postMessage({ id: m.id, progress: v });
   try {
     const channels = m.channels;
-    let info = null;
-    if (m.master !== false) {
-      info = finalize(channels, m.sampleRate, { target: m.target, ceilingDb: m.format === 'mp3' ? -1.5 : -1 });
-    }
+    // mastering chain for the chosen preset; with no preset (stems, Raw) it
+    // only makes sure nothing goes over the ceiling
+    const info = masterChain(channels, m.sampleRate, m.preset, {
+      ceilingDb: m.format === 'mp3' ? -1.5 : -1,     // MP3 encoding adds a little overshoot
+      seamless: !!m.seamless,
+    });
     progress(0.05);
     const bits = m.format === 'mp3' ? 16 : (m.bits || 16);
     const ints = toInt(channels, bits, true);

@@ -90,14 +90,14 @@ export async function exportProject(project, options, onStatus = () => {}) {
   }
 
   onStatus('Rendering', 0);
-  const r = await renderProject(withMaster, { ...common, onProgress: (v) => onStatus('Rendering', v * 0.55) });
-  onStatus(preset.lufs == null ? 'Encoding' : 'Mastering', 0.56);
+  // render dry: the mastering chain in the export worker does the polishing
+  const r = await renderProject(withMaster, { ...common, master: false, onProgress: (v) => onStatus('Rendering', v * 0.5) });
+  onStatus(preset.lufs == null ? 'Encoding' : 'Mastering', 0.52);
   const out = await encode({
     format: fmt.id, channels: r.channels, sampleRate: r.sampleRate,
     bits: options.bits || 16, kbps: options.kbps || 256, title: project.name,
-    // a seamless loop is left un-normalised so its two ends still meet
-    target: seamless ? null : preset.lufs,
-  }, r.channels.map((c) => c.buffer), (v) => onStatus('Encoding', 0.6 + v * 0.3));
+    preset: preset.id, seamless,
+  }, r.channels.map((c) => c.buffer), (v) => onStatus(v < 0.05 ? 'Mastering' : 'Encoding', 0.52 + v * 0.38));
   onStatus('Saving', 0.92);
   const name = `${base}.${fmt.ext}`;
   files.push({ name, ...(await saveFile(name, fmt.mime, out.bytes, (v) => onStatus('Saving', 0.92 + v * 0.08))) });

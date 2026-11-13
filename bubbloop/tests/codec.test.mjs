@@ -143,6 +143,66 @@ console.log('Mastering');
   }
 }
 
+console.log('Mastering chain');
+{
+  const { masterChain, CHAINS } = await import('../web/js/codec/chain.js');
+  // a 24-second groove: kick, snare, hats, bass and chords, with a quiet intro
+  const sr = 44100, n = sr * 24, L = new Float32Array(n), R = new Float32Array(n);
+  const r = rng(99), beat = sr * 0.5;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr, b = i % beat, bt = b / sr, bar = Math.floor(i / (beat * 4)), intro = t < 6 ? 0.35 : 1;
+    const kick = (Math.floor(i / beat) % 2 === 0) ? Math.sin(2 * Math.PI * (50 + 120 * Math.exp(-bt * 40)) * bt) * Math.exp(-bt * 9) * 0.9 : 0;
+    const snare = (Math.floor(i / beat) % 2 === 1) ? r() * Math.exp(-bt * 22) * 0.6 + Math.sin(2 * Math.PI * 190 * bt) * Math.exp(-bt * 30) * 0.4 : 0;
+    const hb = i % (beat / 2) / sr, hat = r() * Math.exp(-hb * 90) * 0.18;
+    const root = [55, 44, 49, 41.2][bar % 4];
+    const bass = Math.sin(2 * Math.PI * root * t) * 0.35;
+    const chord = [1, 1.26, 1.5].reduce((a, k) => a + Math.sin(2 * Math.PI * root * 4 * k * t + k), 0) * 0.07;
+    L[i] = (kick + snare + hat * 0.8) * intro + bass * intro + chord * (1.1);
+    R[i] = (kick + snare * 0.9 + hat * 1.2) * intro + bass * intro + chord * 0.9;
+  }
+  for (const id of ['sweet', 'punchy', 'cozy', 'loud', 'stream']) {
+    const chs = [Float32Array.from(L), Float32Array.from(R)];
+    const rep = masterChain(chs, sr, id);
+    const file = path.join(OUT, `chain-${id}.wav`);
+    fs.writeFileSync(file, encodeWav(toInt(chs, 24, false), sr, 24));
+    const m = measureLufs(file);
+    const want = CHAINS[id].lufs;
+    // Loud may stop short of its target rather than crush the mix
+    // either it reaches its target, or it stopped at its limiting allowance
+    // rather than crush a very peaky mix (this test groove is peakier than music)
+    const stopped = rep.squashDb >= (CHAINS[id].maxSquash || 3) - 0.3 && m.lufs < want;
+    const near = Math.abs(m.lufs - want) < 1.2 || stopped;
+    check(near && m.truePeak <= -0.9, `${id}: ${m.lufs} LUFS (target ${want}${stopped ? ', stopped at its limiting allowance' : ''}), true peak ${m.truePeak} dBTP, ${rep.squashDb} LU of limiting`);
+  }
+  {
+    // seamless: a bar that repeats exactly (every part completes whole cycles
+    // in it), mastered as a loop, must join to itself with no step or bump
+    const bar = sr * 2, beatN = bar / 4, X = new Float32Array(bar), Y = new Float32Array(bar);
+    const noise = Array.from({ length: beatN / 2 }, () => r());
+    for (let i = 0; i < bar; i++) {
+      const b = i % beatN, bt = b / sr, t = i / sr;
+      const kick = Math.floor(i / beatN) % 2 === 0 ? Math.sin(2 * Math.PI * 55 * bt) * Math.exp(-bt * 9) * 0.9 : 0;
+      const sn = Math.floor(i / beatN) % 2 === 1 ? noise[b % noise.length] * Math.exp(-bt * 22) * 0.6 : 0;
+      const tone = Math.sin(2 * Math.PI * 110 * t) * 0.25 + Math.sin(2 * Math.PI * 330 * t) * 0.08;   // whole cycles per bar
+      X[i] = kick + sn + tone; Y[i] = kick + sn * 0.9 + tone;
+    }
+    const chs = [X, Y];
+    masterChain(chs, sr, 'sweet', { seamless: true });
+    let step = 0; for (let i = 1; i < bar; i++) step += Math.abs(chs[0][i] - chs[0][i - 1]);
+    step /= bar;
+    const join = Math.abs(chs[0][0] - chs[0][bar - 1]);
+    const rms = (a, b) => { let e = 0; for (let i = a; i < b; i++) e += chs[0][i] ** 2; return Math.sqrt(e / (b - a)); };
+    const headTail = Math.abs(20 * Math.log10(rms(0, 4410) / rms(beatN * 2, beatN * 2 + 4410)));
+    check(join < step * 4 && headTail < 1, `a seamless loop joins cleanly (step at the join ${join.toFixed(4)} vs typical ${step.toFixed(4)}; first beat within ${headTail.toFixed(2)} dB of the third)`);
+  }
+  {
+    const chs = [Float32Array.from(L).map((v) => v * 3), Float32Array.from(R).map((v) => v * 3)];
+    masterChain(chs, sr, undefined);
+    let pk = 0; for (const c of chs) for (const v of c) pk = Math.max(pk, Math.abs(v));
+    check(pk <= 0.8913, 'no preset (stems, Raw): only brought under the ceiling');
+  }
+}
+
 console.log('MIDI');
 {
   const p = newProject('Midi Test');

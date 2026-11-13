@@ -74,12 +74,16 @@ were, so a voice moved up stays a voice instead of a chipmunk; the Formant
 control slides them on purpose (lower is bigger and darker). Notes are
 prepared in the background; until one is ready it plays the classic way.
 
-**Export.** WAV, Apple Lossless (.m4a), MP3, MIDI, or stems (one WAV per
-track). Mastering presets set the tone and bring the song to a streaming
-loudness target (EBU R128) with a look-ahead peak limiter. A loop can be
-exported seamless, ready to drop into a DAW. **Instrument pack** is a ZIP with
-each track's sound sampled every three semitones plus an `.sfz` map (drums
-keyed by GM note), so the same sounds can play MIDI in a DAW sampler.
+**Export.** WAV, Apple Lossless (.m4a), MP3, MIDI, stems (one WAV per
+track) or an instrument pack. Exports go through a mastering chain in the
+same order as a typical Ozone chain: tape saturation, a tonal-balance
+stabiliser, three-band dynamics with transient control, a stereo imager
+(mono bass, wider highs), a glue compressor and a maximizer held under a
+-1 dBTP true-peak ceiling. Presets: Pop and Punchy (-8 LUFS), Loud (-6.5),
+Cozy (-10) and Streaming (-14). If a target would need more limiting than
+the preset allows, it stops a little short rather than crush the song. A
+seamless loop is mastered as if it were already looping, so it still joins
+cleanly in a DAW.
 
 ## Layout
 

@@ -677,7 +677,7 @@ const exportChoice = { format: 'wav', what: 'song', hires: false, seamless: fals
 
 function masterBlurb(m) {
   const hint = m.hint[0].toUpperCase() + m.hint.slice(1);
-  return esc(m.lufs ? `${hint}. Levelled to ${m.lufs} LUFS with a peak limiter.` : `${hint}. Peaks are kept safe and nothing else is changed.`);
+  return esc(m.lufs ? `${hint}. Tape, tone balance, multiband dynamics, stereo width, glue and a maximizer, to ${m.lufs} LUFS with peaks under -1 dBTP.` : `${hint}. Peaks are kept safe and nothing else is changed.`);
 }
 
 function exporter() {

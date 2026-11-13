@@ -22,10 +22,12 @@ const FILTER_HZ = [180, 320, 560, 1000, 1800, 3200];
 
 export const MASTERS = [
   { id: 'raw',    name: 'Raw',    hint: 'untouched',        low: 0,   mid: 0,    high: 0,    thr: 0,   ratio: 1,   drive: 0,   lufs: null },
-  { id: 'sweet',  name: 'Sweet',  hint: 'balanced, shiny',  low: 0.5, mid: -1.5, high: 3,    thr: -18, ratio: 2.2, drive: 0.3, lufs: -14 },
-  { id: 'punchy', name: 'Punchy', hint: 'big drums',        low: 3,   mid: -2,   high: 2,    thr: -22, ratio: 3.5, drive: 0.5, lufs: -12 },
-  { id: 'cozy',   name: 'Cozy',   hint: 'warm tape hug',    low: 2.5, mid: 0.5,  high: -2.5, thr: -20, ratio: 2.5, drive: 0.8, lufs: -14 },
-  { id: 'loud',   name: 'Loud',   hint: 'turned up to 11',  low: 2,   mid: -1,   high: 3,    thr: -26, ratio: 4.5, drive: 0.7, lufs: -10 },
+  // the live sound is a preview; exports go through the full chain in codec/chain.js
+  { id: 'sweet',  name: 'Pop',       hint: 'bright, polished, radio loud', low: 0.5, mid: -1.5, high: 3,    thr: -18, ratio: 2.2, drive: 0.3, lufs: -8 },
+  { id: 'punchy', name: 'Punchy',    hint: 'big drums, still loud',        low: 3,   mid: -2,   high: 2,    thr: -22, ratio: 3.5, drive: 0.5, lufs: -8 },
+  { id: 'cozy',   name: 'Cozy',      hint: 'warm tape, lo-fi level',       low: 2.5, mid: 0.5,  high: -2.5, thr: -20, ratio: 2.5, drive: 0.8, lufs: -10 },
+  { id: 'loud',   name: 'Loud',      hint: 'club and car, as loud as it goes', low: 2, mid: -1, high: 3,    thr: -26, ratio: 4.5, drive: 0.7, lufs: -6.5 },
+  { id: 'stream', name: 'Streaming', hint: 'gentle; services level to this anyway', low: 0.5, mid: -1, high: 1.5, thr: -18, ratio: 1.8, drive: 0.2, lufs: -14 },
 ];
 export const masterById = (id) => MASTERS.find((m) => m.id === id) || MASTERS[1];
 
