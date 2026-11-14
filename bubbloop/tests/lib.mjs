@@ -46,7 +46,8 @@ export function loadPlaywright() {
 
 export async function openPage(url, options = {}) {
   const { chromium } = loadPlaywright();
-  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', ...(options.args || [])] });
+  delete options.args;
   const context = await browser.newContext(options);
   const page = await context.newPage();
   const errors = [];

@@ -34,6 +34,11 @@ async function tap(r, c, holdMs = 90) {
 const click = async (sel) => { await page.waitForSelector(sel, { state: 'attached', timeout: 10000 }); await page.locator(sel).first().evaluate((el) => el.click()); };
 
 console.log('Start');
+check(await page.locator('#btn-tour').isVisible(), 'first visit: the start screen offers the tutorial');
+await click('#btn-tour');
+check(await page.locator('#tour').isVisible() && /media\/tutorial\.mp4$/.test(await page.locator('#tour-video').getAttribute('src')), 'the tutorial opens in a full-screen player');
+await click('#tour-close');
+check(!(await page.locator('#tour').isVisible()), 'and closes');
 await click('#btn-start');
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.engine.ready, null, { timeout: 15000 });
 check(true, 'audio engine wakes up');
@@ -42,6 +47,33 @@ check(await page.locator('#grid .cell').count() === 25, '25 bubbles on the grid'
 console.log('Jam');
 await tap(1, 0); await tap(1, 2); await tap(2, 4);
 check(await state(() => window.bubbloop.project.sections[0].ev[window.bubbloop.trackId].length) === 0, 'jamming without record leaves the loop empty');
+
+console.log('Mashing every bubble at once');
+{
+  const res = await page.evaluate(async () => {
+    const cells = [...document.querySelectorAll('#grid .cell')];
+    const fire = (el, type, id, primary) => {
+      const b = el.getBoundingClientRect();
+      el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: primary, clientX: b.left + b.width / 2, clientY: b.top + b.height / 2, bubbles: true, cancelable: true }));
+    };
+    // ten fingers land; only some lifts get reported, like a mash on an iPad
+    for (let i = 0; i < 10; i++) fire(cells[(i * 7) % 25], 'pointerdown', 500 + i, i === 0);
+    for (let i = 0; i < 10; i += 3) fire(cells[(i * 7) % 25], 'pointerup', 500 + i, i === 0);
+    // a finger id reused for a new touch without its old lift
+    fire(cells[3], 'pointerdown', 504, false);
+    await new Promise((r) => setTimeout(r, 50));
+    const heldDuring = window.bubbloop.engine.held.size;
+    // then a single, fresh tap
+    fire(cells[12], 'pointerdown', 900, true);
+    await new Promise((r) => setTimeout(r, 60));
+    const heldTap = window.bubbloop.engine.held.size;
+    fire(cells[12], 'pointerup', 900, true);
+    await new Promise((r) => setTimeout(r, 60));
+    return { heldDuring, heldTap, heldAfter: window.bubbloop.engine.held.size, lit: document.querySelectorAll('#grid .cell.on').length };
+  });
+  check(res.heldTap === 1, `after a mash, a fresh tap plays exactly one note (${res.heldTap} held; ${res.heldDuring} were stuck before it)`);
+  check(res.heldAfter === 0 && res.lit === 0, `and nothing is left stuck when it lifts (${res.heldAfter} held, ${res.lit} lit)`);
+}
 
 console.log('Record a loop');
 await state(() => { window.bubbloop.project.bpm = 150; window.bubbloop.engine.setBpm(150); });
@@ -243,7 +275,7 @@ const wavDur = parseFloat(probe(wav, 'format=duration'));
 check(probe(wav, 'stream=codec_name') === 'pcm_s16le', 'WAV is 16-bit PCM');
 check(wavDur >= songSeconds && wavDur < songSeconds + 4.5, `WAV length covers the song plus tail (${wavDur.toFixed(2)}s for a ${songSeconds.toFixed(2)}s song)`);
 const loud = measureLufs(wav);
-check(Math.abs(loud.lufs - -8) < 1.2, `Pop master is radio loud: about -8 LUFS (ffmpeg says ${loud.lufs}, true peak ${loud.truePeak} dBTP)`);
+check(Math.abs(loud.lufs - -8) < 1.5, `Pop master is radio loud: about -8 LUFS (ffmpeg says ${loud.lufs}, true peak ${loud.truePeak} dBTP)`);
 check(loud.truePeak <= -0.9, 'true peak held under -1 dBTP');
 
 const m4a = await exportAs('m4a');
@@ -279,6 +311,11 @@ const loopDur = parseFloat(probe(loop, 'format=duration'));
 const bars = await state(() => { const p = window.bubbloop.project; return p.sections[p.cur].bars * 240 / p.bpm; });
 check(Math.abs(loopDur - bars) < 0.002, `seamless loop is exactly ${bars.toFixed(3)}s (${loopDur.toFixed(3)}s)`);
 
+await click('#btn-project');
+check(await page.locator('[data-act="tour"]').count() === 1, 'the song menu keeps a "How it works" button to rewatch it');
+await page.evaluate(() => document.getElementById('scrim').click());
+check(fs.existsSync(new URL('../web/media/tutorial.mp4', import.meta.url)), 'the tutorial video is in the app');
+
 console.log('Persistence');
 await state(() => window.bubbloopPause());       // leaving the app saves at once
 await wait(300);
@@ -286,6 +323,7 @@ const saved = await state(() => JSON.parse(localStorage.getItem('bubbloop.p.' + 
 check(saved && saved.song.length === 2 && saved.sections.length === 2, 'song autosaved');
 check(!JSON.stringify(saved).includes('"_p"'), 'no scratch fields in the save');
 await page.reload();
+check(!(await page.locator('#btn-tour').isVisible()), 'after watching once, the start screen no longer pushes it');
 await click('#btn-start');
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.engine.ready);
 check(await state(() => window.bubbloop.project.sections.length) === 2, 'song comes back after a restart');

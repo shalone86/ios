@@ -368,6 +368,8 @@ export class Engine {
     const acc = drums ? 0 : (opts.acc !== undefined ? opts.acc : this.acc);
     const handles = this.g.playCell(track, row, col, chord, vel, now, undefined, acc);
     const id = ++this.nid;
+    // more held notes than fingers means some lifts were lost: let the oldest go
+    while (this.held.size >= 12) this.noteOff(this.held.keys().next().value);
     if (this.midiOut && this.midiOut.noteOn) this.midiOut.noteOn(id, track, row, col, chord, vel, acc);
     const h = { handles, rec: null };
     const slot = this.mode === 'loop' ? this.recSlot(now) : null;

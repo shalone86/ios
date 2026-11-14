@@ -14,7 +14,8 @@
 //      Both come from the stored analysis, so a note costs only two FFTs per
 //      frame. Only magnitudes change: nothing smears or goes phasey.
 //
-// As on any sampler, a higher note plays a little shorter.
+// The first few milliseconds of each note are left as resampled, so attacks
+// stay crisp. As on any sampler, a higher note plays a little shorter.
 
 const OSAMP = 4;
 
@@ -99,7 +100,7 @@ export function analyse(data, sr, f0 = 0) {
     trueEnvelope(logMag, lifter, cre, cim, tmp);
     frames.push(Float32Array.from(tmp));
   }
-  return { sr, N, hop: HOP, offset: -N / 2, frames };
+  return { sr, N, hop: HOP, offset: -N / 2, frames, f0 };
 }
 
 // Log-envelope of the original at sample position `pos` and bin position
@@ -135,6 +136,11 @@ export function shift(data, an, semis, formant = 0) {
   const re = new Float64Array(N), im = new Float64Array(N);
   const acc = new Float64Array(len + 2 * N);
   const gain = 1 / 1.5;                       // Hann in and out at 4x overlap sum to 1.5
+  // Below the note's own fundamental there is nothing musical to restore,
+  // only the low rumble of the attack; boosting it there makes a thud. So
+  // bins under that point may be cut but never lifted.
+  const floorHz = Math.max(80, an.f0 > 0 ? an.f0 * ratio * 0.75 : 120);
+  const floorBin = floorHz * N / sr;
   for (let start = -N; start < len; start += HOP) {
     for (let i = 0; i < N; i++) { const j = start + i; re[i] = (j >= 0 && j < len ? y[j] : 0) * win[i]; im[i] = 0; }
     fft(re, im, false);
@@ -142,7 +148,7 @@ export function shift(data, an, semis, formant = 0) {
     for (let k = 0; k <= HALF; k++) {
       // what is at bin k now came from k / ratio; it should sound like k / fbeta did
       const lg = envAt(an, pos, k / fbeta) - envAt(an, pos, k / ratio);
-      const g = Math.exp(Math.max(-6, Math.min(2.8, lg)));
+      const g = Math.exp(Math.max(-6, Math.min(k < floorBin ? 0 : 2.1, lg)));     // at most +18 dB, none under the note
       re[k] *= g; im[k] *= g;
       if (k > 0 && k < HALF) { re[N - k] *= g; im[N - k] *= g; }
     }
@@ -151,6 +157,14 @@ export function shift(data, an, semis, formant = 0) {
   }
   const out = new Float32Array(len);
   for (let i = 0; i < len; i++) out[i] = acc[i + N];
+  // The attack: the repair works on 46 ms slices, which would smear a sharp
+  // start into a soft whoosh. The first 25 ms (far too short to hear a
+  // formant in) play from the clean resampled sound, then fade across.
+  const hold = Math.floor(sr * 0.025), fadeLen = Math.floor(sr * 0.035);
+  for (let i = 0; i < Math.min(len, hold + fadeLen); i++) {
+    const w = i < hold ? 0 : 0.5 - 0.5 * Math.cos(Math.PI * (i - hold) / fadeLen);
+    out[i] = y[i] * (1 - w) + out[i] * w;
+  }
   // same loudness as the plain resampled note, a clean ending, no overs
   let a = 0, b = 0;
   for (let i = 0; i < len; i++) { a += y[i] * y[i]; b += out[i] * out[i]; }

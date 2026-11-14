@@ -10,6 +10,8 @@ import { createRequire } from 'node:module';
 
 const web = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
 const skip = new Set(['sw.js', 'blank.html', 'icons/icon.svg']);
+// big media is streamed when watched, not kept in the offline copy
+const skipDir = (rel) => rel.startsWith('media/');
 
 if (process.argv.includes('--icons')) {
   const require = createRequire(import.meta.url);
@@ -32,7 +34,7 @@ const files = [];
   for (const f of fs.readdirSync(dir).sort()) {
     const full = path.join(dir, f), rel = path.relative(web, full).split(path.sep).join('/');
     if (fs.statSync(full).isDirectory()) walk(full);
-    else if (!skip.has(rel) && !rel.endsWith('.txt')) files.push(rel);
+    else if (!skip.has(rel) && !skipDir(rel) && !rel.endsWith('.txt')) files.push(rel);
   }
 })(web);
 const hash = crypto.createHash('sha1');

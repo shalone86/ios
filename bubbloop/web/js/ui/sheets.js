@@ -6,13 +6,13 @@ import { INSTRUMENTS, instrumentById } from '../instruments.js';
 import { MASTERS, REVERBS, ECHOES } from '../graph.js';
 import { PATTERNS } from '../patterns.js';
 import * as S from '../state.js';
-import { addSample, getSample, setRoot, prepareNatural, recordMic, decodeFile, sampleIds, packSamples, unpackSamples, ensureSamples } from '../samples.js';
+import { chop, addSample, getSample, setRoot, prepareNatural, recordMic, decodeFile, sampleIds, packSamples, unpackSamples, ensureSamples } from '../samples.js';
 import { midiName } from '../theory.js';
 import { FILLS } from '../seq.js';
 import { exportProject, FORMATS } from '../exporter.js';
 import { canShare, shareFile, saveFile, isNative } from '../platform.js';
 import { mountIcons, icon, mascot, GLYPHS, DONE_ART } from './art.js';
-import { app, curTrack, renderAll, afterEdit, afterStructureChange, selectTrack, toast, touch, trackMascot, openProject } from './app.js';
+import { showTour, app, curTrack, renderAll, afterEdit, afterStructureChange, selectTrack, toast, touch, trackMascot, openProject } from './app.js';
 
 const sheet = document.getElementById('sheet');
 const body = document.getElementById('sheet-body');
@@ -130,6 +130,7 @@ function project() {
       <button class="pill" data-act="new">${icon('plus')}New song</button>
       <button class="pill" data-act="dup">${icon('copy')}Duplicate</button>
       <button class="pill" data-act="demo">${icon('note')}Demo song</button>
+      <button class="pill" data-act="tour">${icon('play')}How it works</button>
       <button class="pill" data-act="export">${icon('share')}Export</button>
       <button class="pill" data-act="file">Save song file</button>
       <button class="pill" data-act="open">Import song file</button>
@@ -209,6 +210,7 @@ function project() {
       const act = b.dataset.act;
       if (act === 'new') { closeSheet(); await openProject(S.newProject()); toast('Fresh song, fresh bubbles'); }
       else if (act === 'dup') { closeSheet(); await openProject(S.duplicateProject(p)); toast('Working on a copy'); }
+      else if (act === 'tour') { closeSheet(); showTour(); }
       else if (act === 'demo') { closeSheet(); await openProject(S.demoProject()); toast('Press play, then poke around'); }
       else if (act === 'export') exporter();
       else if (act === 'midi') midiSheet();
@@ -381,7 +383,7 @@ function sampler(t) {
       <button class="pill ${kit ? 'on' : ''}" data-mode="kit">Kit: a sound per bubble</button>
     </div>
     <p class="sub" style="margin-top:10px">${kit
-      ? `Filling bubble <b>row ${app.focus.r + 1}, column ${app.focus.c + 1}</b>. Close this, tap another bubble, and come back to fill that one.`
+      ? `Hold an empty bubble on the grid to record into it; hold a filled one to come back here. This menu is for bubble <b>row ${app.focus.r + 1}, column ${app.focus.c + 1}</b>.`
       : 'Your sound is tuned automatically and spread across the bubbles in the song\'s key.'}</p>
     <div class="item" style="margin:6px 0 12px"><span class="sp"><b>${cur ? esc(cur.name) : 'Nothing here yet'}</b>
       <small>${cur ? `${cur.buffer.duration.toFixed(1)} s${kit ? '' : ` · heard as ${midiName(Math.round(cur.root))}${cur.pitched ? '' : ' (no clear pitch found)'}`}` : 'Record something or bring in a file'}</small></span>
@@ -396,9 +398,11 @@ function sampler(t) {
     <div class="progress" ${recorder ? '' : 'hidden'}><i id="s-level"></i></div>
     <div class="wrap" style="margin-top:10px">
       <button class="pill" id="s-file">Import an audio file</button>
+      ${kit ? '<button class="pill" id="s-chop">Chop a file across the bubbles</button>' : ''}
       ${cur ? '<button class="pill" id="s-play">Hear it</button><button class="pill danger" id="s-clear">Remove</button>' : ''}
     </div>
     <input type="file" id="s-input" accept="audio/*" hidden>
+    <input type="file" id="s-chop-input" accept="audio/*" hidden>
     <p class="sub" style="margin-top:10px">Up to 12 seconds. Silence at the ends is trimmed for you.</p>
   `, (root) => {
     const hear = async () => {
@@ -422,7 +426,13 @@ function sampler(t) {
       try {
         if (e.playing) e.stop();
         recorder = await recordMic(e.ctx);
-      } catch (err) { toast('The microphone is not available: check the app\'s permission'); return; }
+      } catch (err) {
+        const name = err && err.name;
+        toast(name === 'NotAllowedError' || name === 'SecurityError' ? 'Microphone permission is off: allow it in the app or browser settings'
+          : name === 'NotFoundError' ? 'No microphone found' : name === 'NotReadableError' ? 'The microphone is busy in another app'
+          : `The microphone could not start (${name || 'unknown error'})`, 4000);
+        return;
+      }
       sampler(t);
       const meter = () => {
         const bar = document.getElementById('s-level');
@@ -441,6 +451,29 @@ function sampler(t) {
       try { await e.wake(p); await put(await decodeFile(e.ctx, f), f.name.replace(/\.[^.]+$/, '').slice(0, 24)); }
       catch (err) { toast('That file could not be read as audio'); }
     });
+    const chopBtn = root.querySelector('#s-chop');
+    if (chopBtn) {
+      const ci = root.querySelector('#s-chop-input');
+      chopBtn.addEventListener('click', () => ci.click());
+      ci.addEventListener('change', async () => {
+        const f = ci.files && ci.files[0];
+        if (!f) return;
+        try {
+          await e.wake(p);
+          const sound = await decodeFile(e.ctx, f);
+          const slices = chop(sound.data, sound.sr, 25);
+          S.pushUndo(p);
+          t.smp.kit = {};
+          let n = 0;
+          for (const sl of slices) {
+            const made = await addSample(sl, sound.sr, `${f.name.replace(/\.[^.]+$/, '').slice(0, 5)} ${n + 1}`);
+            if (made) t.smp.kit[n++] = made.id;
+          }
+          touch(); renderAll(); sampler(t);
+          toast(`${n} hit${n === 1 ? '' : 's'} across the bubbles, from the bottom left`);
+        } catch (err) { toast('That file could not be read as audio'); }
+      });
+    }
     const play = root.querySelector('#s-play');
     if (play) play.addEventListener('click', async () => { await e.wake(p); e.g.playSample(t, kit ? app.focus.r : 1, kit ? app.focus.c : 0, 'off', 0.9, e.now + 0.03, 1.5); });
     const clear = root.querySelector('#s-clear');

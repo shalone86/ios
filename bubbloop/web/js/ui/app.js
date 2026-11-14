@@ -3,7 +3,7 @@
 import { ROWS, COLS, STEP, BAR, KEY_NAMES, scaleById, chordLabel, cellNotes, CHORDS } from '../theory.js';
 import { Engine } from '../engine.js';
 import { padFor } from '../drums.js';
-import { getSample, prepareNatural } from '../samples.js';
+import { getSample, prepareNatural, recordMic, addSample } from '../samples.js';
 import { FX } from '../graph.js';
 import { instrumentById } from '../instruments.js';
 import * as S from '../state.js';
@@ -272,7 +272,7 @@ function renderGrid() {
       } else {
         cls = 'hue-' + c + (c === 0 ? ' root' : '');
         const kitSmp = t.inst === 'sampler' && t.smp && t.smp.mode === 'kit';
-        if (kitSmp) { const sm = getSample((t.smp.kit || {})[idx]); label = sm ? sm.name.slice(0, 7) : '+'; }
+        if (kitSmp) { const sm = getSample((t.smp.kit || {})[idx]); label = sm ? sm.name.slice(0, 7) : 'hold'; }
         else if (S.chordOf(t, c) !== 'off') label = chordLabel(p, c, S.chordOf(t, c));
         else if (app.settings.names) label = KEY_NAMES[cellNotes(p, t, r, c)[0] % 12];
       }
@@ -354,17 +354,89 @@ function releasePointer(pid) {
   const cur = pointers.get(pid);
   if (!cur) return;
   pointers.delete(pid);
+  clearTimeout(cur.hold);
   if (cur.id) engine.noteOff(cur.id);
   if (![...pointers.values()].some((p) => p.cell === cur.cell)) cur.cell.classList.remove('on');
 }
 
+// Let go of every finger we think is down. Used when a fresh first touch
+// arrives (so no other finger can really be down), and when the app loses
+// focus: a mash of many fingers can leave lifts the browser never reports.
+function releaseAllPointers() {
+  for (const pid of [...pointers.keys()]) releasePointer(pid);
+  if (bubbleRec) finishBubbleRecording(bubbleRec);
+  for (const cell of el.grid.querySelectorAll('.cell.on')) cell.classList.remove('on');
+  fxReleaseAll();
+}
+let fxReleaseAll = () => {};
+
+// The audio engine is woken without waiting for it: the touch must be
+// registered straight away, or a finger lifted while the engine wakes is
+// never seen and its note hangs.
+function wakeNow() {
+  if (!engine.ready) engine.wake(app.project).catch(() => {});
+}
+
+// ---------- kit mode: hold a bubble to record into it ----------
+
+const kitTrack = () => { const t = curTrack(); return t.inst === 'sampler' && t.smp && t.smp.mode === 'kit' ? t : null; };
+let bubbleRec = null;      // { pid, cell, slot, rec: Promise, stop: bool }
+
+function startBubbleRecording(cell, pid) {
+  const t = kitTrack(), slot = +cell.dataset.r * COLS + +cell.dataset.c;
+  cell.classList.add('rec');
+  if (app.settings.haptics) haptic();
+  const job = { pid, cell, slot, t, at: performance.now(), stop: false };
+  bubbleRec = job;
+  job.rec = engine.wake(app.project).then(() => recordMic(engine.ctx)).then((r) => {
+    job.recorder = r;
+    toast('Recording… let go to keep it', 1200);
+    if (job.stop) finishBubbleRecording(job);
+  }).catch((err) => {
+    cell.classList.remove('rec');
+    bubbleRec = null;
+    toast(err && err.name === 'NotAllowedError' ? 'Microphone permission is off: allow it in the app or browser settings' : 'The microphone could not start', 3500);
+  });
+}
+
+async function finishBubbleRecording(job) {
+  if (!job.recorder) { job.stop = true; return; }       // let go before the microphone opened
+  if (bubbleRec === job) bubbleRec = null;
+  job.cell.classList.remove('rec');
+  const sound = job.recorder.stop();
+  if (sound.data.length < sound.sr * 0.08) { toast('Hold the bubble while you make the sound'); return; }
+  const made = await addSample(sound.data, sound.sr, `Pad ${job.slot + 1}`);
+  if (!made) { toast('That was silent: try again, a little louder'); return; }
+  S.pushUndo(app.project);
+  job.t.smp.kit[job.slot] = made.id;
+  touch(); renderGrid();
+  engine.g.playSample(job.t, Math.floor(job.slot / COLS), job.slot % COLS, 'off', 0.9, engine.now + 0.05);
+}
+
 function bindGrid() {
-  el.grid.addEventListener('pointerdown', async (e) => {
+  el.grid.addEventListener('pointerdown', (e) => {
     const cell = e.target.closest('.cell');
     if (!cell) return;
     e.preventDefault();
-    if (!engine.ready) await engine.wake(app.project);
-    pointers.set(e.pointerId, { cell, id: pressCell(cell, e), y0: e.clientY });
+    if (e.isPrimary && pointers.size) releaseAllPointers();
+    if (pointers.has(e.pointerId)) releasePointer(e.pointerId);
+    wakeNow();
+    const kit = !app.eraser && kitTrack();
+    if (kit) {
+      const slot = +cell.dataset.r * COLS + +cell.dataset.c;
+      if (!getSample((kit.smp.kit || {})[slot])) {
+        if (!bubbleRec) startBubbleRecording(cell, e.pointerId);
+        return;
+      }
+    }
+    const rec = { cell, id: pressCell(cell, e), y0: e.clientY };
+    // in kit mode, holding a filled bubble opens its sampler menu
+    if (kit) rec.hold = setTimeout(() => {
+      releasePointer(e.pointerId);
+      app.focus = { r: +cell.dataset.r, c: +cell.dataset.c };
+      openSheets.sampler(kit);
+    }, 750);
+    pointers.set(e.pointerId, rec);
   });
   el.grid.addEventListener('pointermove', (e) => {
     const cur = pointers.get(e.pointerId);
@@ -382,10 +454,14 @@ function bindGrid() {
       return;
     }
     // sliding across bubbles plays each one in turn
+    if (kitTrack() && !getSample((kitTrack().smp.kit || {})[+cell.dataset.r * COLS + +cell.dataset.c])) return;
     releasePointer(e.pointerId);
     pointers.set(e.pointerId, { cell, id: pressCell(cell, e), y0: e.clientY });
   });
-  const up = (e) => releasePointer(e.pointerId);
+  const up = (e) => {
+    if (bubbleRec && bubbleRec.pid === e.pointerId) finishBubbleRecording(bubbleRec);
+    releasePointer(e.pointerId);
+  };
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
   el.grid.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -438,11 +514,13 @@ function bindFx() {
     return Math.max(0, Math.min(f.zones.length - 1, Math.floor(((x - b.left) / b.width) * f.zones.length)));
   };
   const showZone = (pad, z) => pad.querySelectorAll('.zones i').forEach((n, i) => n.classList.toggle('z', i === z));
-  el.fx.addEventListener('pointerdown', async (e) => {
+  el.fx.addEventListener('pointerdown', (e) => {
     const pad = e.target.closest('.fx');
     if (!pad) return;
     e.preventDefault();
-    if (!engine.ready) await engine.wake(app.project);
+    if (e.isPrimary && held.size) fxReleaseAll();
+    if (held.has(e.pointerId)) up(e);
+    wakeNow();
     const f = FX.find((x) => x.id === pad.dataset.fx);
     if (e.target.closest('.lock')) {
       const on = !app.project.latch[f.id];
@@ -481,6 +559,7 @@ function bindFx() {
     if (!app.project.latch[h.f.id]) { h.pad.classList.remove('on'); showZone(h.pad, -1); }
     if (engine.recording) renderTools();
   };
+  fxReleaseAll = () => { for (const pid of [...held.keys()]) up({ pointerId: pid }); };
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
   el.fx.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -798,6 +877,23 @@ setInterval(() => {
 
 // ---------- actions ----------
 
+// ---------- tutorial video ----------
+
+export function showTour() {
+  const box = $('tour'), video = $('tour-video');
+  try { localStorage.setItem('bubbloop.seenTour', '1'); } catch (e) { /* private mode */ }
+  if (engine.playing) engine.stop();
+  if (!video.src) video.src = 'media/tutorial.mp4';
+  box.hidden = false;
+  video.currentTime = 0;
+  video.play().catch(() => {});
+  const close = () => { video.pause(); box.hidden = true; };
+  $('tour-close').onclick = close;
+  video.onended = close;
+}
+export const tourOpen = () => !$('tour').hidden;
+export const closeTour = () => { $('tour-video').pause(); $('tour').hidden = true; };
+
 export function renderAll() {
   renderTop(); renderSections(); renderTransport(); renderTracks(); renderTools();
   renderGrid(); renderSteps(); renderFx(); renderMix(); renderSong();
@@ -1006,11 +1102,14 @@ function bind() {
 
   window.addEventListener('resize', () => { mapDirty = true; fitGrid(); });
   if (window.ResizeObserver) new ResizeObserver(fitGrid).observe(el.stage);
+  window.addEventListener('blur', releaseAllPointers);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAllPointers(); });
   document.addEventListener('visibilitychange', () => {
     // coming back to the app: wake the audio so the first tap is not swallowed
     if (!document.hidden && engine.ctx && engine.ctx.state !== 'running') engine.ctx.resume().catch(() => {});
   });
   onBack(() => {
+    if (tourOpen()) { closeTour(); return true; }
     if (sheetIsOpen()) { closeSheet(); return true; }
     if (app.view !== 'play') { setView('play'); return true; }
     if (engine.playing) { engine.stop(); return true; }
@@ -1094,6 +1193,11 @@ async function boot() {
     renderAll();
   };
   $('btn-start').onclick = start;
+  // first visit: offer the tutorial on the start screen (it stays in the song menu)
+  let seen = false;
+  try { seen = !!localStorage.getItem('bubbloop.seenTour'); } catch (e) { /* private mode */ }
+  if (!seen) $('btn-tour').hidden = false;
+  $('btn-tour').onclick = () => { el.splash.classList.add('gone'); showTour(); };
   el.splash.addEventListener('pointerdown', (e) => { if (e.target === el.splash) start(); });
   window.bubbloop = app;       // handy for tests and tinkering
   goOffline();

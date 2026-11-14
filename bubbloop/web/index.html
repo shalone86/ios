@@ -73,7 +73,13 @@
     <p>pocket beats made of bubbles</p>
   </div>
   <button id="btn-start" class="start">tap to play</button>
+  <button id="btn-tour" class="tour-link" hidden>▶ new here? watch how it works · 2 min</button>
   <p id="old-msg" hidden>Boba Beats needs a newer web engine than this phone has. Update <b>Android System WebView</b> (or Chrome) in the Play Store, then open Boba Beats again.</p>
+</div>
+
+<div id="tour" hidden role="dialog" aria-label="How Boba Beats works">
+  <video id="tour-video" controls playsinline preload="none"></video>
+  <button id="tour-close" class="pill round" aria-label="Close">✕</button>
 </div>
 
 <div id="scrim" hidden></div>

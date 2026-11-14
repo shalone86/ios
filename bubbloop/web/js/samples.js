@@ -272,6 +272,54 @@ export function prepareNatural(project, { evict = false } = {}) {
   return busy > 0 ? new Promise((resolve) => waiters.add(resolve)) : Promise.resolve();
 }
 
+// ---------- chopping ----------
+
+// Cut a recording into separate hits for kit mode: wherever the sound
+// suddenly gets louder (most of all in its brighter part, where attacks
+// live) a new slice starts. A sound with few hits, like a held chord, is
+// cut into even pieces instead. Returns up to `max` slices.
+export function chop(data, sr, max = 25) {
+  const hop = 512, frames = Math.floor(data.length / hop);
+  const env = new Float32Array(frames);
+  let prev = 0;
+  for (let f = 0; f < frames; f++) {
+    let e = 0;
+    for (let i = f * hop; i < (f + 1) * hop; i++) { const d = data[i] - prev; prev = data[i]; e += d * d + 0.25 * data[i] * data[i]; }
+    env[f] = Math.log(e / hop + 1e-10);
+  }
+  const flux = new Float32Array(frames);
+  for (let f = 3; f < frames; f++) flux[f] = Math.max(0, env[f] - (env[f - 1] + env[f - 2] + env[f - 3]) / 3);
+  let mean = 0, sd = 0;
+  for (const v of flux) mean += v / frames;
+  for (const v of flux) sd += (v - mean) ** 2 / frames;
+  sd = Math.sqrt(sd);
+  const gap = Math.ceil(0.09 * sr / hop);
+  let peak = -1e9;
+  for (const v of env) peak = Math.max(peak, v);
+  let hits = [];
+  for (let f = 3; f < frames - 1; f++) {
+    // a hit is a real jump: above the usual wobble and at least ~4 dB
+    if (flux[f] < Math.max(mean + 1.5 * sd, 1) || flux[f] < flux[f - 1] || flux[f] < flux[f + 1] || env[f] < peak - 9) continue;
+    if (hits.length && f - hits[hits.length - 1].f < gap) {
+      if (flux[f] > hits[hits.length - 1].s) hits[hits.length - 1] = { f, s: flux[f] };
+      continue;
+    }
+    hits.push({ f, s: flux[f] });
+  }
+  // the first sound always starts a slice
+  let first = 0;
+  while (first < frames && env[first] < peak - 9) first++;
+  if (!hits.length || hits[0].f - first > gap) hits.unshift({ f: first, s: Infinity });
+  if (hits.length > max) hits = hits.sort((a, b) => b.s - a.s).slice(0, max).sort((a, b) => a.f - b.f);
+  let starts = hits.map((h) => Math.max(0, h.f * hop - 256));
+  // few hits in a long sound: even pieces instead
+  if (starts.length < 4 && data.length > sr * 2) {
+    const pieces = Math.min(max, 8), len = data.length / pieces;
+    starts = Array.from({ length: pieces }, (_, i) => Math.floor(i * len));
+  }
+  return starts.map((a, i) => data.slice(a, Math.min(starts[i + 1] || data.length, a + sr * 3)));
+}
+
 // ---------- getting sound in ----------
 
 // Start recording from the microphone. Resolves to { stop, level } where

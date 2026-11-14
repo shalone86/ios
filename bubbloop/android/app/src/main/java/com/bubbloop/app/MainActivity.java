@@ -294,6 +294,7 @@ public class MainActivity extends Activity {
         if (p.endsWith(".svg")) return "image/svg+xml";
         if (p.endsWith(".woff2")) return "font/woff2";
         if (p.endsWith(".png")) return "image/png";
+        if (p.endsWith(".mp4")) return "video/mp4";
         if (p.endsWith(".txt")) return "text/plain";
         return "application/octet-stream";
     }

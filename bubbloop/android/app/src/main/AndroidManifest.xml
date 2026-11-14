@@ -5,6 +5,8 @@
          first time you record. Boba Beats never touches the network; files are
          saved through the system media store, which needs no permission. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- the WebView will not open the microphone for a page without this one too -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application

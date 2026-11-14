@@ -7,6 +7,8 @@
   "name": "boba-beats",
   "main": "dist/worker.js",
   "compatibility_date": "2026-11-01",
+  // big media (the tutorial video) is uploaded as static assets instead
+  "assets": { "directory": "./dist/assets", "binding": "ASSETS", "run_worker_first": true },
   "routes": [
     { "pattern": "shalonely.com/boba", "zone_name": "shalonely.com" },
     { "pattern": "shalonely.com/boba/*", "zone_name": "shalonely.com" }

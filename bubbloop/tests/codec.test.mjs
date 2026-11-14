@@ -203,6 +203,20 @@ console.log('Mastering chain');
   }
 }
 
+console.log('Natural pitch (sampler)');
+{
+  const { analyse, shift } = await import('../web/js/dsp/formant.js');
+  const sr = 44100, n = sr, x = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const t = i / sr; let v = 0; for (let h = 1; h < 25; h++) v += Math.sin(2 * Math.PI * 196 * h * t + h) / h; x[i] = 0.3 * v * Math.exp(-t * 3) * Math.min(1, t / 0.003); }
+  const low = (y) => { const k = Math.exp(-2 * Math.PI * 100 / sr); let s1 = 0, s2 = 0, e = 0, tot = 0; for (let i = 0; i < Math.floor(0.08 * sr); i++) { s1 = k * s1 + (1 - k) * y[i]; s2 = k * s2 + (1 - k) * s1; e += s2 * s2; tot += y[i] * y[i]; } return 10 * Math.log10(e / tot); };
+  const an = analyse(x, sr, 196);
+  for (const st of [12, 19]) {
+    const nat = shift(x, an, st, 0), r = 2 ** (st / 12), cls = new Float32Array(Math.floor(n / r));
+    for (let i = 0; i < cls.length; i++) cls[i] = x[Math.floor(i * r)];
+    check(low(nat) - low(cls) < 2, `+${st} semitones: no thud at the attack (low end ${low(nat).toFixed(1)} dB vs ${low(cls).toFixed(1)} dB plain)`);
+  }
+}
+
 console.log('MIDI');
 {
   const p = newProject('Midi Test');

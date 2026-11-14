@@ -74,6 +74,16 @@ were, so a voice moved up stays a voice instead of a chipmunk; the Formant
 control slides them on purpose (lower is bigger and darker). Notes are
 prepared in the background; until one is ready it plays the classic way.
 
+**Kit mode, quickly.** In kit mode, hold an empty bubble to record straight
+into it (let go to keep it), and hold a filled one to open its sampler menu.
+"Chop a file across the bubbles" cuts a recording at its hits, one per
+bubble from the bottom left.
+
+**Tutorial.** A 90-second video of building a song is offered on the start
+screen on a first visit and kept under "How it works" in the song menu. It is
+filmed from the real app by `tools/make-tutorial.mjs`; re-run that after
+changing the interface.
+
 **Export.** WAV, Apple Lossless (.m4a), MP3, MIDI, stems (one WAV per
 track) or an instrument pack. Exports go through a mastering chain in the
 same order as a typical Ozone chain: tape saturation, a tonal-balance
