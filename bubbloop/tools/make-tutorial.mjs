@@ -1,6 +1,11 @@
 // Films the tutorial: drives the real app at phone size through making a
-// song, with captions and a dot where each finger lands, records the screen
-// and the app's own sound, and joins them into web/media/tutorial.mp4.
+// song, with captions, a spoken line for each step and a dot where each
+// finger lands. It records the screen and the app's own sound, lays the
+// voice over it (the music ducks under it), and writes web/media/tutorial.mp4.
+//
+// The voice comes from the Aura-2 text-to-speech behind the readaloud Worker.
+// Clips are kept in tools/tutorial-voice/, so re-filming needs no network
+// unless a line changes.
 //
 //   node bubbloop/tools/make-tutorial.mjs
 //
@@ -21,6 +26,49 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-tour-'));
 const require = createRequire(import.meta.url);
 let pw;
 for (const id of ['playwright', '/opt/node-tools/node_modules/playwright']) { try { pw = require(id); break; } catch (e) { /* next */ } }
+
+// ---------- narration ----------
+const VOICE = 'luna';
+const TTS = 'https://readaloud.ariyandhamma.workers.dev/api/tts';
+const LINES = {
+  intro: 'Hi! This is Boba Beats. Let\'s make a song out of bubbles.',
+  tune: 'Every bubble is in tune, so tap around. Nothing can sound wrong.',
+  key: 'Pick a key and a scale. Every track follows it.',
+  drums: 'Start with drums. Pick a groove, or tap your own.',
+  pads: 'The drums are twenty five pads: kicks, snares, hats, and more.',
+  bass: 'Now the bass. Press the pink button. After a one bar count in, it records what you play.',
+  loop: 'It keeps looping, and your notes snap to the beat.',
+  chords: 'Chords next. One bubble plays a whole chord.',
+  melody: 'Add a melody on top. Wiggle a held bubble to bend the note.',
+  mute: 'Tap zzz to rest a track. Tap it again to wake it up.',
+  fx: 'Hold an effect pad. Slide across it to change the sound.',
+  section: 'Make a second section. B starts as a copy of A, so just change what you like.',
+  song: 'Song mode lines your loops up into a whole song.',
+  rest: 'Tap a bubble to rest a track in that part. Hold one for a fill.',
+  play: 'Press play to hear it all.',
+  mix: 'The mixer sets each track\'s volume, cloud, and echo.',
+  export: 'When you\'re happy, export a loud, mastered file.',
+  more: 'There\'s more in the menus, like a sampler for your own sounds.',
+  bye: 'Now make your own song. Have fun!',
+};
+const VOICE_DIR = path.join(here, 'tutorial-voice');
+fs.mkdirSync(VOICE_DIR, { recursive: true });
+const clips = {};            // key -> { file, seconds }
+for (const [key, text] of Object.entries(LINES)) {
+  const name = `${VOICE}-${key}-${Buffer.from(text).toString('base64url').slice(0, 10)}.mp3`;
+  const file = path.join(VOICE_DIR, name);
+  if (!fs.existsSync(file)) {
+    for (const old of fs.readdirSync(VOICE_DIR)) if (old.startsWith(`${VOICE}-${key}-`)) fs.rmSync(path.join(VOICE_DIR, old));
+    const res = await fetch(`${TTS}?voice=${VOICE}&text=${encodeURIComponent(text)}`);
+    if (!res.ok) throw new Error(`voice for "${key}" failed: ${res.status}`);
+    const wav = path.join(work, `${key}.wav`);
+    fs.writeFileSync(wav, Buffer.from(await res.arrayBuffer()));
+    execFileSync('ffmpeg', ['-hide_banner', '-v', 'error', '-y', '-i', wav, '-af', 'silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse', '-ac', '1', '-c:a', 'libmp3lame', '-q:a', '4', file]);
+  }
+  const secs = parseFloat(String(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file])));
+  clips[key] = { file, seconds: secs };
+}
+console.log(`narration: ${Object.keys(clips).length} lines, ${Object.values(clips).reduce((a, c) => a + c.seconds, 0).toFixed(0)} s`);
 
 // ---------- a tiny static server for web/ ----------
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
@@ -110,6 +158,20 @@ const cap = (text, sub = '') => page.evaluate(([t, s]) => {
   c.innerHTML = t ? `${t}${s ? `<small>${s}</small>` : ''}` : '';
   c.className = t ? '' : 'off';
 }, [text, sub]);
+const spoken = [];             // { key, at } seconds after the sound recording starts
+let sayEnd = 0, audioT0 = 0;
+// Speak a line (laid in at the mux) and show its caption. Waits first for
+// the previous line to finish, so lines never overlap.
+async function say(key, text, sub = '') {
+  const now = Date.now();
+  if (sayEnd > now) await wait(sayEnd - now + 150);
+  const at = Date.now();
+  spoken.push({ key, at: (at - audioT0) / 1000 });
+  sayEnd = at + clips[key].seconds * 1000;
+  await cap(text, sub);
+}
+// hold here until the current line has been spoken
+const finishLine = async () => { const left = sayEnd - Date.now(); if (left > 0) await wait(left + 200); };
 const press = (sel, hold = 140, opts = {}) => page.evaluate(([s, h, o]) => window.__press(document.querySelector(s), h, o), [sel, hold, opts]);
 const bubble = (r, c, hold = 160, opts = {}) => press(`#grid .cell[data-r="${r}"][data-c="${c}"]`, hold, { pointer: true, ...opts });
 const pod = (role) => page.evaluate((rl) => {
@@ -147,7 +209,7 @@ async function startAudio() {
 const t0 = Date.now();
 await wait(900);
 await cap('Boba Beats', 'make a song out of bubbles');
-await wait(2200);
+await wait(1200);
 await press('#btn-start', 200);
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.engine.ready);
 // a fresh song to build
@@ -159,41 +221,47 @@ await page.evaluate(async () => {
   await openProject(p);
 });
 const audioStart = await startAudio();
+audioT0 = audioStart;
+await say('intro', 'Boba Beats', 'make a song out of bubbles');
+await finishLine();
 
-await cap('Every bubble is in tune', 'tap around: nothing can sound wrong');
+await say('tune', 'Every bubble is in tune', 'tap around: nothing can sound wrong');
 await pod('melody');
 const firstTap = Date.now();
 for (const [r, c] of [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4], [2, 0], [2, 2], [1, 4], [1, 2]]) { await bubble(r, c, 150); await wait(90); }
 await wait(500);
 
-await cap('Pick a key and a scale', 'every track follows it');
+await finishLine();
+await say('key', 'Pick a key and a scale', 'every track follows it');
 await press('#btn-key', 160); await wait(700);
 await press('[data-key="9"]', 160); await wait(500);
 await press('[data-scale="minor"]', 160); await wait(1300);
 await closeSheet(); await wait(500);
 
-await cap('Start with drums', 'choose a groove, or tap your own');
+await say('drums', 'Start with drums', 'choose a groove, or tap your own');
 await pod('drums'); await wait(500);
 await press('[data-tool="grooves"]', 160); await wait(800);
 await press('[data-groove="lofi"]', 180); await wait(2600);
 await closeSheet();
-await cap('Drums are 25 pads', 'kicks, snares, hats, toms, shakers…');
+await say('pads', 'Drums are 25 pads', 'kicks, snares, hats, toms, shakers…');
 await wait(1200);
 for (const [r, c] of [[2, 0], [2, 2], [3, 0], [3, 1]]) { await bubble(r, c, 120); await wait(240); }
 await wait(800);
 
-await cap('Now the bass. Press the pink button', 'after a one-bar count-in, it records');
+await finishLine();
+await say('bass', 'Now the bass. Press the pink button', 'after a one-bar count-in, it records');
 await pod('bass'); await wait(400);
 await press('#btn-rec', 160);
 await perform([
   { t: 0, d: 70, r: 0, c: 0 }, { t: 144, d: 40, r: 0, c: 0 }, { t: 288, d: 80, r: 0, c: 2 },
   { t: 384, d: 70, r: 0, c: 3 }, { t: 528, d: 40, r: 0, c: 3 }, { t: 672, d: 80, r: 0, c: 4 },
 ]);
-await cap('It keeps looping', 'notes snap to the beat');
+await say('loop', 'It keeps looping', 'notes snap to the beat');
 await wait(1800);
 await press('#btn-rec', 160);
 
-await cap('Chords: one bubble, a whole chord');
+await finishLine();
+await say('chords', 'Chords: one bubble, a whole chord');
 await pod('pads'); await wait(400);
 await press('[data-tool="chord"]', 160); await wait(700);
 await press('[data-chord="seven"]', 180); await wait(500);
@@ -201,7 +269,8 @@ await press('#btn-rec', 160);
 await perform([{ t: 0, d: 360, r: 1, c: 0 }, { t: 384, d: 360, r: 1, c: 3 }]);
 await press('#btn-rec', 160);
 
-await cap('A melody on top', 'wiggle a held bubble to bend the note');
+await finishLine();
+await say('melody', 'A melody on top', 'wiggle a held bubble to bend the note');
 await pod('melody'); await wait(400);
 await press('#btn-rec', 160);
 await perform([
@@ -211,19 +280,22 @@ await perform([
 await press('#btn-rec', 160);
 await wait(400);
 
-await cap('Tap zzz to rest a track', 'tap again to wake it');
+await finishLine();
+await say('mute', 'Tap zzz to rest a track', 'tap again to wake it');
 await page.evaluate(() => { const t = window.bubbloop.project.tracks.find((x) => x.role === 'drums'); return window.__press(document.querySelector(`[data-mute="${t.id}"]`), 160); });
 await wait(2600);
 await page.evaluate(() => { const t = window.bubbloop.project.tracks.find((x) => x.role === 'drums'); return window.__press(document.querySelector(`[data-mute="${t.id}"]`), 160); });
 await wait(1200);
 
-await cap('FX: hold a pad', 'slide across Stutter or Dive to change it');
+await finishLine();
+await say('fx', 'FX: hold a pad', 'slide across Stutter or Dive to change it');
 await press('.tab[data-view="fx"]', 160); await wait(700);
 await press('.fx[data-fx="stutter"]', 1100, { pointer: true }); await wait(500);
 await press('.fx[data-fx="filter"]', 1600, { pointer: true, dx: -40 }); await wait(500);
 await press('.fx[data-fx="reverb"]', 1400, { pointer: true, dx: 30 }); await wait(900);
 
-await cap('Make a second section', 'B starts as a copy of A');
+await finishLine();
+await say('section', 'Make a second section', 'B starts as a copy of A');
 await press('.tab[data-view="play"]', 160); await wait(500);
 await press('[data-sec="add"]', 160); await wait(700);
 await press('[data-new="copy"]', 180); await wait(900);
@@ -233,10 +305,12 @@ await press('[data-groove="boombap"]', 180); await wait(1500);
 await closeSheet(); await wait(1500);
 await press('#btn-play', 160); await wait(400);
 
-await cap('Song mode: line your loops up', 'each column is a part of the song');
+await finishLine();
+await say('song', 'Song mode: line your loops up', 'each column is a part of the song');
 await press('.tab[data-view="song"]', 160); await wait(800);
 await press('[data-song="build"]', 180); await wait(1200);
-await cap('Tap a bubble to rest a track there', 'hold one for fills and energy');
+await finishLine();
+await say('rest', 'Tap a bubble to rest a track there', 'hold one for fills and energy');
 await page.evaluate(() => { const t = window.bubbloop.project.tracks.find((x) => x.role === 'melody'); return window.__press(document.querySelector(`[data-cell="0:${t.id}"]`), 160); });
 await wait(900);
 await page.evaluate(() => { const t = window.bubbloop.project.tracks.find((x) => x.role === 'drums'); return window.__press(document.querySelector(`[data-cell="1:${t.id}"]`), 160); });
@@ -246,21 +320,25 @@ await wait(900);
 await press('[data-fill="rep16"]', 180); await wait(1000);
 await closeSheet(); await wait(300);
 await page.evaluate(() => { window.bubbloop.engine.songFrom = 0; window.bubbloop.songSel = 0; });
-await cap('Press play to hear the whole song');
+await finishLine();
+await say('play', 'Press play to hear the whole song');
 await press('#btn-play', 160);
 await wait(Math.round(4 * 4 * 60000 / 96) + 400);
 await press('#btn-play', 160); await wait(300);
 
-await cap('Mix: volume, Cloud and Echo for each track');
+await say('mix', 'Mix: volume, Cloud and Echo for each track');
 await press('.tab[data-view="mix"]', 160); await wait(2200);
 
-await cap('Export a mastered file', 'WAV, MP3, Apple Lossless, MIDI, stems');
+await finishLine();
+await say('export', 'Export a mastered file', 'WAV, MP3, Apple Lossless, MIDI, stems');
 await press('#btn-export', 160); await wait(1500);
 await press('[data-what="song"]', 160); await wait(1800);
 await closeSheet(); await wait(300);
 
-await cap('More in the menus', 'a sampler for your own sounds, saved songs, MIDI');
+await finishLine();
+await say('more', 'More in the menus', 'a sampler for your own sounds, saved songs, MIDI');
 await press('#btn-project', 160); await wait(2400);
+await finishLine();
 await closeSheet(); await cap(''); await wait(300);
 
 await page.evaluate(() => {
@@ -268,7 +346,9 @@ await page.evaluate(() => {
   d.innerHTML = '<div>Boba Beats<small>now make your own song ✦</small></div>';
   document.body.appendChild(d);
 });
-await wait(2500);
+await say('bye', '');
+await finishLine();
+await wait(800);
 
 // ---------- finish: join picture and sound ----------
 const audioB64 = await page.evaluate(() => window.__stopAudio());
@@ -282,12 +362,27 @@ const offset = (audioStart - videoStart) / 1000;
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 const TRIM = 0.8;          // the blank first moment while the page loads
 const delayMs = Math.round((offset - TRIM) * 1000);
+// the voice track: every line at the moment its caption appeared
+const voiceArgs = [], voiceMix = [];
+spoken.forEach((sp, i) => {
+  voiceArgs.push('-i', clips[sp.key].file);
+  voiceMix.push(`[${i + 2}:a]aresample=48000,adelay=${Math.round(sp.at * 1000) + delayMs}:all=1,volume=1.6[v${i}]`);
+});
+const graph = [
+  `[1:a]aresample=48000,adelay=${delayMs}:all=1,loudnorm=I=-18:TP=-2[music]`,
+  ...voiceMix,
+  `${spoken.map((_, i) => `[v${i}]`).join('')}amix=inputs=${spoken.length}:normalize=0,apad,asplit=2[voice][voiceSc]`,
+  // the music dips about 9 dB while someone is speaking
+  '[music][voiceSc]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=350[ducked]',
+  '[ducked][voice]amix=inputs=2:normalize=0,alimiter=limit=0.89,loudnorm=I=-16:TP=-1.5[a]',
+].join(';');
 execFileSync('ffmpeg', ['-hide_banner', '-v', 'error', '-y',
-  '-ss', String(TRIM), '-i', webm, '-i', audioFile,
-  '-map', '0:v', '-map', '1:a',
+  '-ss', String(TRIM), '-i', webm, '-i', audioFile, ...voiceArgs,
+  '-filter_complex', graph,
+  '-map', '0:v', '-map', '[a]',
   '-c:v', 'libx264', '-preset', 'slow', '-crf', '27', '-pix_fmt', 'yuv420p', '-r', '30', '-movflags', '+faststart',
   '-vf', 'scale=720:1280:flags=lanczos',
-  '-c:a', 'aac', '-b:a', '128k', '-af', `adelay=${delayMs}:all=1,loudnorm=I=-16:TP=-1.5,apad`,
+  '-c:a', 'aac', '-b:a', '128k',
   '-shortest', OUT], { stdio: 'inherit' });
 const mb = (fs.statSync(OUT).size / 1048576).toFixed(1);
 console.log(`tutorial: ${OUT} (${mb} MB, ${total.toFixed(0)} s, audio offset ${offset.toFixed(2)} s, first tap at ${((firstTap - videoStart) / 1000 - TRIM).toFixed(2)} s in the video)`);

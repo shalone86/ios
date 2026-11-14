@@ -34,20 +34,36 @@ function toBuffer(data, sr) {
   return b;
 }
 
-// Cut silence off both ends, fade the edges, bring the peak up to a set level.
+// Cut the lead-in and tail off a recording, fade the edges, bring the peak
+// up to a set level. A phone microphone is never silent (room hum, hiss), so
+// "silence" is judged against this recording's own noise floor: the sound
+// starts at the first moment clearly above it, minus a few milliseconds so
+// the attack keeps its edge.
 export function tidy(data, sr) {
   let peak = 0;
   for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
   if (peak < 1e-4) return null;
-  const floor = peak * 0.02;
-  let a = 0, b = data.length - 1;
-  while (a < b && Math.abs(data[a]) < floor) a++;
-  while (b > a && Math.abs(data[b]) < floor * 0.5) b--;
-  a = Math.max(0, a - Math.floor(sr * 0.003));
-  b = Math.min(data.length - 1, b + Math.floor(sr * 0.05));
+  const hop = Math.max(1, Math.floor(sr * 0.005)), frames = Math.ceil(data.length / hop);
+  const rms = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    let e = 0, n = 0;
+    for (let i = f * hop; i < Math.min(data.length, (f + 1) * hop); i++, n++) e += data[i] * data[i];
+    rms[f] = Math.sqrt(e / Math.max(1, n));
+  }
+  const sorted = Float32Array.from(rms).sort();
+  const loud = sorted[frames - 1];
+  // the quietest tenth is the noise, unless the sound never goes quiet (a held note)
+  const noise = Math.min(sorted[Math.floor(frames * 0.1)], loud * 0.03);
+  // the sound starts ~10 dB over the noise, or 26 dB under the loudest moment if that is higher
+  const startAt = Math.max(noise * 3.2, loud * 0.05), endAt = Math.max(noise * 2, loud * 0.012);
+  let fa = 0, fb = frames - 1;
+  while (fa < fb && rms[fa] < startAt) fa++;
+  while (fb > fa && rms[fb] < endAt) fb--;
+  const a = Math.max(0, fa * hop - Math.floor(sr * 0.008));
+  const b = Math.min(data.length - 1, (fb + 1) * hop + Math.floor(sr * 0.06));
   const n = Math.min(b - a + 1, Math.floor(sr * MAX_SECONDS));
   const out = new Float32Array(n);
-  const k = 0.9 / peak, fin = Math.floor(sr * 0.002), fout = Math.floor(sr * 0.02);
+  const k = 0.9 / peak, fin = Math.floor(sr * 0.003), fout = Math.floor(sr * 0.04);
   for (let i = 0; i < n; i++) {
     let g = k;
     if (i < fin) g *= i / fin;

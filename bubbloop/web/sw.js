@@ -1,6 +1,6 @@
 // Service worker: keeps a copy of the app so it opens with no signal, like
 // an installed app. VERSION and FILES are written by tools/make-web.mjs.
-const VERSION = '676c853f24';
+const VERSION = 'd3580f90bc';
 const FILES = [
   "./",
   "css/app.css",

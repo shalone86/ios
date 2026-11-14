@@ -16,6 +16,15 @@ const r = await page.evaluate(async () => {
   const silent = await X.addSample(new Float32Array(sr), sr, 'nothing');
   const noise = new Float32Array(sr / 4); for (let i = 0; i < noise.length; i++) noise[i] = (Math.random() * 2 - 1) * Math.exp(-i / 2000);
   const hit = await X.addSample(noise, sr, 'hit');
+  // a phone-like recording: 0.6 s of room hiss (-40 dBFS), then a note
+  const noisy = new Float32Array(sr * 2);
+  for (let i = 0; i < noisy.length; i++) noisy[i] = (Math.random() * 2 - 1) * 0.017;
+  for (let i = 0; i < sr; i++) { const t = i / sr; noisy[Math.floor(sr * 0.6) + i] += 0.4 * Math.exp(-t * 4) * Math.sin(2 * Math.PI * 330 * t); }
+  const nt = X.tidy(noisy, sr);
+  // where the note starts in the trimmed sound: first sample within 20 dB of its peak
+  let np = 0; for (const v of nt) np = Math.max(np, Math.abs(v));
+  let onset = 0; while (onset < nt.length && Math.abs(nt[onset]) < np * 0.1) onset++;
+  const noisyLead = onset / sr;
   const p = S.newProject('s'); p.bpm = 120;
   const mel = p.tracks[3]; mel.inst = 'sampler'; mel.rev = 0; mel.dly = 0; mel.smp = { mode: 'keys', key: a.id, kit: {} };
   p.tracks = [mel]; p.sections[0].ev = { [mel.id]: [{ t: 0, d: 180, r: 1, c: 3, v: 0.9 }] };
@@ -53,10 +62,11 @@ const r = await page.evaluate(async () => {
   const up = T.midiToFreq(Math.round(voice.root) + 7);       // the bubble's note
   const natPitch = T.midiToFreq(X.detectPitch(nat, sr));
   const voiceOut = { natShape: shape(nat, up), clsShape: shape(cls, up), natPitch, want: up, natMs, row, target };
-  return { voiceOut, dur: a.buffer.duration, root: a.root, pitched: a.pitched, silent: silent === null, hitPitched: hit.pitched, want, got,
+  return { noisyLead, voiceOut, dur: a.buffer.duration, root: a.root, pitched: a.pitched, silent: silent === null, hitPitched: hit.pitched, want, got,
     kitHit: rms(y.channels[0], 0.02, 0.2), kitEmpty: rms(y.channels[0], 0.55, 0.9), packed: !!packed[a.id] && packed[a.id].pcm.length > 1000, ids: X.sampleIds(p).length };
 });
 check(r.dur > 0.9 && r.dur < 1.2, `silence trimmed off both ends (${r.dur.toFixed(2)} s from a 2 s recording)`);
+check(r.noisyLead < 0.02, `a noisy microphone's lead-in is cut too: the note starts ${(r.noisyLead * 1000).toFixed(0)} ms in`);
 check(r.pitched && Math.abs(r.root - 57) < 0.2, `pitch found: A3 (MIDI ${r.root.toFixed(2)})`);
 check(r.silent, 'a silent recording is refused');
 check(!r.hitPitched, 'a noise hit is treated as unpitched');

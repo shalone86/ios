@@ -81,8 +81,9 @@ bubble from the bottom left.
 
 **Tutorial.** A 90-second video of building a song is offered on the start
 screen on a first visit and kept under "How it works" in the song menu. It is
-filmed from the real app by `tools/make-tutorial.mjs`; re-run that after
-changing the interface.
+filmed from the real app by `tools/make-tutorial.mjs`, with a spoken line per
+step (Aura-2 voice via the readaloud Worker; clips are kept in
+`tools/tutorial-voice/`). Re-run it after changing the interface.
 
 **Export.** WAV, Apple Lossless (.m4a), MP3, MIDI, stems (one WAV per
 track) or an instrument pack. Exports go through a mastering chain in the
