@@ -88,10 +88,23 @@ const W = 405, H = 720;
 const browser = await pw.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const context = await browser.newContext({
   viewport: { width: W, height: H }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
-  recordVideo: { dir: work, size: { width: W * 2, height: H * 2 } },
 });
 await context.addInitScript(() => { try { localStorage.setItem('bubbloop.seenTour', '1'); } catch (e) { /* fine */ } });
 const page = await context.newPage();
+// Film by taking the browser's own frames at full (2x) resolution. Playwright's
+// built-in recorder captures at 1x and pads the rest of the frame, which
+// left the app in a small corner of the video.
+const framesDir = path.join(work, 'frames');
+fs.mkdirSync(framesDir);
+const frames = [];          // { file, t } with t in ms since the epoch
+const cdp = await context.newCDPSession(page);
+cdp.on('Page.screencastFrame', (f) => {
+  const file = path.join(framesDir, `${String(frames.length).padStart(5, '0')}.jpg`);
+  fs.writeFileSync(file, Buffer.from(f.data, 'base64'));
+  frames.push({ file, t: f.metadata.timestamp * 1000 });
+  cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {});
+});
+await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 90, maxWidth: W * 2, maxHeight: H * 2 });
 const videoStart = Date.now();
 page.on('pageerror', (e) => console.error('page error:', e));
 await page.goto(url);
@@ -354,11 +367,21 @@ await wait(800);
 const audioB64 = await page.evaluate(() => window.__stopAudio());
 const total = (Date.now() - t0) / 1000;
 await page.close();
-const webm = await page.video().path();
+await cdp.send('Page.stopScreencast').catch(() => {});
+// the frames arrive only when something changes: each one lasts until the next
+const list = ['ffconcat version 1.0'];
+frames.forEach((f, i) => {
+  const next = frames[i + 1] ? frames[i + 1].t : Date.now();
+  list.push(`file '${f.file}'`, `duration ${Math.max(0.001, (next - f.t) / 1000).toFixed(4)}`);
+});
+list.push(`file '${frames[frames.length - 1].file}'`);
+const concat = path.join(work, 'frames.txt');
+fs.writeFileSync(concat, list.join('\n'));
+const firstFrame = frames[0].t;
 await context.close(); await browser.close(); server.close();
 const audioFile = path.join(work, 'audio.webm');
 fs.writeFileSync(audioFile, Buffer.from(audioB64, 'base64'));
-const offset = (audioStart - videoStart) / 1000;
+const offset = (audioStart - firstFrame) / 1000;
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 const TRIM = 0.8;          // the blank first moment while the page loads
 const delayMs = Math.round((offset - TRIM) * 1000);
@@ -377,7 +400,7 @@ const graph = [
   '[ducked][voice]amix=inputs=2:normalize=0,alimiter=limit=0.89,loudnorm=I=-16:TP=-1.5[a]',
 ].join(';');
 execFileSync('ffmpeg', ['-hide_banner', '-v', 'error', '-y',
-  '-ss', String(TRIM), '-i', webm, '-i', audioFile, ...voiceArgs,
+  '-ss', String(TRIM), '-f', 'concat', '-safe', '0', '-i', concat, '-i', audioFile, ...voiceArgs,
   '-filter_complex', graph,
   '-map', '0:v', '-map', '[a]',
   '-c:v', 'libx264', '-preset', 'slow', '-crf', '27', '-pix_fmt', 'yuv420p', '-r', '30', '-movflags', '+faststart',
@@ -385,5 +408,5 @@ execFileSync('ffmpeg', ['-hide_banner', '-v', 'error', '-y',
   '-c:a', 'aac', '-b:a', '128k',
   '-shortest', OUT], { stdio: 'inherit' });
 const mb = (fs.statSync(OUT).size / 1048576).toFixed(1);
-console.log(`tutorial: ${OUT} (${mb} MB, ${total.toFixed(0)} s, audio offset ${offset.toFixed(2)} s, first tap at ${((firstTap - videoStart) / 1000 - TRIM).toFixed(2)} s in the video)`);
+console.log(`tutorial: ${OUT} (${mb} MB, ${total.toFixed(0)} s, audio offset ${offset.toFixed(2)} s, first tap at ${((firstTap - firstFrame) / 1000 - TRIM).toFixed(2)} s in the video, ${frames.length} frames)`);
 fs.rmSync(work, { recursive: true, force: true });

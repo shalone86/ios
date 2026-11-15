@@ -407,7 +407,9 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 /* ---------- tutorial video ---------- */
 .tour-link { font-size: 15px; font-weight: 600; color: var(--cream); opacity: 0.92; padding: 10px 16px; border-radius: 20px; background: rgba(40, 22, 90, 0.45); border: 1px solid var(--line); }
 #tour { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; background: rgba(15, 8, 40, 0.94); display: grid; place-items: center; padding: calc(var(--safe-t) + 10px) 10px calc(var(--safe-b) + 10px); }
-#tour video { max-width: 100%; max-height: 100%; border-radius: 22px; background: #000; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+/* sized explicitly: a video with no size shows at 300x150 until it loads */
+#tour video { width: min(100%, calc((100vh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16)); width: min(100%, calc((100dvh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16));
+  aspect-ratio: 9 / 16; height: auto; border-radius: 22px; background: #000; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
 #tour-close { position: absolute; top: calc(var(--safe-t) + 14px); right: 14px; background: rgba(255, 255, 255, 0.9); color: var(--ink); font-size: 18px; }
 
 /* ---------- misc ---------- */
