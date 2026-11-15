@@ -75,9 +75,10 @@ const VOICES = {
   glass(ctx, f, t, v, hold) {
     const out = ctx.createGain(), car = ctx.createOscillator(), mod = ctx.createOscillator(), mg = ctx.createGain();
     car.frequency.value = f * 2; mod.frequency.value = f * 2 * 3.51;
-    mg.gain.setValueAtTime(f * 3, t); mg.gain.setTargetAtTime(f * 0.2, t, 0.6);
+    mg.gain.setValueAtTime(f * 1.8, t); mg.gain.setTargetAtTime(f * 0.15, t, 0.5);
     mod.connect(mg).connect(car.frequency);
-    car.connect(out); car.start(t); mod.start(t);
+    const soft = ctx.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 4500; soft.Q.value = 0.5;
+    car.connect(soft).connect(out); car.start(t); mod.start(t);
     out.gain.setValueAtTime(0, t);
     out.gain.linearRampToValueAtTime(v * 0.55, t + 0.02);
     out.gain.setTargetAtTime(0, t + 0.02, hold != null ? Math.max(1.2, hold) : 2.5);
@@ -89,7 +90,7 @@ const VOICES = {
     const vib = ctx.createOscillator(), vg = ctx.createGain(); vib.frequency.value = 4.6; vg.gain.value = 7;
     vib.connect(vg); vib.start(t);
     const oscs = [-7, 6].map((d) => { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = d; vg.connect(o.detune); o.connect(mix); o.start(t); return o; });
-    [[400, 6, 1], [800, 8, 0.4], [2600, 10, 0.12]].forEach(([fc, q, g]) => {
+    [[400, 5, 1], [800, 6, 0.4], [2600, 5, 0.1]].forEach(([fc, q, g]) => {
       const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fc; bp.Q.value = q;
       const gg = ctx.createGain(); gg.gain.value = g * 3;
       mix.connect(bp).connect(gg).connect(out);
@@ -100,7 +101,8 @@ const VOICES = {
   // low hum with slow beating
   drone(ctx, f, t, v, hold) {
     const out = ctx.createGain(), lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = f * 4;
-    const oscs = [[f / 2, 0, 'sine', 0.5], [f / 2, 4, 'triangle', 0.3], [f, -3, 'sine', 0.25], [f * 1.5, 2, 'sine', 0.08]].map(([fr, d, ty, g]) => {
+    const sub = f / 2 >= 60 ? f / 2 : f;      // no deep sub-octave on the lowest notes
+    const oscs = [[sub, 0, 'sine', 0.5], [sub, 4, 'triangle', 0.3], [f, -3, 'sine', 0.25], [f * 1.5, 2, 'sine', 0.08]].map(([fr, d, ty, g]) => {
       const o = ctx.createOscillator(), gg = ctx.createGain(); o.type = ty; o.frequency.value = fr; o.detune.value = d; gg.gain.value = g;
       o.connect(gg).connect(lp); o.start(t); return o;
     });
@@ -109,6 +111,13 @@ const VOICES = {
     return { out, oscs, release: 5 };
   },
 };
+// overall level, with headroom for many loops at once
+const MASTER = 0.8;
+// how far ahead echoes are booked (seconds): longer than a hidden page's slowest timer
+const AHEAD = 100;
+// evens out the voices: Glass rings much louder than Pad, and Low builds up
+const TRIM = { pad: 1, glass: 0.42, choir: 1.05, drone: 0.62 };
+
 export const VOICE_NAMES = { pad: 'Pad', glass: 'Glass', choir: 'Choir', drone: 'Low' };
 
 // ---------- the engine ----------
@@ -131,14 +140,20 @@ export class Drift {
     this.wowLfo.connect(this.wowAmt).connect(wob.delayTime);
     this.flutLfo.connect(this.flutAmt).connect(wob.delayTime);
     this.wowLfo.start(); this.flutLfo.start();
-    this.sat = ctx.createWaveShaper();
-    this.setDrive(0);
+    // saturation: one fixed curve, pushed harder by a smoothly moving gain in
+    // front and evened out after. (Swapping the curve itself while sound
+    // runs through it clicks, and Animate moves Tape all the time.)
+    this.sat = ctx.createWaveShaper(); this.sat.oversample = '4x';
+    const n = 2048, c = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(2.5 * x) / Math.tanh(2.5); }
+    this.sat.curve = c;
+    this.drive = G(0.3); this.makeup = G(1);
     this.drop = G(1);                // random dropouts dip this
     this.hiss = ctx.createBufferSource(); this.hiss.buffer = noiseBuffer(ctx); this.hiss.loop = true;
     const hissBp = ctx.createBiquadFilter(); hissBp.type = 'highpass'; hissBp.frequency.value = 3500;
     this.hissAmt = G(0);
     this.hiss.connect(hissBp).connect(this.hissAmt); this.hiss.start();
-    this.input.connect(wob).connect(this.sat).connect(this.drop);
+    this.input.connect(wob).connect(this.drive).connect(this.sat).connect(this.makeup).connect(this.drop);
 
     // depth: everything darker and further away as it rises
     this.dark = ctx.createBiquadFilter(); this.dark.type = 'lowpass'; this.dark.frequency.value = 9000; this.dark.Q.value = 0.4;
@@ -149,10 +164,13 @@ export class Drift {
     const verbHp = ctx.createBiquadFilter(); verbHp.type = 'highpass'; verbHp.frequency.value = 180;
     this.dark.connect(this.dry); this.dark.connect(verbHp).connect(this.verb).connect(this.wet);
     // sleep fader and a gentle safety limiter
-    this.sleep = G(1); this.master = G(0.45);
+    this.sleep = G(1); this.master = G(MASTER);
     const lim = ctx.createDynamicsCompressor();
     lim.threshold.value = -12; lim.ratio.value = 20; lim.attack.value = 0.003; lim.release.value = 0.4;
-    this.dry.connect(this.master); this.wet.connect(this.master);
+    // nothing below about 40 Hz: phone speakers only rattle and distort on it
+    const sub1 = ctx.createBiquadFilter(), sub2 = ctx.createBiquadFilter();
+    sub1.type = sub2.type = 'highpass'; sub1.frequency.value = sub2.frequency.value = 42; sub1.Q.value = 0.54; sub2.Q.value = 1.31;
+    this.dry.connect(sub1); this.wet.connect(sub1); sub1.connect(sub2).connect(this.master);
     // a soft clipper after the limiter catches anything it is too slow for
     const clip = ctx.createWaveShaper(), cv = new Float32Array(2049);
     for (let i = 0; i < cv.length; i++) { const x = (i / 1024 - 1) * 2; cv[i] = 0.95 * Math.tanh(x / 0.95); }
@@ -165,11 +183,6 @@ export class Drift {
     this.bg = null;
   }
 
-  setDrive(amount) {
-    const n = 1024, c = new Float32Array(n), k = 1 + amount * 6;
-    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); }
-    this.sat.curve = c;
-  }
 
   // depth, tide, tape: 0..1
   set(name, v) { this.params[name] = Math.max(0, Math.min(1, v)); this.apply(); }
@@ -181,16 +194,19 @@ export class Drift {
     this.wowAmt.gain.setTargetAtTime(0.0035 * tape, t, 0.3);
     this.flutAmt.gain.setTargetAtTime(0.00025 * tape, t, 0.3);
     this.hissAmt.gain.setTargetAtTime(0.012 * tape * tape, t, 0.3);
-    if (Math.abs((this._drive || 0) - tape) > 0.05) { this._drive = tape; this.setDrive(tape * 0.8); }
+    // more tape pushes harder into the curve; the makeup keeps quiet sounds at the same level
+    const push = 0.3 + 1.2 * tape;
+    this.drive.gain.setTargetAtTime(push, t, 0.3);
+    this.makeup.gain.setTargetAtTime(Math.tanh(2.5) / (2.5 * push), t, 0.3);
   }
 
   // play one note now (or at t); hold: seconds before it fades, or null to sustain until release()
   note(midi, level = 0.8, t = this.ctx.currentTime, hold = 2.5, voice = this.voiceName) {
-    const v = VOICES[voice](this.ctx, midiToFreq(midi), t, level * 0.5, hold);
+    const v = VOICES[voice](this.ctx, midiToFreq(midi), t, level * 0.5 * TRIM[voice], hold);
     const pan = this.ctx.createStereoPanner(); pan.pan.value = (Math.random() - 0.5) * 0.8;
     v.out.connect(pan).connect(this.bus);
     const end = (at) => v.oscs.forEach((o) => { try { o.stop(at); } catch (e) { /* stopped */ } });
-    const life = v.life || (hold != null ? hold + 1.6 + v.release * 5 : null);
+    const life = v.life || (hold != null ? hold + 2.5 + 5 * (hold * 0.6 + 0.4) : null);
     if (life) end(t + life);
     v.oscs[0].onended = () => { try { pan.disconnect(); } catch (e) { /* gone */ } };
     return {
@@ -206,21 +222,32 @@ export class Drift {
   // Every echo is put on the audio clock straight away, so the trail plays
   // out even when the page is hidden and its timers are slowed to a crawl.
   tap(orb, midi, level = 0.8) {
-    const now = this.ctx.currentTime, voice = this.voiceName, period = 5.3 + (orb * 2.71) % 9.4;
-    this.note(midi, level, now, 2.5, voice);
+    const now = this.ctx.currentTime, tide = this.params.tide;
+    this.note(midi, level, now, 2.5, this.voiceName);
     if (this.onNote) this.onNote(orb, level);
-    // the tide decides how many times it comes back
-    const events = [];
-    let lv = level;
-    for (let k = 1, n = Math.round(2 + this.params.tide * 10); k <= n; k++) {
-      lv *= 0.78;
-      if (lv <= 0.04) break;
+    // the tide decides how long it keeps coming back: about half a minute
+    // when low, many minutes when high, so loops in different voices pile up
+    const l = { orb, midi, voice: this.voiceName, tide, level, period: 5.3 + (orb * 2.71) % 9.4,
+      fade: 0.72 + 0.25 * tide, left: Math.round(3 + 37 * tide), next: now, events: [] };
+    l.next += l.period;
+    this.schedule(l, now + AHEAD);
+    this.loops.push(l);
+  }
+
+  // Book a loop's echoes on the audio clock up to `until`. They are booked a
+  // good while ahead, so they keep playing when the page is hidden and its
+  // timers slow to about once a minute.
+  schedule(l, until) {
+    while (l.left > 0 && l.next < until) {
+      l.level *= l.fade;
+      if (l.level <= 0.03) { l.left = 0; break; }
       // echoes drift: a little out of time, now and then up an octave
-      const at = now + k * period + Math.random() * 0.05, up = Math.random() < 0.12 * this.params.tide ? 12 : 0;
-      this.note(midi + up, lv, at, 2.5, voice);          // each loop keeps its own voice
-      events.push({ at, level: lv });
+      const at = l.next + Math.random() * 0.05, up = Math.random() < 0.12 * l.tide ? 12 : 0;
+      this.note(l.midi + up, l.level, at, 2.5, l.voice);     // each loop keeps its own voice
+      l.events.push({ at, level: l.level });
+      l.left--;
+      l.next += l.period;
     }
-    this.loops.push({ orb, events });
   }
 
   hold(orb, midi, level = 0.8) {
@@ -231,19 +258,20 @@ export class Drift {
   // call often (e.g. every 50 ms): fires due echoes and drifts the tape
   tick() {
     const now = this.ctx.currentTime;
-    // the echoes are already scheduled; this only lights up the orbs as they sound
+    // keep each loop booked ahead, and light up the orbs as their echoes sound
     for (const l of this.loops) {
+      this.schedule(l, now + AHEAD);
       while (l.events.length && now >= l.events[0].at) {
         const e = l.events.shift();
         if (this.onNote && now - e.at < 1) this.onNote(l.orb, e.level);
       }
     }
-    this.loops = this.loops.filter((l) => l.events.length);
+    this.loops = this.loops.filter((l) => l.events.length || l.left > 0);
     // tape dropouts: brief dips, more often with more tape
     if (Math.random() < 0.004 * this.params.tape * this.params.tape) {
       const d = 0.15 + Math.random() * 0.4;
-      this.drop.gain.setTargetAtTime(0.25, now, 0.03);
-      this.drop.gain.setTargetAtTime(1, now + d, 0.08);
+      this.drop.gain.setTargetAtTime(0.5, now, 0.06);
+      this.drop.gain.setTargetAtTime(1, now + d, 0.12);
     }
     // wow speed wanders
     this.wowLfo.frequency.setTargetAtTime(0.3 + Math.random() * 0.4, now, 2);
@@ -254,7 +282,7 @@ export class Drift {
     const t = this.ctx.currentTime;
     if (this.bg) { this.bg.forEach((h) => h.release(t)); this.bg = null; }
     if (!on) return;
-    this.bg = [this.note(rootMidi - 12, 0.5, t, null, 'drone'), this.note(rootMidi - 5, 0.3, t + 1.5, null, 'drone')];
+    this.bg = [this.note(rootMidi - 12, 0.8, t, null, 'drone'), this.note(rootMidi - 5, 0.48, t + 1.5, null, 'drone')];
   }
 
   // fade everything out over `seconds`, starting `after` seconds from now, then
@@ -279,7 +307,7 @@ export class Drift {
   hush(on) {
     const t = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(t);
-    this.master.gain.setTargetAtTime(on ? 0 : 0.45, t, on ? 0.3 : 0.6);
+    this.master.gain.setTargetAtTime(on ? 0 : MASTER, t, on ? 0.3 : 0.6);
   }
   wake() {
     clearTimeout(this._fadeTimer);
