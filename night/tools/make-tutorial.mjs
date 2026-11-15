@@ -286,11 +286,11 @@ spoken.forEach((sp, i) => {
   voiceMix.push(`[${i + 2}:a]aresample=48000,adelay=${Math.round(sp.at * 1000) + delayMs}:all=1,volume=1.5[v${i}]`);
 });
 const graph = [
-  `[1:a]aresample=48000,adelay=${delayMs}:all=1,loudnorm=I=-22:TP=-3[music]`,
+  `[1:a]aresample=48000,adelay=${delayMs}:all=1,loudnorm=I=-27:TP=-3[music]`,
   ...voiceMix,
   `${spoken.map((_, i) => `[v${i}]`).join('')}amix=inputs=${spoken.length}:normalize=0,apad,asplit=2[voice][voiceSc]`,
   '[music][voiceSc]sidechaincompress=threshold=0.02:ratio=4:attack=40:release=600[ducked]',
-  '[ducked][voice]amix=inputs=2:normalize=0,alimiter=limit=0.89,loudnorm=I=-18:TP=-1.5[a]',
+  '[ducked][voice]amix=inputs=2:normalize=0,alimiter=limit=0.89,loudnorm=I=-23:TP=-2[a]',
 ].join(';');
 execFileSync('ffmpeg', ['-hide_banner', '-v', 'error', '-y',
   '-ss', String(TRIM), '-f', 'concat', '-safe', '0', '-i', concat, '-i', audioFile, ...voiceArgs,

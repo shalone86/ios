@@ -112,7 +112,7 @@ const VOICES = {
   },
 };
 // overall level, with headroom for many loops at once
-const MASTER = 0.8;
+const MASTER = 0.32;      // quiet on purpose: a sleep app should be gentle at half volume
 // how far ahead echoes are booked (seconds): longer than a hidden page's slowest timer
 const AHEAD = 100;
 // evens out the voices: Glass rings much louder than Pad, and Low builds up
