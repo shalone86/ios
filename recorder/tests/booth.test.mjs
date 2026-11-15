@@ -67,6 +67,23 @@ check(first === 'Ah · soft (mp) · F3' && /Listen: F3/.test(listening) && /Sing
 const pitch = await page.evaluate(() => [window.booth.pitchOf(57, 220), window.booth.pitchOf(57, 226), window.booth.pitchOf(57, 214)]);
 check(pitch[0] === 'in tune ✓' && /sharp/.test(pitch[1]) && /flat/.test(pitch[2]), 'the pitch reading says in tune, sharp or flat: ' + pitch.join(' | '));
 check((await page.$$('#script optgroup')).length === 2 && (await page.$$('#script option')).length === 14, 'the menu lists 2 tutorials and 12 choir batches');
+// an audio interface with the mic on input 2 only: the take keeps input 2
+const p2 = await context.newPage();
+p2.on('pageerror', (e) => errors.push(String(e)));
+await p2.addInitScript(() => {
+  navigator.mediaDevices.getUserMedia = async () => {
+    const ac = new AudioContext(), o = ac.createOscillator(), m = ac.createChannelMerger(2), d = ac.createMediaStreamDestination();
+    d.channelCount = 2; o.frequency.value = 220; const gn = ac.createGain(); gn.gain.value = 0.6; o.connect(gn).connect(m, 0, 1); m.connect(d); o.start();     // silence on input 1, a tone on input 2
+    return d.stream;
+  };
+});
+await p2.goto(`http://127.0.0.1:${server.address().port}/`);
+await p2.click('#allow');
+await p2.waitForSelector('#start', { state: 'hidden' });
+await p2.selectOption('#script', 'boba-beats'); await p2.waitForTimeout(300);
+await p2.click('#rec'); await p2.waitForTimeout(1000); await p2.click('#rec'); await p2.waitForTimeout(300);
+const in2 = await p2.evaluate(() => { const t = Object.values(window.booth.takes).find((x) => x.pcm.length > 20000 && x.peak > 0.5) || {}; return { peak: t.peak, status: document.getElementById('status').textContent }; });
+check(in2.peak > 0.5 && /Saved/.test(in2.status), `a mic on input 2 of an interface is recorded (${in2.status})`);
 check(errors.length === 0, 'no page errors ' + errors.join(' | '));
 await page.screenshot({ path: path.join(OUT, 'booth.png') });
 console.log('output in', OUT);

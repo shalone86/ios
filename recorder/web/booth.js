@@ -43,32 +43,74 @@ async function loadTakes() {
 }
 
 // ---------- the microphone ----------
+// Every input channel is passed on: an audio interface often has the mic on
+// input 2, and the booth keeps whichever channel actually has the voice.
 const WORKLET = `registerProcessor('grab', class extends AudioWorkletProcessor {
-  process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage(ch.slice(0)); return true; }
+  process(inputs) { const i = inputs[0]; if (i && i.length) this.port.postMessage(i.map((c) => c.slice(0))); return true; }
 });`;
-async function openMic() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: {
-    channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
+let stream = null;
+const MIC_KEY = 'booth.mic';
+async function openMic(deviceId) {
+  closeMic();
+  const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 } };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  stream = await navigator.mediaDevices.getUserMedia({ audio });
+  // run at the microphone's own rate: some browsers refuse to mix rates
+  const rate = stream.getAudioTracks()[0].getSettings().sampleRate;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try { ctx = rate ? new AC({ sampleRate: rate }) : new AC(); } catch (e) { ctx = new AC(); }
   await ctx.resume();
   src = ctx.createMediaStreamSource(stream);
-  const onChunk = (ch) => {
-    let peak = 0;
-    for (let i = 0; i < ch.length; i++) { const a = Math.abs(ch[i]); if (a > peak) peak = a; }
+  const onChunk = (chs) => {
+    // the meter and pitch follow the loudest channel
+    let peak = 0, best = 0;
+    chs.forEach((ch, k) => { for (let i = 0; i < ch.length; i++) { const a = Math.abs(ch[i]); if (a > peak) { peak = a; best = k; } } });
     meter(peak);
-    if (recording) { recording.chunks.push(ch); recording.peak = Math.max(recording.peak, peak); recording.recent.push(ch); if (recording.recent.length > 24) recording.recent.shift(); }
+    if (recording) {
+      recording.chunks.push(chs); recording.peak = Math.max(recording.peak, peak);
+      recording.recent.push(chs[best]); if (recording.recent.length > 24) recording.recent.shift();
+    }
   };
   try {
     await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
-    tap = new AudioWorkletNode(ctx, 'grab');
+    tap = new AudioWorkletNode(ctx, 'grab', { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'discrete' });
     tap.port.onmessage = (e) => onChunk(e.data);
   } catch (e) {
     // older browsers
-    tap = ctx.createScriptProcessor(2048, 1, 1);
-    tap.onaudioprocess = (e) => onChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
+    tap = ctx.createScriptProcessor(2048, 2, 2);
+    tap.channelInterpretation = 'discrete';
+    tap.onaudioprocess = (e) => onChunk([0, 1].slice(0, e.inputBuffer.numberOfChannels).map((k) => new Float32Array(e.inputBuffer.getChannelData(k))));
   }
   const mute = ctx.createGain(); mute.gain.value = 0;
   src.connect(tap).connect(mute).connect(ctx.destination);
+  const label = stream.getAudioTracks()[0].label;
+  try { localStorage.setItem(MIC_KEY, stream.getAudioTracks()[0].getSettings().deviceId || ''); } catch (e) { /* fine */ }
+  await listMics();
+  return label;
+}
+function closeMic() {
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  if (ctx) ctx.close().catch(() => {});
+  stream = null; ctx = null;
+}
+// the microphone menu: every input the browser can see
+async function listMics() {
+  const sel = $('mic');
+  try {
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
+    const now = stream && stream.getAudioTracks()[0].getSettings().deviceId;
+    sel.innerHTML = all.map((d, i) => `<option value="${d.deviceId}">${(d.label || `Microphone ${i + 1}`).replace(/[<&]/g, '')}</option>`).join('');
+    if (now) sel.value = now;
+    sel.hidden = all.length < 2;
+  } catch (e) { sel.hidden = true; }
+}
+// why the microphone would not open, in plain words
+function micProblem(e) {
+  const n = e && e.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'The browser was not allowed to use the microphone. On a Mac: System Settings → Privacy & Security → Microphone, turn on your browser, then reload this page.';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'That microphone could not be found. Check it is plugged in and switched on, then try again.';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'The microphone is busy or could not start. Close other apps using it (Logic, Zoom…), then try again.';
+  return `The microphone could not be opened (${n || 'error'}: ${(e && e.message) || ''}).`;
 }
 let shown = 0;
 function meter(peak) {
@@ -106,11 +148,15 @@ function stopRec() {
   if (!recording) { clearTimeout(refTimer); $('rec').classList.remove('on'); render(); $('status').textContent = ''; return; }
   const r = recording; recording = null;
   $('rec').classList.remove('on');
-  const n = r.chunks.reduce((a, c) => a + c.length, 0);
+  const n = r.chunks.reduce((a, c) => a + c[0].length, 0);
   if (n < ctx.sampleRate * 0.3) { $('status').textContent = 'That was very short. Try again.'; render(); return; }
+  // keep the channel with the voice on it (input 1 or 2 of an interface)
+  const energy = [];
+  for (const chs of r.chunks) chs.forEach((c, k) => { let e = 0; for (let i = 0; i < c.length; i++) e += c[i] * c[i]; energy[k] = (energy[k] || 0) + e; });
+  const use = energy.indexOf(Math.max(...energy));
   const pcm = new Int16Array(n);
   let o = 0;
-  for (const c of r.chunks) for (let i = 0; i < c.length; i++) pcm[o++] = Math.max(-32768, Math.min(32767, Math.round(c[i] * 32767)));
+  for (const chs of r.chunks) { const c = chs[use] || chs[0]; for (let i = 0; i < c.length; i++) pcm[o++] = Math.max(-32768, Math.min(32767, Math.round(c[i] * 32767))); }
   const file = line()[0];
   takes[file] = { rate: ctx.sampleRate, pcm, peak: r.peak };
   store(`${scriptId}/${file}`, takes[file]);
@@ -280,8 +326,19 @@ $('clear').onclick = async () => {
   $('clear').hidden = true; go(0);
 };
 $('allow').onclick = async () => {
-  try { await openMic(); $('start').hidden = true; }
-  catch (e) { $('mic-err').textContent = 'The microphone could not be opened. Allow it in your browser settings, then try again.'; }
+  let saved = ''; try { saved = localStorage.getItem(MIC_KEY) || ''; } catch (e) { /* fine */ }
+  try {
+    // the microphone used last time, if it is still there
+    let label;
+    try { label = await openMic(saved || undefined); } catch (e) { if (!saved) throw e; label = await openMic(); }
+    $('start').hidden = true;
+    $('status').textContent = `Using ${label || 'the microphone'}. Say something: the bar should move.`;
+  } catch (e) { $('mic-err').textContent = micProblem(e); }
+};
+$('mic').onchange = async (e) => {
+  if (recording) stopRec();
+  try { const label = await openMic(e.target.value); $('status').textContent = `Using ${label}. Say something: the bar should move.`; }
+  catch (err) { $('status').textContent = micProblem(err); }
 };
 
 (async () => {
