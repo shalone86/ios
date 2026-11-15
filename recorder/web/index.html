@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1226">
+<title>Voice Booth</title>
+<style>
+:root { --bg: #0d1226; --card: #171e3a; --line: #2b3560; --ink: #eef2ff; --dim: #9aa6d1; --rec: #ff4d6d; --ok: #5be3a4; --accent: #8fb8ff;
+  --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.4 ui-rounded, system-ui, -apple-system, sans-serif; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+main { max-width: 560px; margin: 0 auto; padding: calc(var(--safe-t) + 14px) 16px calc(var(--safe-b) + 20px); }
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+header h1 { font-size: 18px; margin: 0; flex: 1; }
+select { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px; }
+#count { color: var(--dim); font-size: 14px; display: flex; justify-content: space-between; }
+#text { font-size: 26px; line-height: 1.3; font-weight: 600; margin: 14px 0 8px; min-height: 3.9em; }
+#hint { color: var(--dim); font-size: 14px; min-height: 1.4em; }
+#meter { height: 10px; border-radius: 5px; background: #0a0f20; margin: 16px 0 6px; overflow: hidden; }
+#meter i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .05s; }
+#meter.hot i { background: var(--rec); }
+#status { font-size: 14px; color: var(--dim); min-height: 1.4em; text-align: center; }
+#rec { display: block; width: 116px; height: 116px; margin: 18px auto 8px; border-radius: 50%; background: var(--rec);
+  box-shadow: 0 0 0 6px rgba(255, 77, 109, .2); font-weight: 700; font-size: 17px; color: #fff; }
+#rec.on { animation: pulse 1.2s infinite; border-radius: 30%; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 16px rgba(255, 77, 109, .08); } }
+.row { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+.btn { padding: 12px 18px; border-radius: 14px; background: #222b52; border: 1px solid var(--line); font-weight: 600; }
+.btn:disabled { opacity: .35; cursor: default; }
+.btn.go { background: var(--accent); color: #0d1226; border-color: transparent; }
+#list { list-style: none; padding: 0; margin: 18px 0 0; }
+#list li { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; cursor: pointer; }
+#list li.cur { background: var(--card); }
+#list b { width: 22px; text-align: center; color: var(--dim); }
+#list li.done b { color: var(--ok); }
+#list span { flex: 1; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#list em { font-style: normal; font-size: 13px; color: var(--accent); min-width: 56px; }
+#export { width: 100%; margin-top: 16px; padding: 16px; font-size: 17px; }
+#start { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; text-align: center; padding: 24px; z-index: 5; }
+#start p { color: var(--dim); max-width: 380px; margin: 10px auto 22px; }
+#start[hidden] { display: none; }
+.tip { color: var(--dim); font-size: 13px; margin-top: 14px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="start"><div>
+  <h1 style="margin:0">Voice Booth</h1>
+  <p>Read each line, one at a time. When you're done, save the zip and send it to Claude.<br>Find a quiet room, and hold the phone about a hand's length away.</p>
+  <button class="btn go" id="allow">🎙 Turn on the microphone</button>
+  <p id="mic-err" style="color: var(--rec)"></p>
+</div></div>
+<main>
+  <header><h1>Voice Booth</h1><select id="script" aria-label="Script"></select></header>
+  <section class="card">
+    <div id="count"><span id="num"></span><span id="file"></span></div>
+    <div id="text"></div>
+    <div id="hint"></div>
+    <div id="meter"><i></i></div>
+    <div id="status"></div>
+    <button id="rec">Record</button>
+    <div class="row">
+      <button class="btn" id="prev">‹ Back</button>
+      <button class="btn" id="play" disabled>▶ Play</button>
+      <button class="btn go" id="next">Next ›</button>
+    </div>
+  </section>
+  <ul id="list"></ul>
+  <button class="btn go" id="export" disabled>Save all as a zip</button>
+  <p class="tip">Takes are kept on this phone until you save them, even if you close the page.</p>
+</main>
+<script src="scripts.js"></script>
+<script src="booth.js"></script>
+</body>
+</html>

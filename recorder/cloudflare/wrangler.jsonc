@@ -1,0 +1,10 @@
+// Serves Voice Booth at shalonely.com/record. Deploy: node build.mjs && npx wrangler deploy
+{
+  "name": "voice-booth",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-11-01",
+  "routes": [
+    { "pattern": "shalonely.com/record", "zone_name": "shalonely.com" },
+    { "pattern": "shalonely.com/record/*", "zone_name": "shalonely.com" }
+  ]
+}

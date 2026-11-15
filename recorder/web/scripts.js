@@ -1,0 +1,48 @@
+// The scripts the booth can record. Each line's `file` is the name Claude's
+// tools look for (tools/tutorial-voice/own/<file>.wav for the tutorials).
+window.SCRIPTS = {
+  'deep-drift': {
+    title: 'Deep Drift tutorial',
+    tip: 'Slow and soft, like a bedtime voice.',
+    lines: [
+      ['intro', 'This is Deep Drift. A dark, quiet sea that sings you to sleep.', 'the sea appears'],
+      ['tap', 'Tap a sleepy jellyfish. Its note drifts away, and comes back, again and again.', 'one jellyfish is tapped'],
+      ['weave', 'Each one has its own loop, so the notes slowly weave together.', 'two more are tapped'],
+      ['hold', 'Hold one to hum its note, for as long as you like.', 'a jellyfish is held'],
+      ['voices', 'Pick a voice. Pad, Glass, Choir, or Low. Notes you played before keep their own sound.', 'Glass, then Choir'],
+      ['depth', 'Depth sinks everything lower, darker, and farther away.', 'the Depth slider moves'],
+      ['tide', 'Tide sets how long the echoes keep coming back.', 'the Tide slider moves'],
+      ['tape', 'Tape adds the wobble, warmth, and hiss of an old cassette.', 'the Tape slider moves'],
+      ['animate', 'Or press Animate, and the tide moves on its own.', 'Animate turns on'],
+      ['hum', 'Hum adds a low drone underneath.', 'Hum turns on'],
+      ['mood', 'Change the mood up here. Every note still fits.', 'the mood changes'],
+      ['sleep', 'Set the sleep timer, and the sea fades away when it\'s time.', 'the sleep timer is set'],
+      ['bye', 'Tap a few lights, then close your eyes. Goodnight.', 'the goodnight screen'],
+    ],
+  },
+  'boba-beats': {
+    title: 'Boba Beats tutorial',
+    tip: 'Bright and friendly.',
+    lines: [
+      ['intro', 'Hi! This is Boba Beats. Let\'s make a song out of bubbles.', 'the app opens'],
+      ['tune', 'Every bubble is in tune, so tap around. Nothing can sound wrong.', 'bubbles are tapped'],
+      ['key', 'Pick a key and a scale. Every track follows it.', 'the key menu'],
+      ['drums', 'Start with drums. Pick a groove, or tap your own.', 'a groove is chosen'],
+      ['pads', 'The drums are twenty five pads: kicks, snares, hats, and more.', 'drum pads are tapped'],
+      ['bass', 'Now the bass. Press the pink button. After a one bar count in, it records what you play.', 'bass is recorded'],
+      ['loop', 'It keeps looping, and your notes snap to the beat.', 'the loop plays'],
+      ['chords', 'Chords next. One bubble plays a whole chord.', 'chords are recorded'],
+      ['melody', 'Add a melody on top. Wiggle a held bubble to bend the note.', 'a melody is recorded'],
+      ['mute', 'Tap zzz to rest a track. Tap it again to wake it up.', 'drums rest and wake'],
+      ['fx', 'Hold an effect pad. Slide across it to change the sound.', 'FX pads are held'],
+      ['section', 'Make a second section. B starts as a copy of A, so just change what you like.', 'section B is made'],
+      ['song', 'Song mode lines your loops up into a whole song.', 'song mode opens'],
+      ['rest', 'Tap a bubble to rest a track in that part. Hold one for a fill.', 'a fill is added'],
+      ['play', 'Press play to hear it all.', 'the song plays'],
+      ['mix', 'The mixer sets each track\'s volume, cloud, and echo.', 'the mixer'],
+      ['export', 'When you\'re happy, export a loud, mastered file.', 'the export menu'],
+      ['more', 'There\'s more in the menus, like a sampler for your own sounds.', 'the song menu'],
+      ['bye', 'Now make your own song. Have fun!', 'the end screen'],
+    ],
+  },
+};
