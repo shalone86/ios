@@ -47,11 +47,19 @@ const LINES = {
 };
 const VOICE_DIR = path.join(here, 'tutorial-voice');
 fs.mkdirSync(VOICE_DIR, { recursive: true });
+const OWN_DIR = path.join(VOICE_DIR, 'own');
 const clips = {};
 for (const [key, text] of Object.entries(LINES)) {
-  const name = `${VOICE}-${key}-${Buffer.from(text).toString('base64url').slice(0, 10)}.mp3`;
-  const file = path.join(VOICE_DIR, name);
-  if (!fs.existsSync(file)) {
+  // your own recording wins: tools/tutorial-voice/own/<key>.wav (or .m4a, .mp3, …)
+  const own = fs.existsSync(OWN_DIR) && fs.readdirSync(OWN_DIR).find((f) => path.parse(f).name === key);
+  const name = own ? `own-${key}.mp3` : `${VOICE}-${key}-${Buffer.from(text).toString('base64url').slice(0, 10)}.mp3`;
+  const file = path.join(own ? work : VOICE_DIR, name);
+  if (own) {
+    // trim the silence at each end, keep it mono and even in level
+    execFileSync('ffmpeg', ['-hide_banner', '-v', 'error', '-y', '-i', path.join(OWN_DIR, own), '-af',
+      'silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,highpass=f=70,loudnorm=I=-18:TP=-2',
+      '-ac', '1', '-ar', '48000', '-c:a', 'libmp3lame', '-q:a', '2', file]);
+  } else if (!fs.existsSync(file)) {
     for (const old of fs.readdirSync(VOICE_DIR)) if (old.startsWith(`${VOICE}-${key}-`)) fs.rmSync(path.join(VOICE_DIR, old));
     const res = await fetch(`${TTS}?voice=${VOICE}&text=${encodeURIComponent(text)}`);
     if (!res.ok) throw new Error(`voice for "${key}" failed: ${res.status}`);
