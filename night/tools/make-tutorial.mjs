@@ -57,7 +57,7 @@ for (const [key, text] of Object.entries(LINES)) {
   if (own) {
     // trim the silence at each end, keep it mono and even in level
     execFileSync('ffmpeg', ['-hide_banner', '-v', 'error', '-y', '-i', path.join(OWN_DIR, own), '-af',
-      'silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,highpass=f=70,loudnorm=I=-18:TP=-2',
+      'highpass=f=70,silenceremove=start_periods=1:start_threshold=-38dB:start_silence=0.12,areverse,silenceremove=start_periods=1:start_threshold=-38dB:start_silence=0.25,areverse,afade=t=in:d=0.05,loudnorm=I=-18:TP=-2',
       '-ac', '1', '-ar', '48000', '-c:a', 'libmp3lame', '-q:a', '2', file]);
   } else if (!fs.existsSync(file)) {
     for (const old of fs.readdirSync(VOICE_DIR)) if (old.startsWith(`${VOICE}-${key}-`)) fs.rmSync(path.join(VOICE_DIR, old));
