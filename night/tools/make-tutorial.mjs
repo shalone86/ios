@@ -34,10 +34,11 @@ const LINES = {
   intro: 'This is Deep Drift. A dark, quiet sea that sings you to sleep.',
   tap: 'Tap a sleepy jellyfish. Its note drifts away, and comes back, again and again.',
   weave: 'Each one has its own loop, so the notes slowly weave together.',
+  rest: 'Tap a glowing one again to let it rest.',
   hold: 'Hold one to hum its note, for as long as you like.',
   voices: 'Pick a voice. Pad, Glass, Choir, or Low. Notes you played before keep their own sound.',
   depth: 'Depth sinks everything lower, darker, and farther away.',
-  tide: 'Tide sets how long the echoes keep coming back.',
+  tide: 'Tide sets how often the notes come back.',
   tape: 'Tape adds the wobble, warmth, and hiss of an old cassette.',
   animate: 'Or press Animate, and the tide moves on its own.',
   hum: 'Hum adds a low drone underneath.',
@@ -214,6 +215,9 @@ await finishLine();
 await say('weave', 'Each one has its own loop', 'so the notes slowly weave together');
 await wait(600); await orb(7); await wait(1800); await orb(5);
 await finishLine(); await wait(800);
+await say('rest', 'Tap a glowing one again', 'to let it rest');
+await wait(1300); await orb(7);
+await finishLine(); await wait(600);
 
 await say('hold', 'Hold one to hum', 'for as long as you like');
 await wait(800); await orb(9, 4200);
@@ -227,7 +231,7 @@ await finishLine(); await wait(800);
 await say('depth', 'Depth', 'lower, darker, farther away');
 await slide('depth', 85, 2600);
 await finishLine();
-await say('tide', 'Tide', 'how long the echoes keep coming back');
+await say('tide', 'Tide', 'how often the notes come back');
 await slide('tide', 80, 2000);
 await finishLine();
 await say('tape', 'Tape', 'the wobble, warmth and hiss of an old cassette');

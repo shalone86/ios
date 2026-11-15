@@ -40,7 +40,7 @@ await page.waitForTimeout(500);
 await page.reload();
 await page.click('#allow');
 await page.waitForSelector('#start', { state: 'hidden' });
-check((await page.textContent('#file')) === 'hold.wav' && (await page.$$('#list li.done')).length === 3, 'after closing the page, the takes are still there and it picks up at the next line');
+check((await page.textContent('#file')) === 'rest.wav' && (await page.$$('#list li.done')).length === 3, 'after closing the page, the takes are still there and it picks up at the next line');
 
 const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#export')]);
 const zipFile = path.join(OUT, dl.suggestedFilename());

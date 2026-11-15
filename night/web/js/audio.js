@@ -114,7 +114,9 @@ const VOICES = {
 // overall level, with headroom for many loops at once
 const MASTER = 0.32;      // quiet on purpose: a sleep app should be gentle at half volume
 // how far ahead echoes are booked (seconds): longer than a hidden page's slowest timer
-const AHEAD = 100;
+const AHEAD = 75;
+// how many loops play at once
+const MAX_LOOPS = 6;
 // evens out the voices: Glass rings much louder than Pad, and Low builds up
 const TRIM = { pad: 1, glass: 0.42, choir: 1.05, drone: 0.62 };
 
@@ -201,10 +203,10 @@ export class Drift {
   }
 
   // play one note now (or at t); hold: seconds before it fades, or null to sustain until release()
-  note(midi, level = 0.8, t = this.ctx.currentTime, hold = 2.5, voice = this.voiceName) {
+  note(midi, level = 0.8, t = this.ctx.currentTime, hold = 2.5, voice = this.voiceName, dest = this.bus) {
     const v = VOICES[voice](this.ctx, midiToFreq(midi), t, level * 0.5 * TRIM[voice], hold);
     const pan = this.ctx.createStereoPanner(); pan.pan.value = (Math.random() - 0.5) * 0.8;
-    v.out.connect(pan).connect(this.bus);
+    v.out.connect(pan).connect(dest);
     const end = (at) => v.oscs.forEach((o) => { try { o.stop(at); } catch (e) { /* stopped */ } });
     const life = v.life || (hold != null ? hold + 2.5 + 5 * (hold * 0.6 + 0.4) : null);
     if (life) end(t + life);
@@ -218,35 +220,57 @@ export class Drift {
     };
   }
 
-  // a tap: the note now, then its echoes on this orb's own loop length.
-  // Every echo is put on the audio clock straight away, so the trail plays
-  // out even when the page is hidden and its timers are slowed to a crawl.
+  // A tap starts this jellyfish's loop: its note comes back again and again,
+  // on the orb's own loop length, until it is tapped again, pushed out by a
+  // newer loop, or the sleep timer ends it. Each return is a little
+  // different: it swells and fades, sometimes rests, now and then floats up
+  // an octave. Tapping a jellyfish that is already looping lets it rest.
   tap(orb, midi, level = 0.8) {
-    const now = this.ctx.currentTime, tide = this.params.tide;
+    const now = this.ctx.currentTime, on = this.loops.find((l) => l.orb === orb && !l.ending);
+    if (on) { this.rest(on); return false; }
     this.note(midi, level, now, 2.5, this.voiceName);
     if (this.onNote) this.onNote(orb, level);
-    // the tide decides how long it keeps coming back: about half a minute
-    // when low, many minutes when high, so loops in different voices pile up
-    const l = { orb, midi, voice: this.voiceName, tide, level, period: 5.3 + (orb * 2.71) % 9.4,
-      fade: 0.72 + 0.25 * tide, left: Math.round(3 + 37 * tide), next: now, events: [] };
-    l.next += l.period;
+    const out = this.ctx.createGain(); out.connect(this.bus);
+    const l = { orb, midi, voice: this.voiceName, level, out, base: 5.3 + (orb * 2.71) % 9.4,
+      swell: Math.random() * 6, next: now, events: [] };
+    l.next += this.gap(l);
     this.schedule(l, now + AHEAD);
     this.loops.push(l);
+    // too many at once turns to mush: the oldest drifts away
+    const playing = this.loops.filter((x) => !x.ending);
+    if (playing.length > MAX_LOOPS) this.rest(playing[0]);
+    return true;
   }
 
-  // Book a loop's echoes on the audio clock up to `until`. They are booked a
-  // good while ahead, so they keep playing when the page is hidden and its
-  // timers slow to about once a minute.
+  // let a loop fade away over a few seconds
+  rest(l, seconds = 4) {
+    const t = this.ctx.currentTime;
+    l.ending = true;
+    l.out.gain.cancelScheduledValues(t);
+    l.out.gain.setValueAtTime(l.out.gain.value, t);
+    l.out.gain.linearRampToValueAtTime(0, t + seconds);
+    l.events = l.events.filter((e) => e.at < t + seconds);
+    setTimeout(() => { try { l.out.disconnect(); } catch (e) { /* gone */ } }, (seconds + 1) * 1000);
+    if (this.onRest) this.onRest(l.orb);
+  }
+  isLooping(orb) { return this.loops.some((l) => l.orb === orb && !l.ending); }
+
+  // the time to the next return: Tide sets how often (sparse when low, close when high)
+  gap(l) { return l.base * (1.7 - 1.1 * this.params.tide) * (0.92 + Math.random() * 0.16); }
+
+  // Book a loop's returns on the audio clock up to `until`. They are booked a
+  // while ahead, so they keep playing when the page is hidden and its timers
+  // slow to about once a minute.
   schedule(l, until) {
-    while (l.left > 0 && l.next < until) {
-      l.level *= l.fade;
-      if (l.level <= 0.03) { l.left = 0; break; }
-      // echoes drift: a little out of time, now and then up an octave
-      const at = l.next + Math.random() * 0.05, up = Math.random() < 0.12 * l.tide ? 12 : 0;
-      this.note(l.midi + up, l.level, at, 2.5, l.voice);     // each loop keeps its own voice
-      l.events.push({ at, level: l.level });
-      l.left--;
-      l.next += l.period;
+    while (!l.ending && l.next < until) {
+      const at = l.next;
+      l.next += this.gap(l);
+      if (Math.random() < 0.15) continue;                       // now and then it rests a turn
+      l.swell += 0.6 + Math.random() * 0.5;                     // a slow swell and fade over many returns
+      const lv = l.level * (0.55 + 0.45 * Math.sin(l.swell) ** 2);
+      const up = Math.random() < 0.1 ? 12 : 0;
+      this.note(l.midi + up, lv, at + Math.random() * 0.05, 2.5, l.voice, l.out);   // each loop keeps its own voice
+      l.events.push({ at, level: lv });
     }
   }
 
@@ -266,7 +290,7 @@ export class Drift {
         if (this.onNote && now - e.at < 1) this.onNote(l.orb, e.level);
       }
     }
-    this.loops = this.loops.filter((l) => l.events.length || l.left > 0);
+    this.loops = this.loops.filter((l) => !l.ending || l.events.length);
     // tape dropouts: brief dips, more often with more tape
     if (Math.random() < 0.004 * this.params.tape * this.params.tape) {
       const d = 0.15 + Math.random() * 0.4;

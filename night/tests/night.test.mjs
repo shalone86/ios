@@ -41,6 +41,19 @@ const r = await page.evaluate(async () => {
 });
 for (const [v, s] of Object.entries(r)) check(s.bad === 0 && s.peak > 0.02 && s.peak < 1 && s.tail > 0.0005, `${v}: plays clean (peak ${s.peak.toFixed(2)}), and the sea rings on after it (${(20 * Math.log10(s.tail)).toFixed(0)} dB at 5 s)`);
 
+// loops keep singing: three taps, four minutes later they are as loud as at the start
+const longRun = await page.evaluate(async () => {
+  const { Drift } = await import('/js/audio.js');
+  const SR = 22050, LEN = 240, ctx = new OfflineAudioContext(1, SR * LEN, SR), d = new Drift(ctx);
+  d.tap(2, 52, 0.85); d.voiceName = 'glass'; d.tap(6, 62, 0.85); d.voiceName = 'choir'; d.tap(9, 69, 0.85);
+  for (let t = 10; t < LEN; t += 10) ctx.suspend(t).then(() => { d.tick(); ctx.resume(); });
+  const c = (await ctx.startRendering()).getChannelData(0);
+  const db = (a, z) => { let e = 0; for (let i = a * SR; i < z * SR; i++) e += c[i] * c[i]; return 10 * Math.log10(e / ((z - a) * SR)); };
+  return { start: db(0, 60), end: db(180, 240), voices: d.loops.map((l) => l.voice) };
+});
+check(longRun.end > longRun.start - 6 && longRun.voices.join() === 'pad,glass,choir',
+  `loops in three voices keep singing (first minute ${longRun.start.toFixed(1)} dB, fourth minute ${longRun.end.toFixed(1)} dB)`);
+
 await page.click('#go');
 await page.waitForFunction(() => window.deepDrift.drift && window.deepDrift.drift.ctx.state === 'running');
 await page.waitForTimeout(400);
@@ -53,7 +66,18 @@ await page.evaluate(([x, y]) => new Promise((done) => {
 const loops = await page.evaluate(() => window.deepDrift.drift.loops.length);
 check(loops === 1, 'a tap sends a note drifting on its own loop');
 const sched = await page.evaluate(() => window.deepDrift.drift.loops[0].events.length);
-check(sched >= 3, `its ${sched} echoes are booked on the audio clock, so they play on with the screen off`);
+check(sched >= 3, `its next ${sched} returns are booked on the audio clock, so they play on with the screen off`);
+// tapping it again lets it rest; a seventh loop pushes out the oldest
+const resting = await page.evaluate(() => {
+  const d = window.deepDrift.drift, n = window.deepDrift.orbs;
+  d.tap(4, 57, 0.8);
+  const rested = !d.isLooping(4);
+  for (let i = 0; i < 7; i++) d.tap(i + 3, 60 + i, 0.8);
+  const playing = d.loops.filter((l) => !l.ending).map((l) => l.orb);
+  for (const l of d.loops) if (!l.ending) d.rest(l, 0.5);
+  return { rested, playing };
+});
+check(resting.rested && resting.playing.length === 6 && !resting.playing.includes(3), `a second tap lets a loop rest, and only six play at once (${resting.playing})`);
 const held = await page.evaluate(([x, y]) => new Promise((done) => {
   const el = document.getElementById('sea');
   const fire = (type) => el.dispatchEvent(new PointerEvent(type, { pointerId: 2, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, bubbles: true, cancelable: true }));

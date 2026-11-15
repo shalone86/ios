@@ -66,9 +66,17 @@ function draw(t) {
 
 function drawOrb(o, t) {
   o.glow *= o.held ? 1 : 0.985;
+  // a jellyfish whose loop is playing stays softly lit
+  const looping = !!(drift && drift.isLooping(o.i));
+  if (looping) o.glow = Math.max(o.glow, 0.28);
   const bob = Math.sin(t / 1900 + o.phase) * 5, x = o.x + Math.sin(t / 4300 + o.phase) * 4, y = o.y + bob;
   const breathe = 0.35 + 0.1 * Math.sin(t / 2400 + o.phase) + 0.65 * Math.min(1, o.glow);
   const R = o.r * (1 + 0.08 * Math.min(1, o.glow));
+  if (looping) {
+    g.strokeStyle = `hsla(${o.hue},90%,80%,${0.22 + 0.1 * Math.sin(t / 1300 + o.phase)})`;
+    g.lineWidth = 1.5;
+    g.beginPath(); g.arc(x, y - R * 0.1, R * 1.45, 0, 7); g.stroke();
+  }
   // tentacles
   g.strokeStyle = `hsla(${o.hue},80%,70%,${0.18 + 0.3 * breathe})`;
   g.lineWidth = 1.6;
@@ -147,7 +155,11 @@ function release(pid) {
   touches.delete(pid);
   clearTimeout(t.timer);
   if (t.hold) { t.hold.release(); t.orb.held = false; }
-  else drift.tap(t.orb.i, notes[t.orb.i], 0.85);    // a quick tap: the note, then its echoes
+  else {
+    // a quick tap starts this jellyfish's loop, or lets it rest if it is playing
+    const started = drift.tap(t.orb.i, notes[t.orb.i], 0.85);
+    if (started && !state.toldRest) { state.toldRest = true; toast('it keeps singing. tap it again to let it rest'); }
+  }
 }
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
