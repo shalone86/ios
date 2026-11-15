@@ -121,6 +121,7 @@ export class Drift {
     this.loops = [];               // echoes in flight: { at, note, level, n, period, orb }
     this.onNote = null;            // (orb, level) for the visuals
     this.input = G();
+    this.bus = G(); this.bus.connect(this.input);   // replaced after a sleep fade, cutting off scheduled echoes
 
     // tape: wobble (a modulated delay), saturation, hiss, dropouts
     const wob = ctx.createDelay(0.1); wob.delayTime.value = 0.02;
@@ -184,10 +185,10 @@ export class Drift {
   }
 
   // play one note now (or at t); hold: seconds before it fades, or null to sustain until release()
-  note(midi, level = 0.8, t = this.ctx.currentTime, hold = 2.5) {
-    const v = VOICES[this.voiceName](this.ctx, midiToFreq(midi), t, level * 0.5, hold);
+  note(midi, level = 0.8, t = this.ctx.currentTime, hold = 2.5, voice = this.voiceName) {
+    const v = VOICES[voice](this.ctx, midiToFreq(midi), t, level * 0.5, hold);
     const pan = this.ctx.createStereoPanner(); pan.pan.value = (Math.random() - 0.5) * 0.8;
-    v.out.connect(pan).connect(this.input);
+    v.out.connect(pan).connect(this.bus);
     const end = (at) => v.oscs.forEach((o) => { try { o.stop(at); } catch (e) { /* stopped */ } });
     const life = v.life || (hold != null ? hold + 1.6 + v.release * 5 : null);
     if (life) end(t + life);
@@ -201,13 +202,25 @@ export class Drift {
     };
   }
 
-  // a tap: the note now, then echoes on this orb's own loop length
+  // a tap: the note now, then its echoes on this orb's own loop length.
+  // Every echo is put on the audio clock straight away, so the trail plays
+  // out even when the page is hidden and its timers are slowed to a crawl.
   tap(orb, midi, level = 0.8) {
-    this.note(midi, level);
+    const now = this.ctx.currentTime, voice = this.voiceName, period = 5.3 + (orb * 2.71) % 9.4;
+    this.note(midi, level, now, 2.5, voice);
     if (this.onNote) this.onNote(orb, level);
     // the tide decides how many times it comes back
-    const repeats = Math.round(2 + this.params.tide * 10);
-    this.loops.push({ orb, note: midi, level, n: repeats, period: 5.3 + (orb * 2.71) % 9.4, at: this.ctx.currentTime });
+    const events = [];
+    let lv = level;
+    for (let k = 1, n = Math.round(2 + this.params.tide * 10); k <= n; k++) {
+      lv *= 0.78;
+      if (lv <= 0.04) break;
+      // echoes drift: a little out of time, now and then up an octave
+      const at = now + k * period + Math.random() * 0.05, up = Math.random() < 0.12 * this.params.tide ? 12 : 0;
+      this.note(midi + up, lv, at, 2.5, voice);          // each loop keeps its own voice
+      events.push({ at, level: lv });
+    }
+    this.loops.push({ orb, events });
   }
 
   hold(orb, midi, level = 0.8) {
@@ -218,18 +231,14 @@ export class Drift {
   // call often (e.g. every 50 ms): fires due echoes and drifts the tape
   tick() {
     const now = this.ctx.currentTime;
+    // the echoes are already scheduled; this only lights up the orbs as they sound
     for (const l of this.loops) {
-      if (l.n > 0 && now >= l.at + l.period) {
-        l.at += l.period;
-        l.n--;
-        l.level *= 0.78;
-        // echoes drift: a little out of time, now and then up an octave
-        const up = Math.random() < 0.12 * this.params.tide ? 12 : 0;
-        this.note(l.note + up, l.level, now + Math.random() * 0.05);
-        if (this.onNote) this.onNote(l.orb, l.level);
+      while (l.events.length && now >= l.events[0].at) {
+        const e = l.events.shift();
+        if (this.onNote && now - e.at < 1) this.onNote(l.orb, e.level);
       }
     }
-    this.loops = this.loops.filter((l) => l.n > 0 && l.level > 0.04);
+    this.loops = this.loops.filter((l) => l.events.length);
     // tape dropouts: brief dips, more often with more tape
     if (Math.random() < 0.004 * this.params.tape * this.params.tape) {
       const d = 0.15 + Math.random() * 0.4;
@@ -245,20 +254,26 @@ export class Drift {
     const t = this.ctx.currentTime;
     if (this.bg) { this.bg.forEach((h) => h.release(t)); this.bg = null; }
     if (!on) return;
-    const save = this.voiceName;
-    this.voiceName = 'drone';
-    this.bg = [this.note(rootMidi - 12, 0.5, t, null), this.note(rootMidi - 5, 0.3, t + 1.5, null)];
-    this.voiceName = save;
+    this.bg = [this.note(rootMidi - 12, 0.5, t, null, 'drone'), this.note(rootMidi - 5, 0.3, t + 1.5, null, 'drone')];
   }
 
-  // fade everything out over `seconds`, then call done()
-  fadeOut(seconds, done) {
+  // fade everything out over `seconds`, starting `after` seconds from now, then
+  // call done(). The fade is on the audio clock, so it happens on time even
+  // with the screen off; done() may come late, but by then all is silent.
+  fadeOut(seconds, done, after = 0) {
     const t = this.ctx.currentTime;
     this.sleep.gain.cancelScheduledValues(t);
     this.sleep.gain.setValueAtTime(this.sleep.gain.value, t);
-    this.sleep.gain.linearRampToValueAtTime(0, t + seconds);
+    this.sleep.gain.setValueAtTime(1, t + after);
+    this.sleep.gain.linearRampToValueAtTime(0, t + after + seconds);
     clearTimeout(this._fadeTimer);
-    this._fadeTimer = setTimeout(() => { this.loops = []; this.background(false); if (done) done(); }, seconds * 1000 + 200);
+    this._fadeTimer = setTimeout(() => {
+      this.loops = []; this.background(false);
+      // cut off any echoes still waiting on the clock
+      const old = this.bus; this.bus = this.ctx.createGain(); this.bus.connect(this.input);
+      old.gain.value = 0; setTimeout(() => old.disconnect(), 100);
+      if (done) done();
+    }, (after + seconds) * 1000 + 200);
   }
   wake() {
     clearTimeout(this._fadeTimer);

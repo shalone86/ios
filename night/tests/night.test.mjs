@@ -52,6 +52,8 @@ await page.evaluate(([x, y]) => new Promise((done) => {
 }), [o.x, o.y]);
 const loops = await page.evaluate(() => window.deepDrift.drift.loops.length);
 check(loops === 1, 'a tap sends a note drifting on its own loop');
+const sched = await page.evaluate(() => window.deepDrift.drift.loops[0].events.length);
+check(sched >= 3, `its ${sched} echoes are booked on the audio clock, so they play on with the screen off`);
 const held = await page.evaluate(([x, y]) => new Promise((done) => {
   const el = document.getElementById('sea');
   const fire = (type) => el.dispatchEvent(new PointerEvent(type, { pointerId: 2, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, bubbles: true, cancelable: true }));
@@ -64,10 +66,12 @@ await page.waitForTimeout(1500);
 check(await page.evaluate(() => window.deepDrift.state.animate), 'Animate sets the controls drifting');
 // sleep timer: jump to the last 3 seconds and watch it fade
 await page.click('#timer');
-await page.evaluate(() => { window.deepDrift.state.timerEnd = Date.now() + 3000; });
-await page.waitForTimeout(9000);
+await page.evaluate(() => window.deepDrift.setTimer(3));
+await page.waitForTimeout(1000);
+const mid = await page.evaluate(() => window.deepDrift.drift.sleep.gain.value);
+await page.waitForTimeout(3500);
 const after = await page.evaluate(() => ({ min: window.deepDrift.state.timerMin, loops: window.deepDrift.drift.loops.length, anim: window.deepDrift.state.animate }));
-check(after.min === 0 && after.loops === 0 && !after.anim, 'the sleep timer fades everything out and stops');
+check(mid < 0.9 && after.min === 0 && after.loops === 0 && !after.anim, 'the sleep timer fades everything out and stops');
 await page.screenshot({ path: path.join(OUT, 'night.png') });
 check(errors.length === 0, 'no page errors ' + errors.join(' | '));
 await browser.close(); server.close();

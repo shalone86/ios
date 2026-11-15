@@ -32,6 +32,7 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
 #start h2 { margin: 0 0 6px; font-size: 40px; font-weight: 600; }
 #start p { margin: 0 0 26px; color: var(--dim); }
 #start button { padding: 14px 30px; border-radius: 28px; font-size: 18px; font-weight: 600; background: rgba(150, 210, 255, .16); border: 1px solid rgba(170, 220, 255, .45); box-shadow: 0 0 30px rgba(120, 190, 255, .25); }
+#apk { display: block; margin-top: 26px; font-size: 13px; color: var(--dim); }
 #toast { position: fixed; left: 50%; top: calc(var(--safe-t) + 60px); transform: translateX(-50%); font-size: 14px; color: var(--dim); opacity: 0; transition: opacity .5s; pointer-events: none; }
 #toast.on { opacity: 1; }
 </style>
@@ -54,7 +55,8 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
     <button class="chip" id="hum">Hum: off</button>
   </div>
 </section>
-<div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights. hold one to hum.</p><button id="go">dive in</button></div></div>
+<div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights. hold one to hum.</p><button id="go">dive in</button><a id="apk" href="DeepDrift.apk" download>Android app: keeps playing with the screen off</a></div></div>
+<script>if (window.DriftNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent)) document.getElementById('apk').remove();</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

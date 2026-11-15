@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A sleepy glowing jellyfish, inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- glow -->
+    <path android:pathData="M54,50m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:centerX="54" android:centerY="48" android:gradientRadius="30" android:type="radial">
+                <item android:color="#559FD8FF" android:offset="0" />
+                <item android:color="#009FD8FF" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- tentacles -->
+    <path android:strokeColor="#AA9FC8FF" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M45,56q-3,5 0,10t0,10M54,58q3,5 0,10t0,10M63,56q-3,5 0,10t0,10" />
+    <!-- bell -->
+    <path android:pathData="M34,55A20,19 0,0 1,74 55Q54,62 34,55Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:centerX="48" android:centerY="42" android:gradientRadius="26" android:type="radial">
+                <item android:color="#FFF2F8FF" android:offset="0" />
+                <item android:color="#FFB7A4F5" android:offset="0.45" />
+                <item android:color="#FF6A63C9" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- closed eyes and a small smile -->
+    <path android:strokeColor="#CC0A142D" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M45,49q2.5,2.4 5,0M58,49q2.5,2.4 5,0M52.200,53q1.800,1.600 3.600,0" />
+    <!-- cheeks -->
+    <path android:fillColor="#66FF8CBE" android:pathData="M42,53.500m-2.400,0a2.400,1.400 0,1 1,4.800 0a2.400,1.400 0,1 1,-4.800 0M66,53.500m-2.400,0a2.400,1.400 0,1 1,4.800 0a2.400,1.400 0,1 1,-4.800 0" />
+</vector>

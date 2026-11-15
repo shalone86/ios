@@ -124,7 +124,11 @@ async function startAudio() {
     ['depth', 'tide', 'tape'].forEach((k) => drift.set(k, $(k).value / 100));
   }
   if (ctx.state !== 'running') await ctx.resume().catch(() => {});
+  native('playing', true);             // Android app: keep playing with the screen off
 }
+
+// the Android app's shell, when there is one
+function native(fn, ...args) { try { if (window.DriftNative) window.DriftNative[fn](...args); } catch (e) { /* web */ } }
 
 // ---------- touching ----------
 
@@ -211,30 +215,38 @@ $('animate').onclick = async () => {
   toast(state.animate ? 'the tide is moving on its own' : 'still water');
 };
 
-// sleep timer: off, 15, 30, 60 minutes; the last two minutes fade away
+// sleep timer: off, 15, 30, 60 minutes; the last two minutes fade away.
+// The fade is booked on the audio clock when the timer is set, so it still
+// happens with the screen off.
 const STEPS = [0, 15, 30, 60];
+// once the sea has faded out: everything off, and the phone may sleep
+function quiet() {
+  state.animate = false; $('animate').classList.remove('on');
+  state.hum = false; $('hum').textContent = 'Hum: off'; $('hum').classList.remove('on');
+  state.timerEnd = 0; state.timerMin = 0; $('timer').textContent = 'sleep: off'; $('timer').classList.remove('on');
+  drift.wake();
+  native('playing', false);
+}
+// the Stop button on the Android app's notification
+window.deepDriftStop = () => { if (drift) drift.fadeOut(3, quiet); };
+function setTimer(seconds) {
+  state.timerEnd = seconds ? Date.now() + seconds * 1000 : 0;
+  drift.wake();
+  if (!seconds) return;
+  const fade = Math.min(120, seconds);
+  drift.fadeOut(fade, quiet, seconds - fade);
+}
 $('timer').onclick = async () => {
   await startAudio();
   state.timerMin = STEPS[(STEPS.indexOf(state.timerMin) + 1) % STEPS.length];
-  state.timerEnd = state.timerMin ? Date.now() + state.timerMin * 60000 : 0;
-  state.fading = false;
-  drift.wake();
+  setTimer(state.timerMin * 60);
   $('timer').textContent = state.timerMin ? `sleep: ${state.timerMin} min` : 'sleep: off';
   $('timer').classList.toggle('on', !!state.timerMin);
 };
 function timerStep() {
   if (!state.timerEnd) return;
-  const left = (state.timerEnd - Date.now()) / 1000;
-  if (left <= 120 && !state.fading) {
-    state.fading = true;
-    drift.fadeOut(Math.max(5, left), () => {
-      state.animate = false; $('animate').classList.remove('on');
-      state.hum = false; $('hum').textContent = 'Hum: off'; $('hum').classList.remove('on');
-      state.timerEnd = 0; state.timerMin = 0; $('timer').textContent = 'sleep: off'; $('timer').classList.remove('on');
-      drift.wake();
-    });
-  }
-  if (!state.fading) $('timer').textContent = `sleep: ${Math.ceil(left / 60)} min`;
+  const left = Math.max(0, (state.timerEnd - Date.now()) / 1000);
+  $('timer').textContent = left > 120 ? `sleep: ${Math.ceil(left / 60)} min` : 'sleep: fading';
 }
 
 $('go').onclick = async () => { $('start').classList.add('gone'); await startAudio(); };
@@ -242,4 +254,4 @@ $('go').onclick = async () => { $('start').classList.add('gone'); await startAud
 addEventListener('resize', resize);
 resize();
 requestAnimationFrame(frame);
-window.deepDrift = { state, get drift() { return drift; }, orbs };
+window.deepDrift = { state, get drift() { return drift; }, orbs, setTimer };
