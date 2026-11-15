@@ -1,0 +1,10 @@
+// Serves Deep Drift at shalonely.com/night. Deploy: node build.mjs && npx wrangler deploy
+{
+  "name": "deep-drift",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-11-01",
+  "routes": [
+    { "pattern": "shalonely.com/night", "zone_name": "shalonely.com" },
+    { "pattern": "shalonely.com/night/*", "zone_name": "shalonely.com" }
+  ]
+}
