@@ -46,3 +46,43 @@ window.SCRIPTS = {
     ],
   },
 };
+
+// ---------- the choir session (Tier 1 of choir/RECORDING-PLAN.md) ----------
+// Each voice part is three batches. A line is one vowel on one note, sung
+// several times in a row; the chopping tool splits the takes apart later.
+// Lines carry a MIDI note: the booth plays it before you sing and shows
+// your pitch while you do.
+(function () {
+  const NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const name = (m) => NAMES[m % 12] + (Math.floor(m / 12) - 1);
+  const fileNote = (m) => name(m).replace('#', 's');
+  const PARTS = {
+    soprano: { title: 'Soprano', notes: [60, 63, 66, 69, 72, 75, 78, 81] },
+    alto: { title: 'Alto', notes: [53, 56, 59, 62, 65, 68, 71, 74] },
+    tenor: { title: 'Tenor', notes: [48, 51, 54, 57, 60, 63, 66, 69] },
+    bass: { title: 'Bass', notes: [40, 43, 46, 49, 52, 55, 58, 60] },
+  };
+  const DYN = { mp: 'soft (mp)', f: 'strong (f)' };
+  const SUSTAIN = 'Sing it 4 times, about 8 seconds each, with a breath between. Steady, little vibrato. Skip any note that strains.';
+  const sustains = (id, part, vowels) => {
+    const lines = [];
+    for (const v of vowels) for (const d of ['mp', 'f']) for (const m of part.notes) {
+      lines.push([`${id}_${v.toLowerCase()}_${d}_${fileNote(m)}`, `${v} · ${DYN[d]} · ${name(m)}`, SUSTAIN, m]);
+    }
+    return lines;
+  };
+  for (const [id, part] of Object.entries(PARTS)) {
+    const mid = part.notes[3];
+    window.SCRIPTS[`choir-${id}-1`] = { title: `Choir · ${part.title} 1: Ah and Oh`, group: 'Choir', tip: '', lines: sustains(id, part, ['Ah', 'Oh']) };
+    window.SCRIPTS[`choir-${id}-2`] = { title: `Choir · ${part.title} 2: Oo and Mm`, group: 'Choir', tip: '', lines: sustains(id, part, ['Oo', 'Mm']) };
+    const shorts = [];
+    for (const s of ['Ah', 'Da']) for (const m of part.notes) {
+      shorts.push([`${id}_short-${s.toLowerCase()}_${fileNote(m)}`, `Short "${s}!" · strong · ${name(m)}`, 'Sing it 3 times: short and strong, about half a second each, with a little gap between.', m]);
+    }
+    for (const w of ['Amen', 'Alleluia', 'Gloria']) {
+      shorts.push([`${id}_${w.toLowerCase()}_${fileNote(mid)}`, `"${w}" · starting on ${name(mid)}`, `Sing it 3 times, short and joyful${w === 'Amen' ? ' (two notes, falling a step)' : ''}, with a breath between.`, mid]);
+    }
+    window.SCRIPTS[`choir-${id}-3`] = { title: `Choir · ${part.title} 3: shorts and words`, group: 'Choir', tip: '', lines: shorts };
+  }
+  window.noteName = name;
+})();

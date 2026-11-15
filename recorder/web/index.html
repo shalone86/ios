@@ -14,7 +14,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 main { max-width: 560px; margin: 0 auto; padding: calc(var(--safe-t) + 14px) 16px calc(var(--safe-b) + 20px); }
 header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 header h1 { font-size: 18px; margin: 0; flex: 1; }
-select { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+select { max-width: 60%; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px; }
 #count { color: var(--dim); font-size: 14px; display: flex; justify-content: space-between; }
 #text { font-size: 26px; line-height: 1.3; font-weight: 600; margin: 14px 0 8px; min-height: 3.9em; }
@@ -28,6 +28,7 @@ select { font: inherit; color: var(--ink); background: var(--card); border: 1px 
 #rec.on { animation: pulse 1.2s infinite; border-radius: 30%; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 16px rgba(255, 77, 109, .08); } }
 .row { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+.row .btn { flex: 1; padding: 12px 6px; white-space: nowrap; }
 .btn { padding: 12px 18px; border-radius: 14px; background: #222b52; border: 1px solid var(--line); font-weight: 600; }
 .btn:disabled { opacity: .35; cursor: default; }
 .btn.go { background: var(--accent); color: #0d1226; border-color: transparent; }
@@ -63,12 +64,14 @@ select { font: inherit; color: var(--ink); background: var(--card); border: 1px 
     <button id="rec">Record</button>
     <div class="row">
       <button class="btn" id="prev">‹ Back</button>
+      <button class="btn" id="note" hidden>♪ Note</button>
       <button class="btn" id="play" disabled>▶ Play</button>
       <button class="btn go" id="next">Next ›</button>
     </div>
   </section>
   <ul id="list"></ul>
   <button class="btn go" id="export" disabled>Save all as a zip</button>
+  <button class="btn" id="clear" hidden style="width:100%;margin-top:10px">Saved and sent? Clear these takes from this phone</button>
   <p class="tip">Takes are kept on this phone until you save them, even if you close the page.</p>
 </main>
 <script src="scripts.js"></script>

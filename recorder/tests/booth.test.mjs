@@ -48,8 +48,25 @@ await dl.saveAs(zipFile);
 execFileSync('unzip', ['-o', '-q', zipFile, '-d', OUT]);
 const names = fs.readdirSync(OUT).filter((f) => f.endsWith('.wav')).sort();
 const probe = names.map((f) => String(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=sample_rate,channels,bits_per_sample', '-of', 'csv=p=0', path.join(OUT, f)])).trim());
-check(dl.suggestedFilename() === 'deep-drift-voice.zip' && names.join() === 'intro.wav,tap.wav,weave.wav' && probe.every((p) => /,1,24$/.test(p)),
-  `the zip holds intro.wav, tap.wav, weave.wav as 24-bit mono WAV (${probe.join(' | ')})`);
+check(dl.suggestedFilename() === 'deep-drift-voice.zip' && names.join() === 'intro.wav,tap.wav,weave.wav' && probe.every((p) => /,1,16$/.test(p)),
+  `the zip holds intro.wav, tap.wav, weave.wav as 16-bit mono WAV (${probe.join(' | ')})`);
+// the choir session: a line plays its note first, then records
+await page.selectOption('#script', 'choir-alto-1');
+await page.waitForTimeout(300);
+const first = await page.textContent('#text');
+await page.click('#rec');
+await page.waitForTimeout(400);
+const listening = await page.textContent('#status');
+await page.waitForTimeout(2200);
+const singing = await page.textContent('#status');
+await page.click('#rec');
+await page.waitForTimeout(300);
+const choirTake = await page.evaluate(() => Object.keys(window.booth.takes));
+check(first === 'Ah · soft (mp) · F3' && /Listen: F3/.test(listening) && /Sing!/.test(singing) && choirTake.join() === 'alto_ah_mp_F3',
+  `a choir line plays its note, then records (${first} / ${listening} / ${singing})`);
+const pitch = await page.evaluate(() => [window.booth.pitchOf(57, 220), window.booth.pitchOf(57, 226), window.booth.pitchOf(57, 214)]);
+check(pitch[0] === 'in tune ✓' && /sharp/.test(pitch[1]) && /flat/.test(pitch[2]), 'the pitch reading says in tune, sharp or flat: ' + pitch.join(' | '));
+check((await page.$$('#script optgroup')).length === 2 && (await page.$$('#script option')).length === 14, 'the menu lists 2 tutorials and 12 choir batches');
 check(errors.length === 0, 'no page errors ' + errors.join(' | '));
 await page.screenshot({ path: path.join(OUT, 'booth.png') });
 console.log('output in', OUT);

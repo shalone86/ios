@@ -83,6 +83,15 @@ That's about 8 notes × (8 sustains + 6 shorts) ≈ 110 clips per part, or aroun
 
 ## How to record
 
+**The easy way: Voice Booth** (shalonely.com/record). Pick a batch under
+*Choir session* (each part is three batches: Ah and Oh, Oo and Mm, shorts and
+words). Each line plays its note, then records while you sing it four times
+(three for shorts), showing whether you're in tune. Save the zip, send it to
+Claude, then clear the batch to free up the phone. A good USB mic into a
+computer's browser works too, and sounds better than a phone.
+
+**Or in Logic**, following the same lines:
+
 - **48 kHz, 24-bit WAV**, one file per take. Mono is fine.
 - **A dry, quiet room**: a closet full of clothes is better than a nice-sounding
   hall. The reverb gets added later; it can't be taken out.
