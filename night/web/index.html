@@ -33,6 +33,13 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
 #start p { margin: 0 0 26px; color: var(--dim); }
 #start button { padding: 14px 30px; border-radius: 28px; font-size: 18px; font-weight: 600; background: rgba(150, 210, 255, .16); border: 1px solid rgba(170, 220, 255, .45); box-shadow: 0 0 30px rgba(120, 190, 255, .25); }
 #apk { display: block; margin-top: 26px; font-size: 13px; color: var(--dim); }
+#start #tour-link { display: block; margin: 16px auto 0; padding: 8px 14px; font-size: 15px; font-weight: 600; background: none; border: 0; box-shadow: none; color: var(--ink); opacity: .85; }
+#help { width: 36px; padding: 0; }
+#tour { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(2, 5, 16, .95); padding: calc(var(--safe-t) + 10px) 10px calc(var(--safe-b) + 10px); }
+#tour[hidden] { display: none; }
+#tour video { width: min(100%, calc((100vh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16)); width: min(100%, calc((100dvh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16));
+  aspect-ratio: 9 / 16; border-radius: 18px; background: #000; box-shadow: 0 0 40px rgba(90, 160, 255, .25); }
+#tour-close { position: absolute; top: calc(var(--safe-t) + 14px); right: 14px; width: 40px; padding: 0; z-index: 1; }
 #toast { position: fixed; left: 50%; top: calc(var(--safe-t) + 60px); transform: translateX(-50%); font-size: 14px; color: var(--dim); opacity: 0; transition: opacity .5s; pointer-events: none; }
 #toast.on { opacity: 1; }
 </style>
@@ -43,6 +50,7 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
   <h1>Deep Drift</h1>
   <button class="chip" id="mood">Deep</button>
   <button class="chip" id="timer">sleep: off</button>
+  <button class="chip" id="help" aria-label="How it works">?</button>
 </header>
 <div id="toast"></div>
 <section id="panel">
@@ -55,7 +63,8 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
     <button class="chip" id="hum">Hum: off</button>
   </div>
 </section>
-<div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights. hold one to hum.</p><button id="go">dive in</button><a id="apk" href="DeepDrift.apk" download>Android app: keeps playing with the screen off</a></div></div>
+<div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights. hold one to hum.</p><button id="go">dive in</button><button id="tour-link">▶ how it works · 1 min</button><a id="apk" href="DeepDrift.apk" download>Android app: keeps playing with the screen off</a></div></div>
+<div id="tour" hidden role="dialog" aria-label="How Deep Drift works"><video id="tour-video" controls playsinline preload="none"></video><button id="tour-close" class="chip" aria-label="Close">✕</button></div>
 <script>if (window.DriftNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent)) document.getElementById('apk').remove();</script>
 <script type="module" src="js/main.js"></script>
 </body>

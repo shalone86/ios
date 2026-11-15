@@ -73,6 +73,16 @@ await page.waitForTimeout(3500);
 const after = await page.evaluate(() => ({ min: window.deepDrift.state.timerMin, loops: window.deepDrift.drift.loops.length, anim: window.deepDrift.state.animate }));
 check(mid < 0.9 && after.min === 0 && after.loops === 0 && !after.anim, 'the sleep timer fades everything out and stops');
 await page.screenshot({ path: path.join(OUT, 'night.png') });
+// the tutorial: ? opens it, the sea goes quiet, ✕ brings it back
+await page.click('#help');
+await page.waitForTimeout(1500);
+const tour = await page.evaluate(() => ({ open: !document.getElementById('tour').hidden, src: document.getElementById('tour-video').currentSrc,
+  ready: document.getElementById('tour-video').readyState, master: window.deepDrift.drift.master.gain.value }));
+await page.screenshot({ path: path.join(OUT, 'night-tour.png') });
+await page.click('#tour-close');
+await page.waitForTimeout(2500);
+const back = await page.evaluate(() => ({ open: !document.getElementById('tour').hidden, master: window.deepDrift.drift.master.gain.value }));
+check(tour.open && /tutorial\.mp4$/.test(tour.src) && tour.ready >= 1 && tour.master < 0.1 && !back.open && back.master > 0.3, 'the tutorial opens from ?, the sea goes quiet, and comes back after');
 check(errors.length === 0, 'no page errors ' + errors.join(' | '));
 await browser.close(); server.close();
 console.log(failed ? `${failed} failed` : 'all Deep Drift checks passed'); process.exit(failed ? 1 : 0);

@@ -275,6 +275,12 @@ export class Drift {
       if (done) done();
     }, (after + seconds) * 1000 + 200);
   }
+  // quiet everything for a while (the tutorial video), leaving loops and timer as they are
+  hush(on) {
+    const t = this.ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t);
+    this.master.gain.setTargetAtTime(on ? 0 : 0.45, t, on ? 0.3 : 0.6);
+  }
   wake() {
     clearTimeout(this._fadeTimer);
     const t = this.ctx.currentTime;

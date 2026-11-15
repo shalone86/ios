@@ -164,6 +164,7 @@ public class MainActivity extends Activity {
         if (p.endsWith(".js")) return "text/javascript";
         if (p.endsWith(".woff2")) return "font/woff2";
         if (p.endsWith(".txt")) return "text/plain";
+        if (p.endsWith(".mp4")) return "video/mp4";
         return "application/octet-stream";
     }
 

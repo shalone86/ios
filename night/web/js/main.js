@@ -251,6 +251,25 @@ function timerStep() {
 
 $('go').onclick = async () => { $('start').classList.add('gone'); await startAudio(); };
 
+// the tutorial video: from the start screen, and from ? at any time
+function showTour() {
+  const box = $('tour'), video = $('tour-video');
+  try { localStorage.setItem('deepdrift.seenTour', '1'); } catch (e) { /* private mode */ }
+  if (drift) drift.hush(true);                          // the sea goes quiet while it plays
+  if (!video.src) video.src = 'media/tutorial.mp4';
+  box.hidden = false;
+  video.currentTime = 0;
+  video.play().catch(() => {});
+}
+function closeTour() {
+  $('tour-video').pause(); $('tour').hidden = true;
+  if (drift) drift.hush(false);
+}
+$('tour-link').onclick = () => { $('start').classList.add('gone'); showTour(); };
+$('help').onclick = showTour;
+$('tour-close').onclick = closeTour;
+$('tour-video').onended = closeTour;
+
 addEventListener('resize', resize);
 resize();
 requestAnimationFrame(frame);
