@@ -55,15 +55,34 @@ await page.selectOption('#script', 'choir-alto-1');
 await page.waitForTimeout(300);
 const first = await page.textContent('#text');
 await page.click('#rec');
+const askName = await page.textContent('#status');
+check(/singer's name/.test(askName), 'the choir asks for the singer\'s name before recording');
+await page.fill('#singer', 'Shalone'); await page.dispatchEvent('#singer', 'change');
+await page.check('#hp'); await page.waitForTimeout(200);
+await page.click('#rec');
 await page.waitForTimeout(400);
 const listening = await page.textContent('#status');
 await page.waitForTimeout(2200);
 const singing = await page.textContent('#status');
+// the guide note sounds while singing (the context's output is busy)
+const guide = await page.evaluate(() => !!(window.booth.guiding && window.booth.guiding()));
 await page.click('#rec');
 await page.waitForTimeout(300);
 const choirTake = await page.evaluate(() => Object.keys(window.booth.takes));
-check(first === 'Ah · soft (mp) · F3' && /Listen: F3/.test(listening) && /Sing!/.test(singing) && choirTake.join() === 'alto_ah_mp_F3',
-  `a choir line plays its note, then records (${first} / ${listening} / ${singing})`);
+const fileShown = await page.textContent('#file');
+check(first === 'Ah · soft (mp) · F3' && /Listen: F3/.test(listening) && /Sing!/.test(singing) && choirTake.join() === 'alto_ah_mp_F3' && fileShown === 'shalone_alto_ah_mp_F3.wav',
+  `a choir line plays its note, then records under the singer's name (${first} / ${listening} / ${singing} / ${fileShown})`);
+check(guide, 'with headphones on, the note keeps playing while you sing');
+// another singer starts their own set; switching back finds the first one's take
+await page.fill('#singer', 'Maria'); await page.dispatchEvent('#singer', 'change'); await page.waitForTimeout(300);
+const maria = await page.evaluate(() => Object.keys(window.booth.takes).length);
+await page.fill('#singer', 'Shalone'); await page.dispatchEvent('#singer', 'change'); await page.waitForTimeout(300);
+const back = await page.evaluate(() => Object.keys(window.booth.takes));
+const [cdl] = await Promise.all([page.waitForEvent('download'), page.click('#export')]);
+const czip = path.join(OUT, cdl.suggestedFilename()); await cdl.saveAs(czip);
+const listing = String(execFileSync('unzip', ['-Z1', czip])).trim();
+check(maria === 0 && back.join() === 'alto_ah_mp_F3' && cdl.suggestedFilename() === 'choir-alto-1-shalone-voice.zip' && listing === 'shalone_alto_ah_mp_F3.wav',
+  `each singer's takes are kept apart and saved with their name (${cdl.suggestedFilename()}: ${listing})`);
 const pitch = await page.evaluate(() => [window.booth.pitchOf(57, 220), window.booth.pitchOf(57, 226), window.booth.pitchOf(57, 214)]);
 check(pitch[0] === 'in tune ✓' && /sharp/.test(pitch[1]) && /flat/.test(pitch[2]), 'the pitch reading says in tune, sharp or flat: ' + pitch.join(' | '));
 check((await page.$$('#script optgroup')).length === 3 && (await page.$$('#script option')).length === 16, 'the menu lists 2 tutorials, 12 choir batches and 2 Angelio sound sets');

@@ -64,7 +64,7 @@ window.SCRIPTS = {
     bass: { title: 'Bass', notes: [40, 43, 46, 49, 52, 55, 58, 60] },
   };
   const DYN = { mp: 'soft (mp)', f: 'strong (f)' };
-  const SUSTAIN = 'Sing it 4 times, about 8 seconds each, with a breath between. Steady, little vibrato. Skip any note that strains.';
+  const SUSTAIN = 'Sing it 4 times, 4 to 8 seconds each, with a breath between. Steady, little vibrato: stop early rather than drift. Skip any note that strains.';
   const sustains = (id, part, vowels) => {
     const lines = [];
     for (const v of vowels) for (const d of ['mp', 'f']) for (const m of part.notes) {

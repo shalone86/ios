@@ -87,7 +87,19 @@ That's about 8 notes × (8 sustains + 6 shorts) ≈ 110 clips per part, or aroun
 *Choir session* (each part is three batches: Ah and Oh, Oo and Mm, shorts and
 words). Each line plays its note, then records while you sing it four times
 (three for shorts), showing whether you're in tune. Save the zip, send it to
-Claude, then clear the batch to free up the phone. A good USB mic into a
+Claude, then clear the batch to free up the phone.
+
+- **Type the singer's name** first: each singer's takes are kept apart and
+  their files are named after them (`maria_alto_ah_mp_F3.wav`), ready to stack.
+  Several singers per part is what makes the choir lush.
+- **Wearing headphones?** Tick "keep the note playing while I sing". Hearing
+  the note is the biggest help for staying in tune.
+- **Don't worry about small pitch drift.** Each take is tuned onto its note
+  afterwards, with only the slow drift steadied, so it still sounds human; a few
+  cents' difference between singers is kept, because that is what makes a
+  choir shimmer. Redo a take only if it wanders more than about a quarter of a
+  semitone, lands on the wrong note, or cracks. A steady 4 seconds beats a
+  drifting 8. A good USB mic into a
 computer's browser works too, and sounds better than a phone.
 
 **Or in Logic**, following the same lines:

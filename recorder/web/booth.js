@@ -11,6 +11,16 @@ let ctx, src, tap, recording = null, playing = null;
 
 try { const saved = localStorage.getItem('booth.script'); if (saved && S[saved]) scriptId = saved; } catch (e) { /* fine */ }
 
+// The choir session: whose voice it is (each singer's takes are kept and
+// named apart, ready to stack), and whether to keep the note sounding in
+// headphones while singing.
+let singer = '', headphones = false;
+try { singer = localStorage.getItem('booth.singer') || ''; headphones = localStorage.getItem('booth.hp') === '1'; } catch (e) { /* fine */ }
+const isChoir = () => S[scriptId].group === 'Choir';
+const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
+// where this script's takes are kept: per singer for the choir
+const storeId = () => (isChoir() && slug(singer) ? `${scriptId}@${slug(singer)}` : scriptId);
+
 // ---------- storing takes on this device ----------
 const db = new Promise((resolve) => {
   try {
@@ -34,7 +44,7 @@ async function loadTakes() {
         const c = req.result;
         if (!c) return resolve();
         const [sid, file] = String(c.key).split('/');
-        if (sid === scriptId) takes[file] = c.value;
+        if (sid === storeId()) takes[file] = c.value;
         c.continue();
       };
       req.onerror = () => resolve();
@@ -134,6 +144,7 @@ function startRec() {
     return;
   }
   recording = { chunks: [], peak: 0, t0: performance.now(), recent: [] };
+  if (midi != null && headphones) recording.guide = guideNote(midi);
   $('rec').classList.add('on'); $('rec').textContent = 'Stop';
   $('status').textContent = 'Recording… read the line, then tap Stop';
   tick();
@@ -147,6 +158,7 @@ function tick() {
 function stopRec() {
   if (!recording) { clearTimeout(refTimer); $('rec').classList.remove('on'); render(); $('status').textContent = ''; return; }
   const r = recording; recording = null;
+  if (r.guide) r.guide();
   $('rec').classList.remove('on');
   const n = r.chunks.reduce((a, c) => a + c[0].length, 0);
   if (n < ctx.sampleRate * 0.3) { $('status').textContent = 'That was very short. Try again.'; render(); return; }
@@ -159,7 +171,7 @@ function stopRec() {
   for (const chs of r.chunks) { const c = chs[use] || chs[0]; for (let i = 0; i < c.length; i++) pcm[o++] = Math.max(-32768, Math.min(32767, Math.round(c[i] * 32767))); }
   const file = line()[0];
   takes[file] = { rate: ctx.sampleRate, pcm, peak: r.peak };
-  store(`${scriptId}/${file}`, takes[file]);
+  store(`${storeId()}/${file}`, takes[file]);
   render();
   $('status').textContent = r.peak > 0.98 ? '⚠ A little loud: move back a bit and try again'
     : r.peak < 0.05 ? '⚠ Very quiet: come a little closer and try again' : `✓ Saved (${(n / ctx.sampleRate).toFixed(1)} s). Play it back, or tap Next.`;
@@ -214,6 +226,18 @@ function refNote(midi, dur) {
   }
   return dur;
 }
+// a soft, steady note to sing against, for as long as the recording runs
+// (headphones only: through a speaker it would end up in the recording)
+function guideNote(midi) {
+  const f = 440 * Math.pow(2, (midi - 69) / 12), t = ctx.currentTime, g = ctx.createGain();
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.12, t + 0.3);
+  g.connect(ctx.destination);
+  const oscs = [[1, 1, 'triangle'], [2, 0.2, 'sine']].map(([mul, lvl, type]) => {
+    const o = ctx.createOscillator(), og = ctx.createGain(); o.type = type; o.frequency.value = f * mul; og.gain.value = lvl;
+    o.connect(og).connect(g); o.start(t); return o;
+  });
+  return () => { const e = ctx.currentTime; g.gain.cancelScheduledValues(e); g.gain.setTargetAtTime(0, e, 0.05); oscs.forEach((o) => o.stop(e + 0.4)); };
+}
 // the sung pitch from the last ~0.2 s, by autocorrelation, compared with the target
 function pitchReport(midi) {
   const rec = recording && recording.recent; if (!rec || !rec.length) return '';
@@ -261,9 +285,10 @@ function zip(files) {
   return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
 }
 async function exportAll() {
-  const files = S[scriptId].lines.filter(([f]) => takes[f]).map(([f]) => ({ name: `${f}.wav`, data: wav(takes[f]) }));
+  const who = isChoir() && slug(singer) ? slug(singer) : '';
+  const files = S[scriptId].lines.filter(([f]) => takes[f]).map(([f]) => ({ name: `${who ? who + '_' : ''}${f}.wav`, data: wav(takes[f]) }));
   if (!files.length) return;
-  const name = `${scriptId}-voice.zip`, blob = zip(files);
+  const name = `${scriptId}${who ? '-' + who : ''}-voice.zip`, blob = zip(files);
   const asFile = new File([blob], name, { type: 'application/zip' });
   // on a phone, the share sheet can send it straight to the Claude app
   if (navigator.canShare && navigator.canShare({ files: [asFile] })) {
@@ -279,7 +304,9 @@ const line = () => S[scriptId].lines[idx];
 function render() {
   const sc = S[scriptId], [file, text, hint] = line();
   $('num').textContent = `Line ${idx + 1} of ${sc.lines.length}`;
-  $('file').textContent = `${file}.wav`;
+  const who = isChoir() && slug(singer) ? slug(singer) + '_' : '';
+  $('file').textContent = `${who}${file}.wav`;
+  $('choir-opts').hidden = !isChoir();
   $('text').textContent = text;
   $('hint').textContent = line()[3] != null || sc.sounds ? hint : `On screen: ${hint}. ${sc.tip}`;
   $('note').hidden = line()[3] == null;
@@ -314,7 +341,26 @@ $('script').onchange = async (e) => {
   try { localStorage.setItem('booth.script', scriptId); } catch (err) { /* fine */ }
   await loadTakes(); go(0);
 };
-$('rec').onclick = () => (recording ? stopRec() : startRec());
+$('rec').onclick = () => {
+  if (recording) return stopRec();
+  if (isChoir() && !slug(singer)) { $('singer').focus(); $('status').textContent = 'First, type the singer\'s name above.'; return; }
+  startRec();
+};
+$('singer').value = singer;
+$('hp').checked = headphones;
+// a different singer: their own takes, picking up at their first unrecorded line
+$('singer').onchange = async (e) => {
+  if (recording) stopRec();
+  singer = e.target.value.trim();
+  try { localStorage.setItem('booth.singer', singer); } catch (err) { /* fine */ }
+  await loadTakes();
+  const first = S[scriptId].lines.findIndex(([f]) => !takes[f]);
+  go(first < 0 ? 0 : first);
+};
+$('hp').onchange = (e) => {
+  headphones = e.target.checked;
+  try { localStorage.setItem('booth.hp', headphones ? '1' : '0'); } catch (err) { /* fine */ }
+};
 $('play').onclick = () => (playing ? stopPlay() : play());
 $('prev').onclick = () => go(idx - 1);
 $('next').onclick = () => {
@@ -326,8 +372,8 @@ $('export').onclick = async () => { await exportAll(); $('clear').hidden = false
 $('note').onclick = () => { if (ctx && !recording) refNote(line()[3], 1.4); };
 // once a batch is saved and sent, its takes can go, to free up the phone
 $('clear').onclick = async () => {
-  if (!confirm('Delete the takes for this script from this device? Only do this once the zip has reached Claude.')) return;
-  for (const [f] of S[scriptId].lines) { if (takes[f]) { delete takes[f]; await store(`${scriptId}/${f}`, null); } }
+  if (!confirm((isChoir() && singer ? singer + ': ' : '') + 'Delete the takes for this script from this device? Only do this once the zip has reached Claude.')) return;
+  for (const [f] of S[scriptId].lines) { if (takes[f]) { delete takes[f]; await store(`${storeId()}/${f}`, null); } }
   $('clear').hidden = true; go(0);
 };
 $('allow').onclick = async () => {
@@ -352,7 +398,7 @@ $('mic').onchange = async (e) => {
   const first = S[scriptId].lines.findIndex(([f]) => !takes[f]);
   go(first < 0 ? 0 : first);
 })();
-window.booth = { takes, get ctx() { return ctx; }, zip, wav,
+window.booth = { takes, get ctx() { return ctx; }, zip, wav, guiding: () => !!(recording && recording.guide),
   // for tests: read the pitch of a made-up tone against a target note
   pitchOf(midi, hz) {
     const sr = ctx.sampleRate, x = new Float32Array(4096).map((_, i) => 0.3 * Math.sin(2 * Math.PI * hz * i / sr) + 0.1 * Math.sin(4 * Math.PI * hz * i / sr));
