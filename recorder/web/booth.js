@@ -281,7 +281,7 @@ function render() {
   $('num').textContent = `Line ${idx + 1} of ${sc.lines.length}`;
   $('file').textContent = `${file}.wav`;
   $('text').textContent = text;
-  $('hint').textContent = line()[3] != null ? hint : `On screen: ${hint}. ${sc.tip}`;
+  $('hint').textContent = line()[3] != null || sc.sounds ? hint : `On screen: ${hint}. ${sc.tip}`;
   $('note').hidden = line()[3] == null;
   $('rec').textContent = recording ? 'Stop' : takes[file] ? 'Redo' : 'Record';
   $('play').disabled = !takes[file];
@@ -301,8 +301,13 @@ function go(i) {
   render();
 }
 
-$('script').innerHTML = '<optgroup label="Tutorials">' + Object.entries(S).filter(([, s]) => !s.group).map(([id, s]) => `<option value="${id}">${s.title}</option>`).join('') + '</optgroup>'
-  + '<optgroup label="Choir session">' + Object.entries(S).filter(([, s]) => s.group).map(([id, s]) => `<option value="${id}">${s.title.replace('Choir · ', '')}</option>`).join('') + '</optgroup>';
+// the menu, in groups: tutorials, the choir session, Angelio
+const GROUP_LABEL = { '': 'Tutorials', Choir: 'Choir session', Angelio: 'Angelio apps' };
+$('script').innerHTML = Object.entries(GROUP_LABEL).map(([g, label]) => {
+  const opts = Object.entries(S).filter(([, s]) => (s.group || '') === g)
+    .map(([id, s]) => `<option value="${id}">${s.title.replace(/^(Choir|Angelio) · /, '')}</option>`).join('');
+  return opts ? `<optgroup label="${label}">${opts}</optgroup>` : '';
+}).join('');
 $('script').value = scriptId;
 $('script').onchange = async (e) => {
   scriptId = e.target.value;
@@ -316,7 +321,7 @@ $('next').onclick = () => {
   if (idx === S[scriptId].lines.length - 1) { if (recording) stopRec(); $('export').scrollIntoView({ behavior: 'smooth' }); return; }
   go(idx + 1);
 };
-$('list').onclick = (e) => { const li = e.target.closest('li'); if (li) go(+li.dataset.i); };
+$('list').onclick = (e) => { const li = e.target.closest('li'); if (li) { go(+li.dataset.i); document.querySelector('.card').scrollIntoView({ behavior: 'smooth', block: 'start' }); } };
 $('export').onclick = async () => { await exportAll(); $('clear').hidden = false; };
 $('note').onclick = () => { if (ctx && !recording) refNote(line()[3], 1.4); };
 // once a batch is saved and sent, its takes can go, to free up the phone

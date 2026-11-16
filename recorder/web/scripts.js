@@ -87,3 +87,17 @@ window.SCRIPTS = {
   }
   window.noteName = name;
 })();
+
+// ---------- Angelio: the letter sounds for Letter Lane and Read Aloud ----------
+// The same list as angelio.org/admin/sounds (built from the apps' word lists,
+// 2026-11-16). Each file is named after the sound, as the apps store it.
+(function () {
+  const GROUPS = [["Letters",[["sss","s (sun, bus)"],["ah","a (apple, cat)"],["tuh","t (tiger, cat)"],["puh","p (pig, map)"],["ih","i (iguana, pig)"],["nnn","n (nose, sun) · kn (knot, knife)"],["mmm","m (moon, map) · mb (lamb, thumb)"],["duh","d (dog, bed)"],["guh","g (goat, pig)"],["aw","o (octopus, dog) · a (watch)"],["kuh","c (cat, cup) · k (kite, king) · ck (chick, duck)"],["eh","e (egg, hen)"],["uh","u (umbrella, sun)"],["rrr","r (rabbit, ran) · wr (write, wrench)"],["huh","h (hat, hen)"],["buh","b (bus, bed)"],["fff","f (fish, fin)"],["lll","l (lion, log) · ll (shell)"],["ay","a (cake, snake) · ai (rain, snail) · ay (day, play)"],["eye","i (kite, five) · igh (night, light)"],["oh","o (bone, rose) · oa (boat, goat) · ow (snow, bow)"],["z","s (rose)"],["yoo","u (cube, cute)"],["oo","u (tube)"]]],["Kindergarten chunks",[["shh","sh (ship, shell)"],["chuh","ch (chick, chip) · tch (watch, catch)"],["thuh","th (bath, thin)"],["wuh","w (with, wing)"]]],["1st grade chunks",[["ing","ing (ring, king)"],["unk","unk (skunk, junk)"],["juh","j (junk, jump) · dge (bridge, badge)"],["fruh","fr (frog)"],["fluh","fl (flag)"],["druh","dr (drum)"],["kruh","cr (crab)"],["sluh","sl (sled)"],["nnd","nd (hand, bend)"],["fft","ft (gift)"],["llk","lk (milk)"],["nnt","nt (tent)"],["stuh","st (stop)"],["snuh","sn (snap)"],["truh","tr (trip)"],["gruh","gr (grin)"],["kluh","cl (clap)"],["pluh","pl (plan)"],["mmp","mp (jump, lamp)"],["sst","st (fast)"],["vvv","v (five)"]]],["2nd grade chunks",[["ee","ee (bee, tree) · ea (leaf, peach)"],["ar","ar (car, star)"],["or","or (corn, fork)"],["er","ir (bird, girl) · ur (purse, turn) · er (her, fern)"],["oy","oi (coin, soil) · oy (boy, toy)"],["ow","ou (cloud, house) · ow (cow, owl)"]]],["3rd grade chunks",[["ong","ong (wrong)"]]]];
+  const lines = [];
+  for (const [group, items] of GROUPS) for (const [sound, uses] of items) {
+    lines.push([sound, `"${sound}"   as in ${uses.replace(/ · /g, ', ')}`, `${group}. Say just the sound, once, short and clear. For t, p, k and the like, a quick sound with only a whisper of air, not "tuh-uh".`]);
+  }
+  for (const [id, who] of [['f', 'Mom'], ['m', 'Dad']]) {
+    window.SCRIPTS['angelio-sounds-' + id] = { title: 'Angelio · letter sounds (' + who + "'s voice)", group: 'Angelio', sounds: true, tip: '', lines };
+  }
+})();
