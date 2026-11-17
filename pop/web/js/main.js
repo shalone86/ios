@@ -114,21 +114,23 @@ function showHint() {
 // the pads get whatever room the other rows leave (sideways: the right-hand side)
 function fit() {
   const app = $('app'), grid = $('grid');
-  const wide = innerWidth > innerHeight * 1.15 && innerHeight < 700;
+  const VH = (window.visualViewport && visualViewport.height) || innerHeight;
+  const wide = innerWidth > VH * 1.15 && VH < 700;
   document.body.classList.toggle('wide', wide);
   let size;
-  if (wide) size = Math.min(innerHeight - 28, innerWidth * 0.55);
+  if (wide) size = Math.min(VH - 28, innerWidth * 0.55);
   else {
     const cs = getComputedStyle(app), pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
     const rows = [...app.children].filter((el) => el !== grid && !el.hidden && el.offsetParent !== null);
     const used = rows.reduce((a, el) => a + el.offsetHeight, 0) + 10 * rows.length + pad;
-    size = Math.min(app.clientWidth - 28, innerHeight - used - 6);
+    size = Math.min(app.clientWidth - 28, Math.min(VH, app.clientHeight) - used - 6);
   }
   const px = Math.max(200, Math.floor(size));
   grid.style.width = grid.style.maxWidth = `${px}px`;
   grid.style.gap = `${Math.round(px * 0.03)}px`;   // a % gap is measured against the height, which overlaps rows
 }
 addEventListener('resize', fit);
+if (window.visualViewport) visualViewport.addEventListener('resize', fit);
 if (document.fonts) document.fonts.ready.then(fit);
 const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 2000); };
 
@@ -340,35 +342,48 @@ $('lock-clear').onclick = () => {
 $('lock-done').onclick = () => { lockStep = null; drawAll(); };
 
 // ---------- sheets ----------
+// Menus work the way Boba Beats' do: each one gets a fresh body (so its
+// handlers go with it), rises with a little bounce, and can be pulled down
+// to close (it follows the finger, and springs back if not pulled far).
+let sheetBusy = false;
 function openSheet(html, wire) {
-  const sh = $('sheet');
-  sh.innerHTML = `<div class="grab" aria-hidden="true"></div><button class="x" aria-label="Close">✕</button>${html}`;
-  sh.style.transform = ''; sh.hidden = false; $('scrim').hidden = false; sh.scrollTop = 0;
-  sh.querySelector('.x').onclick = closeSheet;
-  if (wire) wire(sh);
+  const sh = $('sheet'), body = $('sheet-body'), root = document.createElement('div');
+  root.innerHTML = html;
+  body.textContent = ''; body.appendChild(root);
+  sh.hidden = false; $('scrim').hidden = false;
+  sh.style.transform = ''; sh.style.animation = 'none'; void sh.offsetWidth; sh.style.animation = '';
+  sh.scrollTop = 0;
+  if (wire) wire(root);
 }
-const closeSheet = () => { $('sheet').hidden = true; $('scrim').hidden = true; };
-// pull a menu down to close it (from its handle, or anywhere while it is scrolled to the top)
-{
-  const sh = $('sheet'); let drag = null;
-  sh.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('input,button:not(.grab)') && !e.target.closest('.grab')) return;
-    if (sh.scrollTop > 0 && !e.target.closest('.grab')) return;
-    drag = { y: e.clientY, id: e.pointerId, dy: 0 };
-  });
-  sh.addEventListener('pointermove', (e) => {
-    if (!drag || drag.id !== e.pointerId) return;
-    drag.dy = Math.max(0, e.clientY - drag.y);
-    if (drag.dy > 6) { sh.style.transition = 'none'; sh.style.transform = `translateY(${drag.dy}px)`; }
-  });
-  const end = (e) => {
-    if (!drag || drag.id !== e.pointerId) return;
-    const dy = drag.dy; drag = null; sh.style.transition = '';
-    if (dy > 90) closeSheet(); else sh.style.transform = '';
-  };
-  sh.addEventListener('pointerup', end); sh.addEventListener('pointercancel', end);
+function closeSheet() {
+  if (sheetBusy) return;
+  $('sheet').hidden = true; $('scrim').hidden = true; $('sheet').style.transform = ''; $('sheet-body').textContent = '';
 }
 $('scrim').onclick = closeSheet;
+{
+  const sh = $('sheet');
+  let startY = null, pulling = false, dy = 0;
+  sh.addEventListener('touchstart', (e) => {
+    startY = (sh.scrollTop <= 0 && e.target.tagName !== 'INPUT' && !sheetBusy) ? e.touches[0].clientY : null;
+    pulling = false; dy = 0;
+  }, { passive: true });
+  sh.addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    dy = e.touches[0].clientY - startY;
+    if (!pulling && dy > 10) pulling = true;
+    if (!pulling) { if (dy < -6) startY = null; return; }
+    e.preventDefault();
+    sh.style.animation = 'none';
+    sh.style.transform = `translateY(${Math.max(0, dy)}px)`;
+  }, { passive: false });
+  const end = () => {
+    if (pulling && dy > 90) closeSheet();
+    else if (pulling) { sh.style.transition = 'transform .18s'; sh.style.transform = ''; setTimeout(() => { sh.style.transition = ''; }, 200); }
+    startY = null; pulling = false;
+  };
+  sh.addEventListener('touchend', end);
+  sh.addEventListener('touchcancel', end);
+}
 
 $('kit').onclick = () => openSheet(`<h3>Flavours</h3>${KIT_ORDER.map((id) => {
   const k = KITS[id];
@@ -404,12 +419,12 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <button class="big" data-boba="1">🧋<span>Send to Boba Beats<small>${window.PopNative ? 'saves a Boba song: open it there from its song menu → Import song file' : 'opens Boba with these drums and this beat, ready to add bass and chords'}</small></span></button>
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
-  <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">How it works</button></div>
+  <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">▶ How it works</button></div>
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
   ${window.PopNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? '' : '<h4>On Android</h4><a class="big" href="PopPads.apk" download style="text-decoration:none;color:inherit">📱<span>Get the Android app<small>works offline, saves beats to your Music folder</small></span></a>'}`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
-  if (e.target.closest('[data-how]')) { showHow(); return; }
+  if (e.target.closest('[data-how]')) { closeSheet(); showTour(); return; }
   if (e.target.closest('[data-boba]')) {
     const st = s.querySelector('#s-status');
     const bars = song.chain.length > 1 ? song.chain : [song.cur];
@@ -444,20 +459,7 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   } catch (err) { st.textContent = `Could not save: ${err.message}`; }
 });
 
-// ---------- how it works ----------
-const HOW = `<h3>How Pop Pads works</h3><ul class="how-list">
-  <li><i>👆</i><span><b>Tap a bubble</b> to play its drum. The bottom row is kicks and snares, hats above, then toms and percussion, cymbals and toys on top.</span></li>
-  <li><i>✋</i><span><b>Hold a bubble</b> and it repeats in time. While holding, <b>slide up</b> to stutter the beat (further = tighter), <b>slide down</b> to jumble it. Let go to snap back.</span></li>
-  <li><i>▶</i><span><b>Play</b> loops the pattern. <b>●</b> records: from a stop you get a bar of clicks first, then everything you tap is written in, snapped to the beat. <b>♩</b> turns the metronome on.</span></li>
-  <li><i>🔢</i><span><b>Steps</b> shows one drum at a time as 16 steps: pick a drum from the strip, tap the steps where it plays. Its sliders change its pitch, length, filter, volume, crush, LFO and nudge (a touch early or late); the <b>Mix</b> tab has the whole beat's knobs.</span></li>
-  <li><i>✨</i><span><b>Hold a step</b> to give that one hit its own settings: a higher pitch, more crush, nudged off the grid… Steps with their own settings get a dot. Tap Done when finished.</span></li>
-  <li><i>🎚</i><span><b>Record knob moves</b>: while ● is recording, hold and move any knob and it is written into the pattern, so the sweep plays back every loop. Knobs with moves show ◆. Clear them from ☰.</span></li>
-  <li><i>1</i><span><b>Patterns 1–8</b>: tap one to work on it. <b>Hold</b> one to copy the current pattern into it. <b>Chain</b>: tap it, tap patterns in the order to play them, tap done.</span></li>
-  <li><i>🥤</i><span><b>Flavours</b> (top) swap the whole kit and keep your beat. <b>bpm</b> sets the tempo, or tap the beat.</span></li>
-  <li><i>🎛</i><span><b>Filter</b> left darkens, right thins. <b>Drive</b> warms, <b>Crush</b> crunches, <b>Swing</b> shuffles. <b>LFO</b> moves the filter, volume or pitch in time.</span></li>
-  <li><i>💾</i><span><b>☰</b> saves the beat: a loop (WAV), the pattern for Logic (MIDI), or every drum on its own (stems).</span></li>
-</ul>`;
-const showHow = () => openSheet(HOW.replace('</h3>', '</h3><button class="watch" id="watch">▶ Watch the video · 1½ min</button>'), (sh) => { sh.querySelector('#watch').onclick = () => { closeSheet(); showTour(); }; });
+// ---------- how it works: the video ----------
 // the video tutorial; the beat stops while it plays
 function showTour() {
   const box = $('tour'), v = $('tour-video');
@@ -468,7 +470,7 @@ function showTour() {
 const closeTour = () => { $('tour-video').pause(); $('tour').hidden = true; };
 $('tour-close').onclick = closeTour;
 $('tour-video').onended = closeTour;
-$('how-start').onclick = () => { $('start').classList.add('gone'); start(); showHow(); };
+$('how-start').onclick = () => { $('start').classList.add('gone'); start(); showTour(); };
 
 // ---------- go ----------
 $('go').onclick = async () => { $('start').classList.add('gone'); await start(); };

@@ -218,20 +218,25 @@ const rendered = await page.evaluate(async () => {
 });
 check(rendered > 0.001, 'saved loops include the knob moves and step settings');
 
-// menus: a close button, and pulling down closes them
+// menus (Boba's): tap outside to close; a short pull springs back, a long pull closes
 await page.click('#bpm');
-await page.click('#sheet .x');
-const closedX = await page.evaluate(() => document.getElementById('sheet').hidden);
+await page.click('#scrim', { position: { x: 20, y: 20 } });
+const closedTap = await page.evaluate(() => document.getElementById('sheet').hidden);
 await page.click('#menu');
 const apk = await page.evaluate(() => !!document.querySelector('#sheet a[href="PopPads.apk"]'));
-await page.evaluate(async () => {
-  const g = document.querySelector('#sheet .grab'), b = g.getBoundingClientRect();
-  const ev = (t, y) => g.dispatchEvent(new PointerEvent(t, { pointerId: 77, clientX: b.left + 20, clientY: y, bubbles: true }));
-  ev('pointerdown', b.top + 5); for (let y = 10; y <= 160; y += 30) { ev('pointermove', b.top + y); await new Promise((r) => setTimeout(r, 16)); } ev('pointerup', b.top + 160);
-});
-const closedDrag = await page.evaluate(() => document.getElementById('sheet').hidden);
-check(closedX && closedDrag && apk, 'menus close with ✕ or by pulling down; ☰ links the Android app');
-await page.click('#menu'); await page.click('[data-how]'); await page.click('#watch'); await page.waitForTimeout(1200);
+const pull = (to) => page.evaluate(async (dist) => {
+  const sh = document.getElementById('sheet'), b = sh.getBoundingClientRect(), x = b.left + 60, y0 = b.top + 20;
+  const t = (y) => new Touch({ identifier: 9, target: sh, clientX: x, clientY: y });
+  const fire = (type, y) => sh.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t(y)], changedTouches: [t(y)], bubbles: true, cancelable: true }));
+  fire('touchstart', y0); let moved = '';
+  for (let y = 0; y <= dist; y += 20) { fire('touchmove', y0 + y); await new Promise((r) => setTimeout(r, 16)); moved = sh.style.transform; }
+  fire('touchend', y0 + dist); await new Promise((r) => setTimeout(r, 260));
+  return { moved, hidden: sh.hidden, after: sh.style.transform };
+}, to);
+const short = await pull(60), long = await pull(200);
+check(closedTap && apk && /translateY\(6\dpx\)/.test(short.moved) && !short.hidden && short.after === '' && long.hidden,
+  `menus follow the finger (${short.moved}), spring back from a short pull, close from a long one or a tap outside; ☰ links the Android app`);
+await page.click('#menu'); await page.click('[data-how]'); await page.waitForTimeout(1200);
 const tour = await page.evaluate(() => ({ open: !document.getElementById('tour').hidden, src: document.getElementById('tour-video').currentSrc, ready: document.getElementById('tour-video').readyState }));
 await page.click('#tour-close');
 const tourClosed = await page.evaluate(() => document.getElementById('tour').hidden);
