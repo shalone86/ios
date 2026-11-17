@@ -1,7 +1,7 @@
 @font-face { font-family: 'Fredoka'; font-weight: 400; font-display: swap; src: url('../fonts/fredoka-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Fredoka'; font-weight: 600; font-display: swap; src: url('../fonts/fredoka-latin-600-normal.woff2') format('woff2'); }
 
-/* the flavour colours (set from the kit): dark, middle, light */
+/* the flavor colors (set from the kit): dark, middle, light */
 :root { --c0: #3a160c; --c1: #8b3a1c; --c2: #d9893f; --ink: #fff8ef; --dim: rgba(255, 248, 239, .65);
   --glass: rgba(255, 255, 255, .12); --line: rgba(255, 255, 255, .22);
   --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); }
@@ -37,6 +37,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .pat.now { transform: scale(1.12); box-shadow: 0 0 12px var(--c2); }
 .pat sup { position: absolute; top: -6px; right: -4px; font-size: 10px; background: var(--ink); color: var(--c0); border-radius: 8px; padding: 0 4px; line-height: 15px; }
 #chain { margin-left: 4px; flex: 0 0 auto; }
+#undo { flex: 0 0 auto; width: 30px; }
+.chip:disabled { opacity: .35; }
 
 #bar { display: flex; align-items: center; gap: 10px; }
 .seg { flex: 1; min-width: 0; display: flex; background: var(--glass); border: 1px solid var(--line); border-radius: 20px; padding: 3px; }

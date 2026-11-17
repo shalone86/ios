@@ -217,7 +217,7 @@ if (await say('jumble', 'Slide down to jumble', 'let go, and it snaps back', 'lo
   await wait(300); await touch(pad(10), 3800, [[500, 0], [900, -90], [2000, -120]]);
   await finishLine();
 }
-if (await say('flavor', 'Flavours', 'a different kit · the beat stays', 'high')) {
+if (await say('flavor', 'Flavors', 'a different kit · the beat stays', 'high')) {
   await wait(500); await press('#kit'); await wait(900);
   await press('[data-kit="lime"]'); await wait(1600);
   await press('[data-kit="cream"]'); await wait(1600);
@@ -259,9 +259,9 @@ if (await say('locks', 'Hold a step', 'that one hit gets its own settings', 'hig
 }
 await press('[data-mode="play"]'); await wait(400);
 if (await say('patterns', 'Eight patterns', 'hold a number to copy your beat', 'low')) {
-  await wait(600); await touch('[data-pat="1"]', 800); await wait(300);
-  await page.evaluate(() => { const b = document.querySelector('[data-pat="1"]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); setTimeout(() => { b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); b.click(); }, 650); });
-  await wait(1200);
+  // hold a number: its menu offers to copy the current pattern there
+  await wait(600); await touch('[data-pat="1"]', 750); await wait(900);
+  await press('[data-p="copy"]'); await wait(1000);
   await finishLine();
 }
 if (await say('chain', 'Chain', 'tap patterns in order, then done', 'low')) {

@@ -1192,6 +1192,15 @@ async function fromPopPads() {
   return p;
 }
 
+// Small speakers: on by default on a phone (its speaker cannot play the
+// deepest bass), off elsewhere; the setting overrides either way.
+function smallSpeakers(st) {
+  if (st.small === 'on') return true;
+  if (st.small === 'off') return false;
+  return matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600;
+}
+window.bubbloopSmall = smallSpeakers;
+
 async function boot() {
   mountIcons();
   $('logo-bubbles').innerHTML = [0, 1, 2, 3, 4].map((i) => `<div class="bub hue-${i}" style="--bob:${2.600 + i * 0.4}s;--delay:${-i * 0.7}s"><div class="orb"><div class="face">${FACE}</div></div></div>`).join('');
@@ -1201,6 +1210,7 @@ async function boot() {
   engine.tapOffset = (app.settings.tapOffset || 0) / 1000;
   engine.metroPlay = !!app.settings.metroPlay;
   engine.smooth = app.settings.smooth || 'auto';
+  engine.small = smallSpeakers(app.settings);
   engine.localSound = !app.settings.midi || app.settings.midi.localSound !== false;
   engine.project = app.project;
   bind();

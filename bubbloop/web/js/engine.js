@@ -24,6 +24,7 @@ export class Engine {
     this.loopSong = false;
     this.tapOffset = 0;
     this.acc = 0;              // accidental applied to hand-played notes: -1, 0, +1
+    this.small = false;        // small speakers (a phone): trim the bass it cannot play
     this.smooth = 'off';       // 'on': bigger audio buffer, for Bluetooth crackle        // user latency trim, seconds
     this.metroPlay = false;
     this.localSound = true;
@@ -85,6 +86,7 @@ export class Engine {
     try { await ensureSamples(sampleIds(project)); prepareNatural(project, { evict: true }); } catch (e) { /* storage unavailable: sampler tracks stay silent */ }
     this.g = buildGraph(this.ctx, project, kit);
     this.g.master.output.gain.value = this.localSound ? 1 : 0;
+    this.g.master.small(this.small);
     this.applyLatches();
     this.refreshMutes();
     if (this.midiOut && this.midiOut.syncAll) this.midiOut.syncAll();
@@ -130,6 +132,7 @@ export class Engine {
   syncTrack(track) { if (this.g) this.g.syncTrack(track); if (this.midiOut && this.midiOut.syncTrack) this.midiOut.syncTrack(track); }
   syncAll() { if (this.g) this.project.tracks.forEach((t) => this.g.syncTrack(t)); if (this.midiOut && this.midiOut.syncAll) this.midiOut.syncAll(); }
   removeTrack(id) { if (this.g) this.g.removeTrack(id); }
+  setSmall(on) { this.small = !!on; if (this.g) this.g.master.small(this.small); }
   setMaster(id) { this.project.master = id; if (this.g) this.g.master.set(id); }
   setSpace(space) { this.project.space = space; if (this.g) this.g.rack.setSpace(space); }
   setLocalSound(on) {

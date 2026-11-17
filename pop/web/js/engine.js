@@ -11,12 +11,31 @@ export const LFO_RATES = [['1/4', 1], ['1/2', 2], ['1 bar', 4], ['2 bars', 8], [
 export const LFO_TARGETS = ['filter', 'volume', 'pitch'];
 // a little stereo spread, by pad slot: hats and cymbals right, percussion around
 const PANS = [0, 0, 0.04, -0.04, 0.22, 0.22, -0.12, -0.25, 0.3, 0, -0.3, 0.28, -0.2, 0.32, -0.15, 0.15];
-const CHH = 4, OHH = 5;   // the closed hat cuts off the open one, as on real machines
+const CHH = 4, OHH = 5;
+// how much of each pad reaches the reverb: snares, claps and toms most,
+// kicks and the sub hardly at all, so it sounds like a room, not a wash
+const SENDS = [0.06, 0.03, 0.9, 1, 0.35, 0.45, 0.7, 0.6, 0.75, 0.75, 0.75, 0.6, 0.4, 0.4, 0.7, 0.7];
+// a small, bright drum room: 1.1 s of decaying noise, darker as it fades
+function room(ctx) {
+  const sr = ctx.sampleRate, n = Math.floor(sr * 1.1), b = ctx.createBuffer(2, n, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c); let s = 7 + c * 977, lp = 0, e = 0;
+    for (let i = 0; i < n; i++) {
+      s = (s * 16807) % 2147483647;
+      const x = i / sr, w = s / 1073741823.5 - 1;
+      lp += (0.35 + 0.6 * Math.exp(-x * 5)) * (w - lp);
+      d[i] = lp * Math.exp(-x * 6.2) * Math.min(1, x / 0.004);
+      e += d[i] * d[i];
+    }
+    const k = 1 / Math.sqrt(e); for (let i = 0; i < n; i++) d[i] *= k;
+  }
+  return b;
+}   // the closed hat cuts off the open one, as on real machines
 
 export function newSong() {
   return {
     v: 1, kit: 'cola', bpm: 92, swing: 0, metro: false,
-    fx: { filter: 0, drive: 0.15, crush: 0, lfo: 0, lfoRate: 2, lfoTo: 'filter' },
+    fx: { filter: 0, drive: 0.15, crush: 0, verb: 0, lfo: 0, lfoRate: 2, lfoTo: 'filter' },
     tweaks: {},
     patterns: Array.from({ length: PATTERNS }, () => new Array(16).fill(0)),
     motion: Array.from({ length: PATTERNS }, () => ({ mix: {}, pads: {} })),
@@ -26,7 +45,7 @@ export function newSong() {
 // a drum's own settings: pitch (semitones), length, filter (-1 dark … 1 thin),
 // volume, crush, and its own LFO (amount, and what it moves)
 export const PAD_KEYS = ['pitch', 'len', 'filt', 'vol', 'crush', 'lfo', 'nudge'];
-export const MIX_KEYS = ['filter', 'drive', 'crush', 'lfo'];
+export const MIX_KEYS = ['filter', 'drive', 'crush', 'verb', 'lfo'];
 export const tweakOf = (song, i) => {
   const t = { ...((song.tweaks[song.kit] || [])[i] || {}) };
   if (t.tone != null && t.filt == null) t.filt = t.tone < 1 ? t.tone - 1 : 0;      // the old one-way Tone knob
@@ -106,6 +125,11 @@ export class Graph {
     this.limit = ctx.createDynamicsCompressor();
     this.limit.threshold.value = -6; this.limit.ratio.value = 12; this.limit.attack.value = 0.002; this.limit.release.value = 0.15;
     // the LFO: one sine wave, routed to the filter or the volume
+    // the reverb: a send per pad into one room, returned before the filter (so sweeps move it too)
+    this.verbIn = G(1); this.verbAmt = G(0);
+    this.verb = ctx.createConvolver(); this.verb.normalize = false; this.verb.buffer = room(ctx);
+    const vhp = ctx.createBiquadFilter(); vhp.type = 'highpass'; vhp.frequency.value = 250;
+    this.verbIn.connect(vhp).connect(this.verbAmt).connect(this.verb);
     this.lfoOsc = null; this.lfoToFilter = G(0); this.lfoToVol = G(0);
     this.lfoToFilter.connect(this.lp.detune); this.lfoToVol.connect(this.trem.gain);
     this.openHat = null;
@@ -115,6 +139,7 @@ export class Graph {
     let n = this.input.connect(this.pre).connect(this.shape).connect(this.makeup);
     if (this.crush) n = n.connect(this.crush);
     n.connect(this.hp).connect(this.lp).connect(this.trem).connect(this.master).connect(this.limit).connect(this.dest);
+    this.verb.connect(this.hp);
   }
   // the LFO starts its cycle at `at` (the top of the pattern when playing)
   restartLfo(at = this.ctx.currentTime) {
@@ -132,6 +157,7 @@ export class Graph {
     const push = 0.5 + 2.5 * fx.drive;
     T(this.pre.gain, push); T(this.makeup.gain, Math.tanh(2.5) / (2.5 * push) * (1 + fx.drive * 0.6));
     if (this.crush) T(this.crush.parameters.get('amount'), fx.crush);
+    T(this.verbAmt.gain, (fx.verb || 0) * 0.9);
     // one knob, two filters: left of centre closes the low-pass, right opens a high-pass
     const f = fx.filter;
     let lp = f < 0 ? 20000 * Math.pow(180 / 20000, -f) : 20000;
@@ -189,6 +215,7 @@ export class Graph {
     else if (f > 0.02) { const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.Q.value = 0.9; hp.frequency.value = 20 * Math.pow(3000 / 20, f); node = node.connect(hp); }
     const pan = ctx.createStereoPanner(); pan.pan.value = PANS[i];
     node.connect(g).connect(pan).connect(out);
+    if (out === this.input && SENDS[i]) { const sg = ctx.createGain(); sg.gain.value = SENDS[i]; pan.connect(sg).connect(this.verbIn); }
     src.start(t); src.stop(t + end + 0.02);
     if (i === CHH && this.openHat && this.openHat.until > t) {
       const o = this.openHat.g.gain; o.cancelScheduledValues(t); o.setValueAtTime(o.value, t); o.setTargetAtTime(0, t, 0.008);
@@ -209,8 +236,9 @@ export class PopEngine {
   constructor(ctx) {
     this.ctx = ctx; this.song = newSong(); this.bufs = null;
     this.playing = false; this.rec = false;
-    this.held = new Set();                 // pads held down for repeats
-    this.perf = { mode: null, size: 4, amount: 0, start: 0 };   // stutter / jumble while a pad is held
+    // pads held down: each repeats in time, and its own slide makes it
+    // stutter (faster rolls) or jumble (skips, jumps, off-beat hits)
+    this.held = new Map();                 // pad -> { mode: null | 'stutter' | 'jumble', amount }
     this.onStep = null;                    // (step, pattern) for the playhead
     this.onHit = null;                     // (pad) for the faces
     this.clock = null; this.skip = new Set(); this.bars = new Map();
@@ -274,8 +302,6 @@ export class PopEngine {
       if (!pat) return;
       // the step to read: itself, a looped window (stutter) or a random one (jumble)
       let src = s;
-      if (this.perf.mode === 'stutter') { const w = this.perf.size, a = this.perf.start; src = a + (((s - a) % w) + w) % w; }
-      else if (this.perf.mode === 'jumble' && Math.random() < this.perf.amount) src = Math.floor(Math.random() * STEPS);
       // recording: knobs being held are written onto this step
       if (this.rec) for (const m of this.touching.values()) laneOf(this.song, pi, m.scope, m.key, true)[s] = m.value;
       // the mix knobs for this step (their motion, or their own setting)
@@ -291,13 +317,27 @@ export class PopEngine {
         for (const m of this.touching.values()) if (m.scope === i) tw[m.key] = m.value;
         this.hit(i, Math.max(this.ctx.currentTime, t + (tw.nudge || 0) * sd), true, tw);
       }
-      if (this.onStep) { const d = Math.max(0, (t - this.ctx.currentTime) * 1000); setTimeout(() => this.onStep(s, pi, src !== s ? this.perf.mode : null), d); }
+      if (this.onStep) { const d = Math.max(0, (t - this.ctx.currentTime) * 1000); setTimeout(() => this.onStep(s, pi), d); }
     }
     // held pads repeat on every step (and are written in while recording)
-    for (const i of this.held) {
-      if (this.perf.mode && this.playing) continue;     // the pad's own repeat gives way to stutter/jumble
-      this.hit(i, t, true);
-      if (this.rec && this.playing) this.write(i, n);
+    const sd = stepDur(this.song.bpm);
+    for (const [i, h] of this.held) {
+      const tw = tweakOf(this.song, i);
+      if (this.rec && this.playing && n >= 0) this.write(i, n);
+      if (h.mode === 'stutter') {
+        // a roll: 2, 3 or 4 hits in the 16th, further up = faster
+        const k = h.amount > 0.66 ? 4 : h.amount > 0.33 ? 3 : 2;
+        for (let j = 0; j < k; j++) this.hit(i, t + (j * sd) / k, true, { ...tw, vol: tw.vol * (j ? 0.82 : 1) });
+      } else if (h.mode === 'jumble') {
+        // mischief on this drum only: sometimes it skips, jumps in pitch, or lands off the beat
+        const a = h.amount, r = Math.random();
+        if (r < 0.15 + 0.2 * a) continue;
+        const jumps = [0, 0, 12, -12, 7, -5, 5, 3];
+        const pitch = tw.pitch + (Math.random() < 0.3 + 0.5 * a ? jumps[Math.floor(Math.random() * jumps.length)] : 0);
+        const off = Math.random() < 0.35 * a ? sd * 0.5 : 0;
+        this.hit(i, t + off, true, { ...tw, pitch });
+        if (Math.random() < 0.25 * a) this.hit(i, t + off + sd * 0.25, true, { ...tw, pitch, vol: tw.vol * 0.7 });
+      } else this.hit(i, t, true, tw);
     }
   }
   hit(i, t = this.ctx.currentTime, quiet = false, tw = tweakOf(this.song, i)) {
@@ -325,22 +365,15 @@ export class PopEngine {
       if (k >= this.n) this.skip.add(`${i}:${k}`);
     }
   }
-  hold(i) { this.held.add(i); this.ensureClock(false); }
-  release(i) { this.held.delete(i); if (!this.held.size) this.setPerf(null); }
-  // slide up: stutter (bigger slide, smaller loop); slide down: jumble (bigger slide, more mixed up)
-  setPerf(mode, amount = 0) {
-    const s = this.playing ? mod16(this.n) : 0;
-    if (mode === 'stutter') {
-      const size = amount > 0.66 ? 1 : amount > 0.33 ? 2 : 4;
-      if (this.perf.mode !== 'stutter' || this.perf.size !== size) this.perf = { mode, size, amount, start: Math.floor(s / size) * size };
-    } else if (mode === 'jumble') this.perf = { mode, size: 0, amount: 0.3 + 0.7 * amount, start: 0 };
-    else this.perf = { mode: null, size: 4, amount: 0, start: 0 };
-  }
+  hold(i) { this.held.set(i, { mode: null, amount: 0 }); this.ensureClock(false); }
+  release(i) { this.held.delete(i); }
+  // a held pad's slide: up = stutter (further = faster), down = jumble (further = wilder)
+  setPerf(i, mode, amount = 0) { const h = this.held.get(i); if (h) { h.mode = mode; h.amount = amount; } }
   play(countIn = false) {
     if (this.ctx.state !== 'running') this.ctx.resume();
     this.playing = true; this.ensureClock(true, countIn);
   }
-  stop() { this.playing = false; this.rec = false; this.perf.mode = null; }
+  stop() { this.playing = false; this.rec = false; }
 }
 
 // ---------- offline: the chain (or a pattern) as audio ----------

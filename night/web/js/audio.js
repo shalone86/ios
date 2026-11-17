@@ -171,7 +171,7 @@ export class Drift {
     lim.threshold.value = -12; lim.ratio.value = 20; lim.attack.value = 0.003; lim.release.value = 0.4;
     // nothing below about 40 Hz: phone speakers only rattle and distort on it
     const sub1 = ctx.createBiquadFilter(), sub2 = ctx.createBiquadFilter();
-    sub1.type = sub2.type = 'highpass'; sub1.frequency.value = sub2.frequency.value = 42; sub1.Q.value = 0.54; sub2.Q.value = 1.31;
+    sub1.type = sub2.type = 'highpass'; sub1.frequency.value = sub2.frequency.value = 42; sub1.Q.value = -5.35; sub2.Q.value = 2.35;   // 4th-order Butterworth (Qs in dB)
     this.dry.connect(sub1); this.wet.connect(sub1); sub1.connect(sub2).connect(this.master);
     // a soft clipper after the limiter catches anything it is too slow for
     const clip = ctx.createWaveShaper(), cv = new Float32Array(2049);

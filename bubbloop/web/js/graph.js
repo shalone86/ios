@@ -424,7 +424,15 @@ function buildMaster(ctx, sh, presetId, offline) {
   const shaper = ctx.createWaveShaper();
   shaper.curve = sh.curves.soft; shaper.oversample = '2x';
   const output = ctx.createGain();
-  input.connect(hp).connect(low).connect(mid).connect(high).connect(glue).connect(dPre).connect(shaper).connect(dPost);
+  // Small speakers (a phone): a phone cannot play the deepest bass, and tries
+  // anyway, so it buzzes and rumbles. Two high-passes take away what it
+  // cannot play and a small lift around 110 Hz keeps the kick and bass
+  // punchy. Off, the filters sit at 20 Hz and 0 dB and change nothing.
+  const sp1 = ctx.createBiquadFilter(), sp2 = ctx.createBiquadFilter(), spLift = ctx.createBiquadFilter();
+  sp1.type = sp2.type = 'highpass'; sp1.frequency.value = sp2.frequency.value = 20;
+  sp1.Q.value = -5.35; sp2.Q.value = 2.35;     // a 4th-order Butterworth (Web Audio gives these Qs in dB)
+  spLift.type = 'peaking'; spLift.frequency.value = 110; spLift.Q.value = 1.1; spLift.gain.value = 0;
+  input.connect(sp1).connect(sp2).connect(spLift).connect(hp).connect(low).connect(mid).connect(high).connect(glue).connect(dPre).connect(shaper).connect(dPost);
   if (offline) {
     // export gets a proper look-ahead limiter afterwards (see master.js)
     dPost.connect(output);
@@ -436,6 +444,10 @@ function buildMaster(ctx, sh, presetId, offline) {
   }
   const m = {
     input, output,
+    small(on) {
+      const f = on ? 70 : 20, g = on ? 2 : 0, t = ctx.currentTime;
+      for (const [p, v] of [[sp1.frequency, f], [sp2.frequency, f], [spLift.gain, g]]) { p.cancelScheduledValues(t); p.setValueAtTime(p.value, t); p.linearRampToValueAtTime(v, t + 0.08); }
+    },
     set(id) {
       const p = masterById(id);
       low.gain.value = p.low; mid.gain.value = p.mid; high.gain.value = p.high;

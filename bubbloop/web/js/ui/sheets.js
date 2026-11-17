@@ -146,6 +146,8 @@ function project() {
     <div class="field"><span>Show note names</span><span style="flex:1"></span><button class="toggle ${st.names ? 'on' : ''}" data-set="names" aria-label="Note names"></button></div>
     <div class="field"><span>Advanced mode</span><span style="flex:1"></span><button class="toggle ${st.advanced ? 'on' : ''}" data-set="advanced" aria-label="Advanced mode"></button></div>
     <p class="sub">Adds a chord type per bubble in the Chords menu.</p>
+    <div class="field"><span>Small speakers</span><span style="flex:1"></span><button class="toggle ${app.engine.small ? 'on' : ''}" data-small="1" aria-label="Small speakers"></button></div>
+    <p class="sub">For a phone's own speaker: trims the deepest bass it can't play (which makes it buzz and rumble) and keeps the punch. Turn off on headphones or proper speakers. Exports are not affected.</p>
     <div class="field"><span>Smooth audio</span><span style="flex:1"></span><button class="toggle ${st.smooth === 'on' ? 'on' : ''}" data-smooth="1" aria-label="Smooth audio"></button></div>
     <p class="sub">Only for crackle on Bluetooth: a bigger audio buffer, steadier but slower to respond to taps.</p>
     <div class="field"><span>Keep old versions</span><span style="flex:1"></span><button class="toggle ${st.versions ? 'on' : ''}" data-set="versions" aria-label="Keep old versions"></button></div>
@@ -175,6 +177,12 @@ function project() {
       S.saveSettings(st);
       app.engine.metroPlay = !!st.metroPlay;
       if (k === 'names') renderAll();
+    });
+    on(root, '[data-small]', (b) => {
+      st.small = app.engine.small ? 'off' : 'on';
+      S.saveSettings(st);
+      app.engine.setSmall(st.small === 'on');
+      b.classList.toggle('on', app.engine.small);
     });
     on(root, '[data-smooth]', (b) => {
       st.smooth = st.smooth === 'on' ? 'off' : 'on';

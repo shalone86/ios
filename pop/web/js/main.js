@@ -30,7 +30,43 @@ function load() {
 }
 let song = load();
 let saveTimer = 0;
-const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(SAVE, JSON.stringify(song)); } catch (e) { /* full or private */ } }, 300); };
+const save = () => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(SAVE, JSON.stringify(song)); } catch (e) { /* full or private */ } }, 300);
+  remember();
+};
+
+// ---------- undo ----------
+// After each burst of editing (a drag, a recording pass, a clear…) the song
+// is snapshotted; ↶ steps back through them. Which pattern you are looking
+// at and the metronome are not edits, so they are left out.
+const UNDO_MAX = 40, undos = [];
+const snap = () => { const { cur, metro, ...rest } = song; return JSON.stringify(rest); };
+let lastSnap = snap(), snapTimer = 0;
+function remember() {
+  clearTimeout(snapTimer);
+  snapTimer = setTimeout(() => {
+    const now = snap();
+    if (now === lastSnap) return;
+    undos.push(lastSnap); if (undos.length > UNDO_MAX) undos.shift();
+    lastSnap = now; drawUndo();
+  }, 450);
+}
+function drawUndo() { const b = $('undo'); if (b) b.disabled = !undos.length; }
+async function undo() {
+  clearTimeout(snapTimer);
+  if (snap() !== lastSnap) { lastSnap = snap(); }        // an edit still settling counts as the latest step
+  else if (!undos.length) return;
+  else lastSnap = undos.pop();
+  const back = JSON.parse(lastSnap), kitWas = song.kit;
+  for (const k of Object.keys(song)) if (k !== 'cur' && k !== 'metro') delete song[k];
+  Object.assign(song, back);
+  song.cur = Math.min(song.cur, PATTERNS - 1);
+  if (eng) { if (song.kit !== kitWas) await eng.setKit(song.kit); eng.updateFx(); eng.bars.clear(); }
+  lockStep = null;
+  try { localStorage.setItem(SAVE, JSON.stringify(song)); } catch (e) { /* fine */ }
+  drawAll(); drawUndo(); toast('undone');
+}
 
 // ---------- drawing ----------
 const FACE = `<svg viewBox="0 0 64 40"><g fill="none" stroke="rgba(40,10,0,.75)" stroke-width="3.2" stroke-linecap="round">
@@ -69,7 +105,7 @@ function drawPatterns() {
   $('patterns').innerHTML = [...Array(PATTERNS).keys()].map((i) => {
     const o = order(i);
     return `<button class="pat ${i === song.cur ? 'cur' : ''} ${song.patterns[i].some(Boolean) ? 'has' : ''}" data-pat="${i}">${i + 1}${o.length ? `<sup>${o.join(',')}</sup>` : ''}</button>`;
-  }).join('') + `<button class="chip small ${chainEdit || song.chain.length > 1 ? 'on' : ''}" id="chain">${chainEdit ? 'done' : 'chain'}</button>`;
+  }).join('') + `<button class="chip small ${chainEdit || song.chain.length > 1 ? 'on' : ''}" id="chain">${chainEdit ? 'done' : 'chain'}</button><button class="chip small icon" id="undo" aria-label="Undo" ${undos.length ? '' : 'disabled'}>↶</button>`;
 }
 // how a knob's slider value maps to its setting
 const SCALE = { pitch: 1 };
@@ -108,7 +144,7 @@ function drawAll() {
 }
 function showHint() {
   $('hint').classList.remove('count');
-  $('hint').textContent = mode === 'play' ? 'hold a pad to repeat · slide up to stutter · slide down to jumble'
+  $('hint').textContent = mode === 'play' ? 'hold a pad to repeat it · slide up for rolls · slide down to jumble it'
     : lockStep != null ? `step ${lockStep + 1}: the sliders below set this hit only` : `tap steps for ${KITS[song.kit].pads[sel].name} · hold a step for its own settings`;
 }
 // the pads get whatever room the other rows leave (sideways: the right-hand side)
@@ -181,7 +217,6 @@ function letGo(id) {
   touches.delete(id); clearTimeout(t.timer);
   if (t.holding) eng.release(t.pad);
   t.el.classList.remove('rep', 'stutter', 'jumble');
-  if (![...touches.values()].some((x) => x.holding)) document.querySelectorAll('.pad').forEach((p) => p.classList.remove('stutter', 'jumble'));
 }
 $('grid').addEventListener('pointerdown', async (e) => {
   const pad = e.target.closest('.pad'), stepEl = e.target.closest('.step');
@@ -213,10 +248,11 @@ $('grid').addEventListener('pointerdown', async (e) => {
 });
 $('grid').addEventListener('pointermove', (e) => {
   const t = touches.get(e.pointerId); if (!t || !t.holding) return;
-  const dy = t.y0 - e.clientY, all = document.querySelectorAll('.pad');
-  if (dy > 24) { eng.setPerf('stutter', Math.min(1, (dy - 24) / 130)); all.forEach((p) => { p.classList.add('stutter'); p.classList.remove('jumble'); }); }
-  else if (dy < -24) { eng.setPerf('jumble', Math.min(1, (-dy - 24) / 130)); all.forEach((p) => { p.classList.add('jumble'); p.classList.remove('stutter'); }); }
-  else { eng.setPerf(null); all.forEach((p) => p.classList.remove('stutter', 'jumble')); }
+  // only the held pad changes: up = it rolls faster, down = it jumbles
+  const dy = t.y0 - e.clientY, el = t.el;
+  if (dy > 24) { eng.setPerf(t.pad, 'stutter', Math.min(1, (dy - 24) / 130)); el.classList.add('stutter'); el.classList.remove('jumble'); }
+  else if (dy < -24) { eng.setPerf(t.pad, 'jumble', Math.min(1, (-dy - 24) / 130)); el.classList.add('jumble'); el.classList.remove('stutter'); }
+  else { eng.setPerf(t.pad, null); el.classList.remove('stutter', 'jumble'); }
 });
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => $('grid').addEventListener(ev, (e) => letGo(e.pointerId)));
 let stepHold = null;
@@ -262,21 +298,37 @@ $('sounds').onclick = async (e) => {
 };
 
 // ---------- patterns and chains ----------
-let patHold = 0;
+let patHold = 0, holdDone = false;   // holdDone: the press that just ended was a long one (its click is not a tap)
+const isEmpty = (i) => !song.patterns[i].some(Boolean);
+const copyInto = (i) => {
+  song.patterns[i] = song.patterns[song.cur].slice();
+  motionOf(song, i); song.motion[i] = JSON.parse(JSON.stringify(motionOf(song, song.cur)));
+};
+const clearPattern = (i) => { song.patterns[i] = new Array(16).fill(0); motionOf(song, i); song.motion[i] = { mix: {}, pads: {} }; };
+function choose(i) { lockStep = null; song.cur = i; if (!chainEdit) song.chain = [i]; if (eng) eng.bars.clear(); save(); drawAll(); }
+// Boba-style: a menu of what can be done with a pattern
+function patternMenu(i, emptyAsk) {
+  const from = song.cur;
+  openSheet(`<h3>Pattern ${i + 1}${emptyAsk ? ' is empty' : ''}</h3>
+    ${emptyAsk ? `<button class="big" data-p="empty">✨<span>Start empty<small>a fresh pattern</small></span></button>` : ''}
+    ${i !== from && !isEmpty(from) ? `<button class="big" data-p="copy">📋<span>Copy pattern ${from + 1} here<small>${isEmpty(i) ? 'then change what you like' : `replaces what is in pattern ${i + 1} (↶ brings it back)`}</small></span></button>` : ''}
+    ${!emptyAsk && !isEmpty(i) ? `<button class="big" data-p="clear">🧽<span>Clear pattern ${i + 1}<small>every drum and knob move in it (↶ brings it back)</small></span></button>` : ''}
+    ${!emptyAsk && i !== from ? `<button class="big" data-p="go">▶<span>Go to pattern ${i + 1}</span></button>` : ''}`, (r) => r.onclick = (e) => {
+    const b = e.target.closest('[data-p]'); if (!b) return;
+    const what = b.dataset.p;
+    if (what === 'copy') { copyInto(i); toast(`pattern ${from + 1} copied into ${i + 1}`); }
+    if (what === 'clear') { clearPattern(i); toast(`pattern ${i + 1} cleared`); }
+    closeSheet(); choose(i);
+  });
+}
 $('patterns').addEventListener('pointerdown', (e) => {
+  holdDone = false;                     // any new press: the last long press is over
   const b = e.target.closest('[data-pat]'); if (!b || chainEdit) return;
   const i = +b.dataset.pat;
-  // hold a pattern to copy the current one into it
-  patHold = setTimeout(() => {
-    patHold = -1;
-    if (i === song.cur) return;
-    song.patterns[i] = song.patterns[song.cur].slice();
-    motionOf(song, i); song.motion[i] = JSON.parse(JSON.stringify(motionOf(song, song.cur)));
-    song.cur = i; save(); drawAll();
-    toast(`copied into pattern ${i + 1}`);
-  }, 550);
+  holdDone = false;                     // a new press: forget the last long press
+  patHold = setTimeout(() => { patHold = 0; holdDone = true; patternMenu(i, false); }, 500);
 });
-$('patterns').addEventListener('pointerup', () => { if (patHold > 0) clearTimeout(patHold); });
+['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => $('patterns').addEventListener(ev, () => { if (patHold > 0) { clearTimeout(patHold); patHold = 0; } }));
 $('patterns').onclick = (e) => {
   if (e.target.id === 'chain') {
     if (!chainEdit) { chainEdit = true; song.chain = []; toast('tap patterns in the order to play them'); }
@@ -284,14 +336,14 @@ $('patterns').onclick = (e) => {
     if (eng) eng.bars.clear();
     save(); drawAll(); return;
   }
+  if (e.target.id === 'undo') { undo(); return; }
   const b = e.target.closest('[data-pat]'); if (!b) return;
-  if (patHold === -1) { patHold = 0; return; }
+  if (holdDone) { holdDone = false; return; }
   const i = +b.dataset.pat;
-  lockStep = null;
-  if (chainEdit) { song.chain.push(i); song.cur = i; }
-  else { song.cur = i; song.chain = [i]; }
-  if (eng) eng.bars.clear();
-  save(); drawAll();
+  if (chainEdit) { song.chain.push(i); choose(i); return; }
+  // an empty pattern: start it empty, or as a copy of the one you were on
+  if (isEmpty(i) && i !== song.cur && !isEmpty(song.cur)) { patternMenu(i, true); return; }
+  choose(i);
 };
 
 // ---------- knobs ----------
@@ -385,7 +437,7 @@ $('scrim').onclick = closeSheet;
   sh.addEventListener('touchcancel', end);
 }
 
-$('kit').onclick = () => openSheet(`<h3>Flavours</h3>${KIT_ORDER.map((id) => {
+$('kit').onclick = () => openSheet(`<h3>Flavors</h3>${KIT_ORDER.map((id) => {
   const k = KITS[id];
   return `<button class="big ${id === song.kit ? 'on' : ''}" data-kit="${id}"><i class="flav" style="background:radial-gradient(circle at 35% 30%,#fff,${k.color[2]} 45%,${k.color[1]})"></i><span>${k.name}<small>${k.style}</small></span></button>`;
 }).join('')}`, (s) => s.onclick = async (e) => {

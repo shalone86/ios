@@ -38,7 +38,7 @@ const kits = await page.evaluate(async () => {
   }
   return out;
 });
-check(kits.length === 7 && kits.every((k) => k.pads === 16 && k.silent === 0), `7 flavours, 16 pads each, all with sound (${kits.map((k) => k.id).join(', ')})`);
+check(kits.length === 7 && kits.every((k) => k.pads === 16 && k.silent === 0), `7 flavors, 16 pads each, all with sound (${kits.map((k) => k.id).join(', ')})`);
 
 await page.click('#go');
 await page.waitForFunction(() => window.popPads.eng && window.popPads.eng.bufs);
@@ -77,21 +77,26 @@ const bar = await page.evaluate(() => window.__hits.filter((h) => h.seq));
 const kicksInBar = bar.filter((h) => h.i === 0).length, snares = bar.filter((h) => h.i === 2).length;
 check(kicksInBar >= 3 && snares >= 2, `play runs pattern 1 (${bar.length} hits: ${kicksInBar} kicks, ${snares} snares in ~1 bar)`);
 
-// stutter: hold a pad and slide up; jumble: slide down
-const playedSteps = async (ms) => { await page.evaluate(() => { window.__steps = []; const e = window.popPads.eng, o = e.onStep; e.onStep = (s, p, fx) => { window.__steps.push(fx); o(s, p, fx); }; }); await page.waitForTimeout(ms); return page.evaluate(() => window.__steps); };
+// stutter and jumble belong to the held pad: up = rolls on it, down = it jumbles; works stopped too
+await page.click('#play'); await page.waitForTimeout(200);    // stopped
+const hitsOf = (pad, ms) => page.evaluate(async ([p, wait]) => { window.__hits = []; await new Promise((r) => setTimeout(r, wait)); return window.__hits.filter((h) => h.i === p); }, [pad, ms]);
 await touch('.pad[data-pad="10"]', 'pointerdown', 3); await page.waitForTimeout(300);
+const plain = await hitsOf(10, 1000);
 await touch('.pad[data-pad="10"]', 'pointermove', 3, 160);
-const st = await playedSteps(900);
-const perfS = await page.evaluate(() => ({ ...window.popPads.eng.perf }));
-const shaking = await page.evaluate(() => document.querySelectorAll('.pad.stutter').length);
+const rolls = await hitsOf(10, 1000);
+const shakeOne = await page.evaluate(() => [...document.querySelectorAll('.pad.stutter')].map((p) => p.dataset.pad).join());
 await touch('.pad[data-pad="10"]', 'pointermove', 3, -160);
-const jb = await playedSteps(1500);
-const perfJ = await page.evaluate(() => ({ ...window.popPads.eng.perf }));
-await touch('.pad[data-pad="10"]', 'pointerup', 3); await page.waitForTimeout(100);
-const after = await page.evaluate(() => ({ ...window.popPads.eng.perf, faces: document.querySelectorAll('.pad.stutter,.pad.jumble').length }));
-check(perfS.mode === 'stutter' && perfS.size === 1 && st.filter((x) => x === 'stutter').length >= 3 && shaking === 16, `sliding up stutters (loop of ${perfS.size} step, ${st.filter(Boolean).length} stuttered steps, faces shaking)`);
-check(perfJ.mode === 'jumble' && jb.filter((x) => x === 'jumble').length >= 3, `sliding down jumbles (${jb.filter(Boolean).length} jumbled steps)`);
-check(after.mode === null && after.faces === 0, 'letting go snaps back to the pattern');
+const jumbled = await hitsOf(10, 1600);
+const dizzyOne = await page.evaluate(() => [...document.querySelectorAll('.pad.jumble')].map((p) => p.dataset.pad).join());
+await touch('.pad[data-pad="10"]', 'pointerup', 3); await page.waitForTimeout(150);
+const afterFaces = await page.evaluate(() => document.querySelectorAll('.pad.stutter,.pad.jumble').length + window.popPads.eng.held.size);
+const others = await page.evaluate(() => window.__hits.filter((h) => h.i !== 10).length);
+const steps16 = 1000 / (60000 / 92 / 4);
+check(rolls.length >= plain.length * 3 && Math.abs(plain.length - steps16) <= 2 && shakeOne === '10', `holding repeats a pad (${plain.length} hits a second); sliding up rolls it (${rolls.length}), only that pad shakes, even when stopped`);
+const pitched = await page.evaluate(() => window.__hits.length);
+check(jumbled.length > 3 && dizzyOne === '10' && others === 0, `sliding down jumbles just that pad (${jumbled.length} hits, no other drum touched)`);
+check(afterFaces === 0, 'letting go stops it and the faces settle');
+await page.click('#play');
 
 // recording a tap while playing writes it onto the nearest step
 await page.evaluate(() => { window.popPads.song.patterns[0][7] = 0; });
@@ -111,14 +116,33 @@ check(clap === ((1 << 4) | (1 << 12)), `steps mode writes the clap on steps 5 an
 await page.screenshot({ path: path.join(OUT, 'steps.png') });
 await page.click('[data-mode="play"]');
 
-// copy pattern 1 to 2 (hold), then chain 1 → 2 → 1
-await page.evaluate(() => { const b = document.querySelector('[data-pat="1"]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); });
-await page.waitForTimeout(700);
-await page.evaluate(() => { const b = document.querySelector('[data-pat="1"]'); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); b.click(); });
+// patterns: tap an empty one → start empty or copy; hold one → copy here / clear; ↶ undoes
+await page.evaluate(() => { const s = window.popPads.song; s.patterns[1] = new Array(16).fill(0); s.patterns[2] = new Array(16).fill(0); });
+await page.click('[data-pat="1"]'); await page.waitForTimeout(300);
+const askEmpty = await page.evaluate(() => [...document.querySelectorAll('#sheet [data-p]')].map((b) => b.dataset.p).join());
+await page.click('[data-p="copy"]'); await page.waitForTimeout(300);
 const copied = await page.evaluate(() => JSON.stringify(window.popPads.song.patterns[1]) === JSON.stringify(window.popPads.song.patterns[0]) && window.popPads.song.cur === 1);
+check(askEmpty === 'empty,copy' && copied, 'tapping an empty pattern offers to start empty or copy the one you were on; copy works');
+await page.evaluate(() => { const b = document.querySelector('[data-pat="2"]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); });
+await page.waitForTimeout(650);
+const holdMenu = await page.evaluate(() => [...document.querySelectorAll('#sheet [data-p]')].map((b) => b.dataset.p).join());
+await page.evaluate(() => { const b = document.querySelector('[data-pat="2"]'); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
+await page.click('[data-p="copy"]'); await page.waitForTimeout(800);
+const two = await page.evaluate(() => window.popPads.song.patterns[2].some(Boolean));
+await page.click('#undo'); await page.waitForTimeout(300);
+const undone = await page.evaluate(() => !window.popPads.song.patterns[2].some(Boolean));
+// hold → clear, then undo brings it back
+await page.evaluate(() => { const b = document.querySelector('[data-pat="1"]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); });
+await page.waitForTimeout(650);
+await page.evaluate(() => { const b = document.querySelector('[data-pat="1"]'); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
+await page.click('[data-p="clear"]'); await page.waitForTimeout(800);
+const cleared = await page.evaluate(() => !window.popPads.song.patterns[1].some(Boolean));
+await page.click('#undo'); await page.waitForTimeout(300);
+const back = await page.evaluate(() => window.popPads.song.patterns[1].some(Boolean));
+check(holdMenu === 'copy,go' && two && undone && cleared && back, `holding a pattern offers copy here (${holdMenu}); clear; ↶ undoes each`);
 await page.click('#chain'); for (const i of [0, 1, 0]) await page.click(`[data-pat="${i}"]`); await page.click('#chain');
 const chain = await page.evaluate(() => window.popPads.song.chain.join(','));
-check(copied && chain === '0,1,0', `hold copies a pattern, and patterns chain (${chain})`);
+check(chain === '0,1,0', `patterns chain (${chain})`);
 
 // record from a stop: a bar of clicks (count-in) before the pattern starts
 const countIn = await page.evaluate(async () => {
@@ -218,6 +242,21 @@ const rendered = await page.evaluate(async () => {
 });
 check(rendered > 0.001, 'saved loops include the knob moves and step settings');
 
+// reverb: a drum room that rings after the snare, and hardly touches the kick
+const verb = await page.evaluate(async () => {
+  const { newSong, renderSong } = await import('/js/engine.js');
+  const tail = async (pad, amount) => {
+    const s = newSong(); s.patterns[0] = new Array(16).fill(0); s.patterns[0][pad] = 1; s.fx.verb = amount; s.fx.drive = 0;
+    const { buffer } = await renderSong(s, { loops: 1, tail: 2 });
+    const c = buffer.getChannelData(0), sr = buffer.sampleRate; let e = 0;
+    for (let i = Math.round(0.7 * sr); i < Math.round(1.1 * sr); i++) e += c[i] * c[i];
+    return 10 * Math.log10(e / (0.4 * sr) + 1e-12);
+  };
+  return { snareDry: await tail(2, 0), snareWet: await tail(2, 0.8), kickDry: await tail(0, 0), kickWet: await tail(0, 0.8) };
+});
+check(verb.snareWet - verb.snareDry > 15 && (verb.kickWet - verb.kickDry) < (verb.snareWet - verb.snareDry) - 10,
+  `Reverb rings on after the snare (+${(verb.snareWet - verb.snareDry).toFixed(0)} dB tail) and barely touches the kick (+${(verb.kickWet - verb.kickDry).toFixed(0)} dB)`);
+
 // menus (Boba's): tap outside to close; a short pull springs back, a long pull closes
 await page.click('#bpm');
 await page.click('#scrim', { position: { x: 20, y: 20 } });
@@ -242,10 +281,10 @@ await page.click('#tour-close');
 const tourClosed = await page.evaluate(() => document.getElementById('tour').hidden);
 check(tour.open && /tutorial\.mp4$/.test(tour.src) && tour.ready >= 1 && tourClosed, 'how it works opens the video tutorial, and ✕ closes it');
 
-// change flavour: the beat stays, the sounds change
+// change flavor: the beat stays, the sounds change
 await page.click('#kit'); await page.click('[data-kit="cream"]'); await page.waitForTimeout(400); await page.click('#scrim', { position: { x: 20, y: 20 } });
 const kitNow = await page.evaluate(() => ({ kit: window.popPads.song.kit, name: document.querySelector('.pad[data-pad="2"] b').textContent, keeps: window.popPads.song.patterns[0][0] }));
-check(kitNow.kit === 'cream' && kitNow.name === 'Pssht' && kitNow.keeps, 'a new flavour swaps the sounds and keeps the beat');
+check(kitNow.kit === 'cream' && kitNow.name === 'Pssht' && kitNow.keeps, 'a new flavor swaps the sounds and keeps the beat');
 await page.screenshot({ path: path.join(OUT, 'cream.png') });
 
 // exports
