@@ -172,6 +172,8 @@ const press = (sel) => page.evaluate((s) => window.__press(s), sel);
 const touch = (sel, hold, p = []) => page.evaluate(([s, h, q]) => window.__touch(s, h, q), [sel, hold, p]);
 const slide = (sel, to, ms = 1500) => page.evaluate(([a, b, c]) => window.__slide(a, b, c), [sel, to, ms]);
 const pad = (i) => `.pad[data-pad="${i}"]`;
+// close a menu the way a person does: tap above it, outside the sheet
+const closeMenu = () => page.evaluate(async () => { const d = window.__dot.down(innerWidth / 2, 60); await new Promise((r) => setTimeout(r, 150)); document.getElementById('scrim').click(); window.__dot.up(d); });
 const taps = async (list, gap) => { for (const i of list) { await touch(pad(i), 90); await wait(gap); } };
 
 // ================= the tutorial =================
@@ -220,7 +222,7 @@ if (await say('flavor', 'Flavours', 'a different kit · the beat stays', 'high')
   await press('[data-kit="lime"]'); await wait(1600);
   await press('[data-kit="cream"]'); await wait(1600);
   await press('[data-kit="cola"]'); await wait(900);
-  await press('#sheet .x');
+  await closeMenu();
   await finishLine();
 }
 await press('#play'); await wait(300);
@@ -287,7 +289,7 @@ if (await say('motion', 'Record knob moves', 'hold a knob while recording', 'hig
 await press('#play'); await wait(300);
 if (await say('save', 'Save it', 'a loop, MIDI for Logic, or every drum', '')) {
   await wait(500); await press('#menu'); await wait(Math.max(1200, clips.save.seconds * 1000 - 1500));
-  await press('#sheet .x');
+  await closeMenu();
   await finishLine();
 }
 await cap('');
