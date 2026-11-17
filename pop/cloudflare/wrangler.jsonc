@@ -1,0 +1,12 @@
+// Serves Pop Pads at shalonely.com/pop. Deploy: node build.mjs && npx wrangler deploy
+{
+  "name": "pop-pads",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-11-01",
+  // the tutorial video goes up as a static asset
+  "assets": { "directory": "./dist/assets", "binding": "ASSETS", "run_worker_first": true },
+  "routes": [
+    { "pattern": "shalonely.com/pop", "zone_name": "shalonely.com" },
+    { "pattern": "shalonely.com/pop/*", "zone_name": "shalonely.com" }
+  ]
+}

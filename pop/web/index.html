@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#3a160c">
+<title>Pop Pads</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<canvas id="fizz"></canvas>
+<div id="app">
+  <header id="top">
+    <h1><span class="dot"></span>Pop Pads</h1>
+    <button class="chip" id="kit"><i class="swatch"></i><span></span></button>
+    <button class="chip" id="bpm">92</button>
+    <button class="chip icon" id="menu" aria-label="Menu">☰</button>
+  </header>
+
+  <div id="patterns" role="group" aria-label="Patterns"></div>
+
+  <div id="bar">
+    <div class="seg" role="tablist">
+      <button data-mode="play" class="on">Play</button>
+      <button data-mode="steps">Steps</button>
+    </div>
+    <button class="round" id="rec" aria-label="Record">●</button>
+    <button class="round" id="play" aria-label="Play">▶</button>
+  </div>
+
+  <div id="sounds" hidden></div>
+  <div id="grid" aria-label="Pads"></div>
+  <p id="hint"></p>
+
+  <section id="panel">
+    <div id="fx-panel">
+      <label class="sl"><span>Filter</span><input type="range" id="f-filter" min="-100" max="100" value="0"></label>
+      <label class="sl"><span>Drive</span><input type="range" id="f-drive" min="0" max="100" value="15"></label>
+      <label class="sl"><span>Crush</span><input type="range" id="f-crush" min="0" max="100" value="0"></label>
+      <label class="sl"><span>Swing</span><input type="range" id="f-swing" min="0" max="100" value="0"></label>
+      <label class="sl"><span>LFO</span><input type="range" id="f-lfo" min="0" max="100" value="0"></label>
+      <div class="lfo"><button class="chip small" id="lfo-to"></button><button class="chip small" id="lfo-rate"></button></div>
+    </div>
+    <div id="pad-panel" hidden>
+      <label class="sl"><span>Pitch</span><input type="range" id="p-pitch" min="-12" max="12" step="1" value="0"></label>
+      <label class="sl"><span>Length</span><input type="range" id="p-len" min="4" max="100" value="100"></label>
+      <label class="sl"><span>Tone</span><input type="range" id="p-tone" min="0" max="100" value="100"></label>
+      <label class="sl"><span>Volume</span><input type="range" id="p-vol" min="0" max="100" value="85"></label>
+      <div class="lfo"><button class="chip small" id="p-clear">Clear this sound</button></div>
+    </div>
+  </section>
+</div>
+
+<div id="scrim" hidden></div>
+<div id="sheet" hidden role="dialog"></div>
+<div id="toast"></div>
+
+<div id="start">
+  <div>
+    <div class="logo"><i></i><i></i><i></i></div>
+    <h2>Pop Pads</h2>
+    <p>a fizzy little drum machine</p>
+    <button id="go">pop it open</button>
+    <a id="apk" href="PopPads.apk" download>Android app</a>
+  </div>
+</div>
+<script>if (window.PopNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent)) document.getElementById('apk').remove();</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
