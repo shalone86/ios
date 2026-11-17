@@ -105,7 +105,7 @@ await page.click('#play');
 // steps mode: tap steps for one sound
 await page.click('[data-mode="steps"]'); await page.waitForTimeout(100);
 await page.click('[data-sel="3"]');
-for (const s of [4, 12]) await touch(`.step[data-step="${s}"]`, 'pointerdown', 10 + s);
+for (const s of [4, 12]) { await touch(`.step[data-step="${s}"]`, 'pointerdown', 10 + s); await touch(`.step[data-step="${s}"]`, 'pointerup', 10 + s); }
 const clap = await page.evaluate(() => window.popPads.song.patterns[0][3]);
 check(clap === ((1 << 4) | (1 << 12)), `steps mode writes the clap on steps 5 and 13 (bits ${clap.toString(2)})`);
 await page.screenshot({ path: path.join(OUT, 'steps.png') });
@@ -149,10 +149,93 @@ const metro = await page.evaluate(async () => {
 check(metro.length >= 4 && metro[0] === true && metro.filter(Boolean).length >= 1, `the metronome clicks each beat, louder on one (${metro.length} clicks)`);
 
 // knobs reach the sound
-await page.fill('#f-filter', '-70'); await page.dispatchEvent('#f-filter', 'input');
+const MIXF = '#fx-panel [data-key="filter"]';
+await page.fill(MIXF, '-70'); await page.dispatchEvent(MIXF, 'input');
 const lp = await page.evaluate(() => new Promise((r) => setTimeout(() => r(window.popPads.eng.graph.lp.frequency.value), 300)));
 check(lp < 2000, `the filter knob closes the low-pass (${Math.round(lp)} Hz)`);
-await page.fill('#f-filter', '0'); await page.dispatchEvent('#f-filter', 'input');
+await page.fill(MIXF, '0'); await page.dispatchEvent(MIXF, 'input');
+
+// Steps mode: a Drum tab and a Mix tab
+await page.click('[data-mode="steps"]'); await page.click('[data-sel="0"]');
+const drumTab = await page.evaluate(() => ({ pad: !document.getElementById('pad-panel').hidden, mix: !document.getElementById('fx-panel').hidden, keys: [...document.querySelectorAll('#pad-panel [data-key]')].map((x) => x.dataset.key).join() }));
+await page.click('[data-tab="mix"]');
+const mixTab = await page.evaluate(() => !document.getElementById('fx-panel').hidden && document.getElementById('pad-panel').hidden);
+await page.click('[data-tab="drum"]');
+check(drumTab.pad && !drumTab.mix && mixTab && drumTab.keys === 'pitch,len,filt,vol,crush,lfo,nudge', `Steps has a Drum tab (${drumTab.keys}) and a Mix tab`);
+
+// hold a step: that hit gets its own pitch and nudge; the rest keep the drum's
+await page.evaluate(() => { const s = window.popPads.song; s.patterns[s.cur][0] = 1 | (1 << 8); s.motion[s.cur] = { mix: {}, pads: {} }; });
+await page.click('[data-mode="play"]'); await page.click('[data-mode="steps"]');
+await touch('.step[data-step="8"]', 'pointerdown', 40); await page.waitForTimeout(500); await touch('.step[data-step="8"]', 'pointerup', 40);
+const sel8 = await page.evaluate(() => !!document.querySelector('.step[data-step="8"].sel') && document.getElementById('panel').classList.contains('locked'));
+const P = '#pad-panel [data-key="pitch"]', NUD = '#pad-panel [data-key="nudge"]';
+await page.fill(P, '7'); await page.dispatchEvent(P, 'input'); await page.dispatchEvent(P, 'change');
+await page.fill(NUD, '30'); await page.dispatchEvent(NUD, 'input');
+await page.click('#lock-done');
+const locks = await page.evaluate(async () => {
+  const { padAt } = await import('/js/engine.js');
+  const s = window.popPads.song;
+  return { on8: padAt(s, s.cur, 0, 8), on0: padAt(s, s.cur, 0, 0), dot: !!document.querySelector('.step[data-step="8"].lock'), sel: document.querySelectorAll('.step.sel').length };
+});
+check(sel8 && locks.on8.pitch === 7 && Math.abs(locks.on8.nudge - 0.3) < 0.01 && locks.on0.pitch === 0 && locks.dot && locks.sel === 0,
+  `holding a step gives that hit its own pitch (+${locks.on8.pitch}) and nudge (${locks.on8.nudge}); the others keep theirs; the step shows a dot`);
+// a nudged hit really plays late
+const nudged = await page.evaluate(async () => {
+  const e = window.popPads.eng, hits = []; const oh = e.hit.bind(e);
+  e.hit = (i, t, q, tw) => { if (q && i === 0) hits.push(t - e.timeOf(Math.round((t - e.t0) / (60 / e.song.bpm / 4)))); return oh(i, t, q, tw); };
+  e.play(); await new Promise((r) => setTimeout(r, 2800)); e.stop(); e.hit = oh;
+  return hits;
+});
+const sd92 = 60 / 92 / 4;
+check(nudged.some((d) => Math.abs(d - 0.3 * sd92) < 0.01 || Math.abs(d + 0.7 * sd92) < 0.01), `the nudged step plays ${Math.round(0.3 * sd92 * 1000)} ms late`);
+await page.click('[data-mode="play"]');
+
+// record knob moves: hold the mix filter and move it while recording
+await page.evaluate(() => { const s = window.popPads.song; s.motion[s.cur] = { mix: {}, pads: {} }; });
+const motion = await page.evaluate(async () => {
+  const e = window.popPads.eng, el = document.querySelector('#fx-panel [data-key="filter"]'), s = window.popPads.song;
+  document.getElementById('play').click(); await new Promise((r) => setTimeout(r, 200));
+  e.rec = true;
+  for (let k = 0; k < 14; k++) { el.value = String(-90 + k * 6); el.dispatchEvent(new Event('input', { bubbles: true })); await new Promise((r) => setTimeout(r, 120)); }
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  e.rec = false;
+  const lane = s.motion[s.cur].mix.filter || [];
+  const base = s.fx.filter;
+  // playing back: the low-pass follows the recording
+  const seen = new Set();
+  for (let k = 0; k < 20; k++) { await new Promise((r) => setTimeout(r, 90)); seen.add(Math.round(e.graph.lp.frequency.value / 100)); }
+  document.getElementById('play').click();
+  return { written: lane.filter((v) => v != null).length, base, moves: seen.size, diamond: document.querySelector('#fx-panel [data-key="filter"]').closest('.sl').classList.contains('moving') };
+});
+check(motion.written >= 6 && motion.base === 0 && motion.moves >= 3 && motion.diamond, `moving a knob while recording writes ${motion.written} steps of motion (knob's own setting untouched), and it plays back (${motion.moves} filter positions seen) ◆`);
+const rendered = await page.evaluate(async () => {
+  const { renderSong } = await import('/js/engine.js');
+  const s = JSON.parse(JSON.stringify(window.popPads.song)); s.chain = [s.cur];
+  const a = await renderSong(s, { loops: 1 }); s.motion[s.cur] = { mix: {}, pads: {} };
+  const b = await renderSong(s, { loops: 1 });
+  let d = 0; const x = a.buffer.getChannelData(0), y = b.buffer.getChannelData(0); for (let i = 0; i < x.length; i++) d += Math.abs(x[i] - y[i]);
+  return d / x.length;
+});
+check(rendered > 0.001, 'saved loops include the knob moves and step settings');
+
+// menus: a close button, and pulling down closes them
+await page.click('#bpm');
+await page.click('#sheet .x');
+const closedX = await page.evaluate(() => document.getElementById('sheet').hidden);
+await page.click('#menu');
+const apk = await page.evaluate(() => !!document.querySelector('#sheet a[href="PopPads.apk"]'));
+await page.evaluate(async () => {
+  const g = document.querySelector('#sheet .grab'), b = g.getBoundingClientRect();
+  const ev = (t, y) => g.dispatchEvent(new PointerEvent(t, { pointerId: 77, clientX: b.left + 20, clientY: y, bubbles: true }));
+  ev('pointerdown', b.top + 5); for (let y = 10; y <= 160; y += 30) { ev('pointermove', b.top + y); await new Promise((r) => setTimeout(r, 16)); } ev('pointerup', b.top + 160);
+});
+const closedDrag = await page.evaluate(() => document.getElementById('sheet').hidden);
+check(closedX && closedDrag && apk, 'menus close with ✕ or by pulling down; ☰ links the Android app');
+await page.click('#menu'); await page.click('[data-how]'); await page.click('#watch'); await page.waitForTimeout(1200);
+const tour = await page.evaluate(() => ({ open: !document.getElementById('tour').hidden, src: document.getElementById('tour-video').currentSrc, ready: document.getElementById('tour-video').readyState }));
+await page.click('#tour-close');
+const tourClosed = await page.evaluate(() => document.getElementById('tour').hidden);
+check(tour.open && /tutorial\.mp4$/.test(tour.src) && tour.ready >= 1 && tourClosed, 'how it works opens the video tutorial, and ✕ closes it');
 
 // change flavour: the beat stays, the sounds change
 await page.click('#kit'); await page.click('[data-kit="cream"]'); await page.waitForTimeout(400); await page.click('#scrim', { position: { x: 20, y: 20 } });

@@ -8,6 +8,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; overflow: hidden; color: var(--ink); font-family: 'Fredoka', ui-rounded, system-ui, sans-serif;
   background: var(--c0); user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none; }
+[hidden] { display: none !important; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 #fizz { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
   background: linear-gradient(180deg, color-mix(in srgb, var(--c1) 70%, #000) 0%, var(--c0) 55%, color-mix(in srgb, var(--c0) 70%, #000) 100%); transition: background 0.6s; }
@@ -87,9 +88,25 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 #panel { margin-top: auto; margin-bottom: 0; background: rgba(0,0,0,.18); border: 1px solid var(--line); border-radius: 18px; padding: 10px 14px; }
 #fx-panel, #pad-panel { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; row-gap: 2px; }
 #fx-panel[hidden], #pad-panel[hidden] { display: none; }
+.tabs { display: flex; gap: 6px; align-items: center; margin: -2px 0 6px; }
+.tabs[hidden] { display: none; }
+.tabs .chip.small { height: 28px; }
+.tabs button[data-tab] { height: 28px; padding: 0 12px; border-radius: 14px; font-size: 13px; font-weight: 600; color: var(--dim); border: 1px solid var(--line); }
+.tabs button[data-tab].on { background: var(--ink); color: var(--c0); border-color: transparent; }
+#lock-note { flex: 1; text-align: right; font-size: 12px; color: var(--c2); font-weight: 600; }
+.lfo.wide { grid-column: 1 / -1; justify-content: center; }
+.sl.moving span::after { content: ' ◆'; color: var(--c2); font-size: 10px; }
+.step.lock::after { content: ''; position: absolute; right: 16%; top: 16%; width: 18%; height: 18%; border-radius: 50%; background: var(--ink); box-shadow: 0 0 6px var(--c2); }
+.step.sel { box-shadow: 0 0 0 3px var(--c2), 0 0 16px var(--c2); }
+#panel.locked { border-color: var(--c2); box-shadow: 0 0 0 1px var(--c2) inset; }
+/* sheets: a handle to pull down, and a close button */
+#sheet .grab { position: sticky; top: -18px; margin: -18px -18px 8px; height: 28px; display: grid; place-items: center; cursor: grab; touch-action: none; background: inherit; z-index: 1; }
+#sheet .grab::before { content: ''; width: 44px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.35); }
+#sheet .x { position: absolute; top: 10px; right: 12px; width: 34px; height: 34px; border-radius: 50%; background: var(--glass); border: 1px solid var(--line); font-size: 16px; z-index: 2; }
+#sheet { transition: transform .2s; }
 .sl { display: grid; grid-template-columns: 50px 1fr; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--dim); }
 .lfo { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
-input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; background: none; margin: 0; touch-action: none; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 27px; background: none; margin: 0; touch-action: none; }
 input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: rgba(255,255,255,.25); }
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #fff, var(--c2) 60%); box-shadow: 0 2px 6px rgba(0,0,0,.3); }
@@ -137,3 +154,10 @@ body.wide #panel { margin-top: 0; }
 .how-list li { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; font-size: 15px; line-height: 1.35; }
 .how-list li i { font-style: normal; font-size: 22px; text-align: center; }
 .how-list b { color: var(--c2); }
+
+/* the tutorial video */
+#tour { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(0,0,0,.92); padding: calc(var(--safe-t) + 10px) 10px calc(var(--safe-b) + 10px); }
+#tour video { width: min(100%, calc((100vh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16)); width: min(100%, calc((100dvh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16));
+  aspect-ratio: 9 / 16; border-radius: 18px; background: #000; }
+#tour-close { position: absolute; top: calc(var(--safe-t) + 14px); right: 14px; width: 42px; height: 42px; background: var(--ink); color: var(--c0); z-index: 1; }
+#sheet .watch { width: 100%; margin: 0 0 14px; padding: 13px; border-radius: 16px; background: var(--ink); color: var(--c0); font-weight: 600; font-size: 16px; }

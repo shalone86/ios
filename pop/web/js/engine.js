@@ -19,13 +19,43 @@ export function newSong() {
     fx: { filter: 0, drive: 0.15, crush: 0, lfo: 0, lfoRate: 2, lfoTo: 'filter' },
     tweaks: {},
     patterns: Array.from({ length: PATTERNS }, () => new Array(16).fill(0)),
+    motion: Array.from({ length: PATTERNS }, () => ({ mix: {}, pads: {} })),
     chain: [0], cur: 0,
   };
 }
+// a drum's own settings: pitch (semitones), length, filter (-1 dark … 1 thin),
+// volume, crush, and its own LFO (amount, and what it moves)
+export const PAD_KEYS = ['pitch', 'len', 'filt', 'vol', 'crush', 'lfo', 'nudge'];
+export const MIX_KEYS = ['filter', 'drive', 'crush', 'lfo'];
 export const tweakOf = (song, i) => {
-  const t = (song.tweaks[song.kit] || [])[i];
-  return { pitch: 0, len: 1, tone: 1, vol: 0.85, ...(t || {}) };
+  const t = { ...((song.tweaks[song.kit] || [])[i] || {}) };
+  if (t.tone != null && t.filt == null) t.filt = t.tone < 1 ? t.tone - 1 : 0;      // the old one-way Tone knob
+  return { pitch: 0, len: 1, filt: 0, vol: 0.85, crush: 0, lfo: 0, lfoTo: 'pitch', nudge: 0, ...t };
 };
+// Motion: per pattern, a lane of 16 values per knob (null = the knob's own
+// setting). Recorded by moving a knob while recording, or set step by step.
+export function motionOf(song, pi) {
+  song.motion = song.motion || [];
+  return (song.motion[pi] = song.motion[pi] || { mix: {}, pads: {} });
+}
+export function laneOf(song, pi, scope, key, make = false) {
+  const m = motionOf(song, pi), home = scope === 'mix' ? m.mix : (m.pads[scope] = m.pads[scope] || {});
+  if (!home[key] && make) home[key] = new Array(16).fill(null);
+  return home[key] || null;
+}
+// the settings a hit of pad i on step s of pattern pi plays with
+export function padAt(song, pi, i, s) {
+  const tw = tweakOf(song, i), lanes = ((song.motion || [])[pi] || { pads: {} }).pads[i];
+  if (lanes) for (const k of PAD_KEYS) if (lanes[k] && lanes[k][s] != null) tw[k] = lanes[k][s];
+  return tw;
+}
+// the mix knobs on step s of pattern pi
+export function mixAt(song, pi, s) {
+  const fx = { ...song.fx }, lanes = ((song.motion || [])[pi] || { mix: {} }).mix;
+  for (const k of MIX_KEYS) if (lanes[k] && lanes[k][s] != null) fx[k] = lanes[k][s];
+  return fx;
+}
+export const hasMotion = (song, pi) => { const m = (song.motion || [])[pi]; return !!m && (Object.values(m.mix).some((l) => l && l.some((v) => v != null)) || Object.values(m.pads).some((p) => Object.values(p).some((l) => l && l.some((v) => v != null)))); };
 const stepDur = (bpm) => 60 / bpm / 4;
 const swingAt = (song, s) => (s % 2 ? song.swing * stepDur(song.bpm) * 0.66 : 0);
 const mod16 = (n) => ((n % STEPS) + STEPS) % STEPS;
@@ -120,21 +150,43 @@ export class Graph {
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(accent ? 0.35 : 0.22, t + 0.002); g.gain.setTargetAtTime(0, t + 0.004, 0.012);
     o.connect(g).connect(this.dest); o.start(t); o.stop(t + 0.1);
   }
+  // the LFO's position (-1..1) at time t
+  lfoAt(t) {
+    const f = this.bpm / 60 / LFO_RATES[this.fx ? this.fx.lfoRate : 2][1];
+    return Math.sin(2 * Math.PI * f * (t - this.lfoStart));
+  }
   lfoPitch(t) {
     if (!this.fx || this.fx.lfoTo !== 'pitch' || !this.fx.lfo) return 0;
-    const f = this.bpm / 60 / LFO_RATES[this.fx.lfoRate][1];
-    return this.fx.lfo * 2 * Math.sin(2 * Math.PI * f * (t - this.lfoStart));
+    return this.fx.lfo * 2 * this.lfoAt(t);
+  }
+  // a bit-crush curve for one drum, kept per amount
+  crushCurve(a) {
+    const k = Math.round(a * 20);
+    this.curves = this.curves || {};
+    if (!this.curves[k]) {
+      const steps = Math.pow(2, 12 - (k / 20) * 9), c = new Float32Array(4096);
+      for (let i = 0; i < c.length; i++) { const x = i / (c.length - 1) * 2 - 1; c[i] = Math.round(x * steps) / steps; }
+      this.curves[k] = c;
+    }
+    return this.curves[k];
   }
   // one hit of pad `i` from buffer `buf` at time t
   play(i, buf, t, tw, vel = 1) {
     const ctx = this.ctx, src = ctx.createBufferSource(), g = ctx.createGain();
     src.buffer = buf;
-    src.playbackRate.value = Math.pow(2, (tw.pitch + this.lfoPitch(t)) / 12);
-    const dur = buf.duration / src.playbackRate.value, end = dur * Math.max(0.04, tw.len), v = tw.vol * vel;
+    // the drum's own LFO moves its pitch, filter or volume, in time with the mix LFO
+    const wob = tw.lfo ? tw.lfo * this.lfoAt(t) : 0;
+    src.playbackRate.value = Math.pow(2, (tw.pitch + this.lfoPitch(t) + (tw.lfoTo === 'pitch' ? wob * 2 : 0)) / 12);
+    const dur = buf.duration / src.playbackRate.value, end = dur * Math.max(0.04, tw.len);
+    const v = tw.vol * vel * (tw.lfoTo === 'volume' ? 1 - Math.abs(tw.lfo) * 0.5 * (1 - wob / (tw.lfo || 1)) : 1);
     g.gain.setValueAtTime(v, t);
     if (tw.len < 1) { g.gain.setValueAtTime(v, t + end * 0.6); g.gain.linearRampToValueAtTime(0, t + end); }
     let node = src;
-    if (tw.tone < 1) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300 * Math.pow(60, tw.tone); node = node.connect(lp); }
+    if (tw.crush > 0.02) { const w = ctx.createWaveShaper(); w.curve = this.crushCurve(tw.crush); node = node.connect(w); }
+    // its own filter: left of centre darker (low-pass), right thinner (high-pass)
+    const f = Math.max(-1, Math.min(1, (tw.filt || 0) + (tw.lfoTo === 'filter' ? wob * 0.6 : 0)));
+    if (f < -0.02) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1; lp.frequency.value = 20000 * Math.pow(180 / 20000, -f); node = node.connect(lp); }
+    else if (f > 0.02) { const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.Q.value = 0.9; hp.frequency.value = 20 * Math.pow(3000 / 20, f); node = node.connect(hp); }
     const pan = ctx.createStereoPanner(); pan.pan.value = PANS[i];
     node.connect(g).connect(pan).connect(this.input);
     src.start(t); src.stop(t + end + 0.02);
@@ -162,13 +214,21 @@ export class PopEngine {
     this.onStep = null;                    // (step, pattern) for the playhead
     this.onHit = null;                     // (pad) for the faces
     this.clock = null; this.skip = new Set(); this.bars = new Map();
+    this.touching = new Map();             // knobs being held while recording: key -> { scope, key, value }
+    this.lastFx = '';
   }
   async setKit(id) {
     this.song.kit = id;
     this.bufs = await renderKit(id, this.ctx.sampleRate);
   }
   setSong(song) { this.song = song; this.updateFx(); }
-  updateFx() { this.graph.setFx(this.song.fx, this.song.bpm); }
+  updateFx() { this.lastFx = ''; this.graph.setFx(this.song.fx, this.song.bpm); }
+  // a knob held while recording: heard at once, written onto each step it passes
+  touch(scope, key, value) {
+    this.touching.set(`${scope}:${key}`, { scope, key, value });
+    if (scope === 'mix') { this.lastFx = ''; this.graph.setFx({ ...this.song.fx, [key]: value }, this.song.bpm); }
+  }
+  untouch() { this.touching.clear(); this.lastFx = ''; }
 
   // ----- the clock: runs while playing, or while a pad is held for repeats -----
   // countIn: a bar of clicks before the pattern starts (steps -16 to -1)
@@ -186,7 +246,9 @@ export class PopEngine {
   pump() {
     if (!this.playing && !this.held.size) { clearInterval(this.clock); this.clock = null; return; }
     const until = this.ctx.currentTime + 0.12;
-    while (this.timeOf(this.n) < until) { this.step(this.n, this.timeOf(this.n)); this.n++; }
+    // half a step early, so a hit nudged early is still on time
+    const early = stepDur(this.song.bpm) * 0.5;
+    while (this.timeOf(this.n) - early < until) { this.step(this.n, this.timeOf(this.n)); this.n++; }
   }
   // which pattern plays in bar b: the chain in order, or the current pattern
   patternForBar(b) {
@@ -214,10 +276,20 @@ export class PopEngine {
       let src = s;
       if (this.perf.mode === 'stutter') { const w = this.perf.size, a = this.perf.start; src = a + (((s - a) % w) + w) % w; }
       else if (this.perf.mode === 'jumble' && Math.random() < this.perf.amount) src = Math.floor(Math.random() * STEPS);
+      // recording: knobs being held are written onto this step
+      if (this.rec) for (const m of this.touching.values()) laneOf(this.song, pi, m.scope, m.key, true)[s] = m.value;
+      // the mix knobs for this step (their motion, or their own setting)
+      const fx = mixAt(this.song, pi, src);
+      for (const m of this.touching.values()) if (m.scope === 'mix') fx[m.key] = m.value;
+      const key = JSON.stringify(fx);
+      if (key !== this.lastFx) { this.lastFx = key; this.graph.setFx(fx, this.song.bpm, t); }
+      const sd = stepDur(this.song.bpm);
       for (let i = 0; i < 16; i++) {
         if (!((pat[i] >> src) & 1)) continue;
         if (this.skip.delete(`${i}:${n}`)) continue;
-        this.hit(i, t, true);
+        const tw = padAt(this.song, pi, i, src);
+        for (const m of this.touching.values()) if (m.scope === i) tw[m.key] = m.value;
+        this.hit(i, Math.max(this.ctx.currentTime, t + (tw.nudge || 0) * sd), true, tw);
       }
       if (this.onStep) { const d = Math.max(0, (t - this.ctx.currentTime) * 1000); setTimeout(() => this.onStep(s, pi, src !== s ? this.perf.mode : null), d); }
     }
@@ -228,9 +300,9 @@ export class PopEngine {
       if (this.rec && this.playing) this.write(i, n);
     }
   }
-  hit(i, t = this.ctx.currentTime, quiet = false) {
+  hit(i, t = this.ctx.currentTime, quiet = false, tw = tweakOf(this.song, i)) {
     if (!this.bufs) return;
-    this.graph.play(i, this.bufs[i], t, tweakOf(this.song, i));
+    this.graph.play(i, this.bufs[i], t, tw);
     if (this.onHit) { const d = Math.max(0, (t - this.ctx.currentTime) * 1000); setTimeout(() => this.onHit(i, quiet), d); }
   }
   write(i, n) {
@@ -281,11 +353,18 @@ export async function renderSong(song, { loops = 1, solo = null, sr = 44100, tai
   const graph = await Graph.create(ctx), bufs = await renderKit(song.kit, sr);
   graph.setFx(song.fx, song.bpm, 0);
   graph.restartLfo(0);
+  let last = '';
   for (let b = 0; b < bars.length * loops; b++) {
-    const pat = song.patterns[bars[b % bars.length]];
+    const pi = bars[b % bars.length], pat = song.patterns[pi];
     for (let s = 0; s < STEPS; s++) {
       const t = (b * STEPS + s) * sd + swingAt(song, s);
-      for (let i = 0; i < 16; i++) if ((pat[i] >> s) & 1 && (solo == null || solo === i)) graph.play(i, bufs[i], t, tweakOf(song, i));
+      const fx = mixAt(song, pi, s), key = JSON.stringify(fx);
+      if (key !== last) { last = key; graph.setFx(fx, song.bpm, t); }
+      for (let i = 0; i < 16; i++) {
+        if (!((pat[i] >> s) & 1) || (solo != null && solo !== i)) continue;
+        const tw = padAt(song, pi, i, s);
+        graph.play(i, bufs[i], Math.max(0, t + (tw.nudge || 0) * sd), tw);
+      }
     }
   }
   return { buffer: await ctx.startRendering(), seconds: total };

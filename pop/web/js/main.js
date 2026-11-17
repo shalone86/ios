@@ -2,13 +2,14 @@
 // beats into one sound at a time (Steps); eight patterns to chain; a few
 // knobs; and saving the beat as WAV, MIDI or stems.
 
-import { PopEngine, newSong, tweakOf, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
+import { PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, laneOf, motionOf, hasMotion, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
 import { KITS, KIT_ORDER } from './kits.js';
 import { loopWav, stemsZip, patternMidi, deliver, baseName } from './export.js';
 
 const $ = (id) => document.getElementById(id);
 const SAVE = 'poppads.song';
 let eng = null, mode = 'play', sel = 0, chainEdit = false;
+let tab = 'drum', lockStep = null;       // steps mode: which panel, and the step being given its own settings
 
 // ---------- the song, kept on this device ----------
 function demo(song) {
@@ -51,8 +52,9 @@ function drawGrid() {
   if (mode === 'play') {
     g.innerHTML = [...Array(16).keys()].map((cell) => { const i = padAt(cell); return `<button class="pad" data-pad="${i}" aria-label="${k.pads[i].name}">${FACE}<b>${k.pads[i].name}</b></button>`; }).join('');
   } else {
-    const bits = song.patterns[song.cur][sel];
-    g.innerHTML = [...Array(16).keys()].map((s) => `<button class="step ${(bits >> s) & 1 ? 'on' : ''} ${s % 4 === 0 ? 'beat' : ''}" data-step="${s}">${s + 1}</button>`).join('');
+    const bits = song.patterns[song.cur][sel], lanes = motionOf(song, song.cur).pads[sel] || {};
+    const locked = (st) => Object.values(lanes).some((l) => l && l[st] != null);
+    g.innerHTML = [...Array(16).keys()].map((st) => `<button class="step ${(bits >> st) & 1 ? 'on' : ''} ${st % 4 === 0 ? 'beat' : ''} ${locked(st) ? 'lock' : ''} ${st === lockStep ? 'sel' : ''}" data-step="${st}">${st + 1}</button>`).join('');
   }
 }
 function drawSounds() {
@@ -66,19 +68,36 @@ function drawPatterns() {
     return `<button class="pat ${i === song.cur ? 'cur' : ''} ${song.patterns[i].some(Boolean) ? 'has' : ''}" data-pat="${i}">${i + 1}${o.length ? `<sup>${o.join(',')}</sup>` : ''}</button>`;
   }).join('') + `<button class="chip small ${chainEdit || song.chain.length > 1 ? 'on' : ''}" id="chain">${chainEdit ? 'done' : 'chain'}</button>`;
 }
+// how a knob's slider value maps to its setting
+const SCALE = { pitch: 1 };
+const toVal = (key, raw) => raw / (SCALE[key] || 100);
+const toRaw = (key, v) => Math.round(v * (SCALE[key] || 100));
 function drawPanel() {
-  const fx = song.fx;
-  $('f-filter').value = Math.round(fx.filter * 100); $('f-drive').value = Math.round(fx.drive * 100);
-  $('f-crush').value = Math.round(fx.crush * 100); $('f-swing').value = Math.round(song.swing * 100); $('f-lfo').value = Math.round(fx.lfo * 100);
-  $('lfo-to').textContent = `LFO → ${fx.lfoTo}`; $('lfo-rate').textContent = LFO_RATES[fx.lfoRate][0];
-  const t = tweakOf(song, sel);
-  $('p-pitch').value = t.pitch; $('p-len').value = Math.round(t.len * 100); $('p-tone').value = Math.round(t.tone * 100); $('p-vol').value = Math.round(t.vol * 100);
-  $('p-clear').textContent = `Clear ${KITS[song.kit].pads[sel].name}`;
+  const pi = song.cur, base = tweakOf(song, sel);
+  const here = lockStep != null ? padSettings(song, pi, sel, lockStep) : base;
+  document.querySelectorAll('#panel input[data-scope]').forEach((el) => {
+    const { scope, key } = el.dataset;
+    const v = scope === 'mix' ? song.fx[key] : here[key];
+    el.value = toRaw(key, v);
+    const lane = laneOf(song, pi, scope === 'mix' ? 'mix' : sel, key);
+    el.closest('.sl').classList.toggle('moving', !!lane && lane.some((x) => x != null));
+  });
+  $('f-swing').value = Math.round(song.swing * 100);
+  $('lfo-to').textContent = `LFO → ${song.fx.lfoTo}`; $('lfo-rate').textContent = LFO_RATES[song.fx.lfoRate][0];
+  $('p-lfo-to').textContent = `LFO → ${base.lfoTo}`;
+  const name = KITS[song.kit].pads[sel].name;
+  $('p-clear').textContent = `Clear ${name}`;
+  $('p-clear').hidden = lockStep != null || tab === 'mix'; $('lock-clear').hidden = $('lock-done').hidden = lockStep == null;
+  $('panel').classList.toggle('locked', lockStep != null);
+  document.querySelector('[data-tab="drum"]').textContent = name;
+  document.querySelectorAll('.tabs [data-tab]').forEach((x) => x.classList.toggle('on', x.dataset.tab === tab));
 }
 function drawAll() {
   applyKitColours(); drawPatterns(); drawGrid(); drawSounds(); drawPanel();
   $('bpm').textContent = `${song.bpm} bpm`;
-  $('fx-panel').hidden = mode !== 'play'; $('pad-panel').hidden = mode !== 'steps'; $('sounds').hidden = mode !== 'steps';
+  if (mode !== 'steps') lockStep = null;
+  const showMix = mode === 'play' || tab === 'mix';
+  $('fx-panel').hidden = !showMix; $('pad-panel').hidden = showMix; $('sounds').hidden = mode !== 'steps'; $('tabs').hidden = mode !== 'steps';
   document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
   showHint();
   $('metro').classList.toggle('on', !!song.metro);
@@ -86,7 +105,8 @@ function drawAll() {
 }
 function showHint() {
   $('hint').classList.remove('count');
-  $('hint').textContent = mode === 'play' ? 'hold a pad to repeat · slide up to stutter · slide down to jumble' : `tap the steps where ${KITS[song.kit].pads[sel].name} plays`;
+  $('hint').textContent = mode === 'play' ? 'hold a pad to repeat · slide up to stutter · slide down to jumble'
+    : lockStep != null ? `step ${lockStep + 1}: the sliders below set this hit only` : `tap steps for ${KITS[song.kit].pads[sel].name} · hold a step for its own settings`;
 }
 // the pads get whatever room the other rows leave (sideways: the right-hand side)
 function fit() {
@@ -164,12 +184,17 @@ $('grid').addEventListener('pointerdown', async (e) => {
   e.preventDefault();
   await start();
   if (stepEl) {
-    // steps: toggle this sound on that step
-    const s = +stepEl.dataset.step, P = song.patterns[song.cur];
-    P[sel] ^= 1 << s;
-    if ((P[sel] >> s) & 1) eng.hit(sel);
-    stepEl.classList.toggle('on', !!((P[sel] >> s) & 1));
-    save(); drawSounds(); drawPatterns();
+    // steps: a tap turns this drum on or off there; holding a step gives that one hit its own settings
+    const st = +stepEl.dataset.step;
+    stepHold = { st, done: false, id: e.pointerId };
+    stepHold.timer = setTimeout(() => {
+      stepHold.done = true;
+      const P = song.patterns[song.cur];
+      if (!((P[sel] >> st) & 1)) { P[sel] |= 1 << st; save(); }
+      lockStep = lockStep === st ? null : st; tab = 'drum';
+      eng.hit(sel, undefined, false, padSettings(song, song.cur, sel, st));
+      drawAll();
+    }, 380);
     return;
   }
   // a new first finger while others are "down": those were lost touches, let them go
@@ -189,6 +214,21 @@ $('grid').addEventListener('pointermove', (e) => {
   else { eng.setPerf(null); all.forEach((p) => p.classList.remove('stutter', 'jumble')); }
 });
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => $('grid').addEventListener(ev, (e) => letGo(e.pointerId)));
+let stepHold = null;
+$('grid').addEventListener('pointerup', (e) => {
+  if (!stepHold || stepHold.id !== e.pointerId) return;
+  const h = stepHold; stepHold = null; clearTimeout(h.timer);
+  if (h.done) return;
+  const st = h.st, P = song.patterns[song.cur];
+  if (lockStep != null) { lockStep = st === lockStep ? null : lockStep; }   // while editing a step, a tap elsewhere just ends it
+  else {
+    P[sel] ^= 1 << st;
+    if ((P[sel] >> st) & 1) eng.hit(sel, undefined, false, padSettings(song, song.cur, sel, st));
+    save();
+  }
+  drawAll();
+});
+$('grid').addEventListener('pointercancel', () => { if (stepHold) { clearTimeout(stepHold.timer); stepHold = null; } });
 addEventListener('blur', () => { for (const id of [...touches.keys()]) letGo(id); });
 
 // ---------- transport and modes ----------
@@ -213,7 +253,7 @@ document.querySelector('.seg').onclick = (e) => {
 };
 $('sounds').onclick = async (e) => {
   const b = e.target.closest('[data-sel]'); if (!b) return;
-  sel = +b.dataset.sel; await start(); eng.hit(sel); drawAll();
+  sel = +b.dataset.sel; lockStep = null; await start(); eng.hit(sel); drawAll();
 };
 
 // ---------- patterns and chains ----------
@@ -225,7 +265,9 @@ $('patterns').addEventListener('pointerdown', (e) => {
   patHold = setTimeout(() => {
     patHold = -1;
     if (i === song.cur) return;
-    song.patterns[i] = song.patterns[song.cur].slice(); song.cur = i; save(); drawAll();
+    song.patterns[i] = song.patterns[song.cur].slice();
+    motionOf(song, i); song.motion[i] = JSON.parse(JSON.stringify(motionOf(song, song.cur)));
+    song.cur = i; save(); drawAll();
     toast(`copied into pattern ${i + 1}`);
   }, 550);
 });
@@ -240,6 +282,7 @@ $('patterns').onclick = (e) => {
   const b = e.target.closest('[data-pat]'); if (!b) return;
   if (patHold === -1) { patHold = 0; return; }
   const i = +b.dataset.pat;
+  lockStep = null;
   if (chainEdit) { song.chain.push(i); song.cur = i; }
   else { song.cur = i; song.chain = [i]; }
   if (eng) eng.bars.clear();
@@ -247,30 +290,81 @@ $('patterns').onclick = (e) => {
 };
 
 // ---------- knobs ----------
-const fxInput = (id, fn) => $(id).addEventListener('input', (e) => { fn(+e.target.value); if (eng) eng.updateFx(); save(); });
-fxInput('f-filter', (v) => { song.fx.filter = Math.abs(v) < 6 ? 0 : v / 100; });
-fxInput('f-drive', (v) => { song.fx.drive = v / 100; });
-fxInput('f-crush', (v) => { song.fx.crush = v / 100; });
-fxInput('f-swing', (v) => { song.swing = v / 100; });
-fxInput('f-lfo', (v) => { song.fx.lfo = v / 100; });
+// Every knob works the same way. Moved while recording (and playing), it is
+// written onto the steps it passes; while a step is held in Steps mode, it
+// sets that step only; otherwise it changes the setting itself.
+function setKnob(el) {
+  const { scope, key } = el.dataset, pi = song.cur;
+  let v = toVal(key, +el.value);
+  if ((key === 'filter' || key === 'filt') && Math.abs(v) < 0.06) v = 0;     // a little notch at the middle
+  if (key === 'nudge' && Math.abs(v) < 0.04) v = 0;
+  const who = scope === 'mix' ? 'mix' : sel;
+  if (scope === 'pad' && lockStep != null) {
+    laneOf(song, pi, sel, key, true)[lockStep] = v;
+  } else if (eng && eng.rec && eng.playing && key !== 'nudge') {
+    eng.touch(who, key, v);
+  } else if (scope === 'mix') {
+    song.fx[key] = v; if (eng) eng.updateFx();
+  } else {
+    const all = song.tweaks[song.kit] = song.tweaks[song.kit] || [];
+    all[sel] = { ...tweakOf(song, sel), [key]: v };
+  }
+  save();
+}
+document.querySelectorAll('#panel input[data-scope]').forEach((el) => {
+  el.addEventListener('input', () => setKnob(el));
+  // let go: stop writing motion, show what was recorded, and hear a drum change
+  el.addEventListener('change', () => {
+    if (eng && eng.touching.size) { eng.untouch(); drawPanel(); if (mode === 'steps') drawGrid(); }
+    if (eng && el.dataset.scope === 'pad') eng.hit(sel, undefined, false, lockStep != null ? padSettings(song, song.cur, sel, lockStep) : tweakOf(song, sel));
+  });
+});
+$('f-swing').addEventListener('input', (e) => { song.swing = +e.target.value / 100; save(); });
 $('lfo-to').onclick = () => { song.fx.lfoTo = LFO_TARGETS[(LFO_TARGETS.indexOf(song.fx.lfoTo) + 1) % LFO_TARGETS.length]; if (eng) eng.updateFx(); save(); drawPanel(); };
 $('lfo-rate').onclick = () => { song.fx.lfoRate = (song.fx.lfoRate + 1) % LFO_RATES.length; if (eng) eng.updateFx(); save(); drawPanel(); };
-const padInput = (id, key, scale) => $(id).addEventListener('input', (e) => {
-  const all = song.tweaks[song.kit] = song.tweaks[song.kit] || [];
-  all[sel] = { ...tweakOf(song, sel), [key]: +e.target.value / scale };
-  save();
-});
-padInput('p-pitch', 'pitch', 1); padInput('p-len', 'len', 100); padInput('p-tone', 'tone', 100); padInput('p-vol', 'vol', 100);
-// hear the change when a pad knob is let go
-['p-pitch', 'p-len', 'p-tone', 'p-vol'].forEach((id) => $(id).addEventListener('change', () => { if (eng) eng.hit(sel); }));
-$('p-clear').onclick = () => { song.patterns[song.cur][sel] = 0; save(); drawAll(); };
+$('p-lfo-to').onclick = () => {
+  const all = song.tweaks[song.kit] = song.tweaks[song.kit] || [], t = tweakOf(song, sel);
+  all[sel] = { ...t, lfoTo: LFO_TARGETS[(LFO_TARGETS.indexOf(t.lfoTo) + 1) % LFO_TARGETS.length] };
+  save(); drawPanel();
+};
+$('tabs').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (!b) return; tab = b.dataset.tab; if (tab === 'mix') lockStep = null; drawAll(); };
+$('p-clear').onclick = () => { song.patterns[song.cur][sel] = 0; delete motionOf(song, song.cur).pads[sel]; save(); drawAll(); };
+$('lock-clear').onclick = () => {
+  const lanes = motionOf(song, song.cur).pads[sel] || {};
+  for (const l of Object.values(lanes)) if (l) l[lockStep] = null;
+  save(); drawAll();
+};
+$('lock-done').onclick = () => { lockStep = null; drawAll(); };
 
 // ---------- sheets ----------
 function openSheet(html, wire) {
-  $('sheet').innerHTML = html; $('sheet').hidden = false; $('scrim').hidden = false;
-  if (wire) wire($('sheet'));
+  const sh = $('sheet');
+  sh.innerHTML = `<div class="grab" aria-hidden="true"></div><button class="x" aria-label="Close">✕</button>${html}`;
+  sh.style.transform = ''; sh.hidden = false; $('scrim').hidden = false; sh.scrollTop = 0;
+  sh.querySelector('.x').onclick = closeSheet;
+  if (wire) wire(sh);
 }
 const closeSheet = () => { $('sheet').hidden = true; $('scrim').hidden = true; };
+// pull a menu down to close it (from its handle, or anywhere while it is scrolled to the top)
+{
+  const sh = $('sheet'); let drag = null;
+  sh.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('input,button:not(.grab)') && !e.target.closest('.grab')) return;
+    if (sh.scrollTop > 0 && !e.target.closest('.grab')) return;
+    drag = { y: e.clientY, id: e.pointerId, dy: 0 };
+  });
+  sh.addEventListener('pointermove', (e) => {
+    if (!drag || drag.id !== e.pointerId) return;
+    drag.dy = Math.max(0, e.clientY - drag.y);
+    if (drag.dy > 6) { sh.style.transition = 'none'; sh.style.transform = `translateY(${drag.dy}px)`; }
+  });
+  const end = (e) => {
+    if (!drag || drag.id !== e.pointerId) return;
+    const dy = drag.dy; drag = null; sh.style.transition = '';
+    if (dy > 90) closeSheet(); else sh.style.transform = '';
+  };
+  sh.addEventListener('pointerup', end); sh.addEventListener('pointercancel', end);
+}
 $('scrim').onclick = closeSheet;
 
 $('kit').onclick = () => openSheet(`<h3>Flavours</h3>${KIT_ORDER.map((id) => {
@@ -306,11 +400,13 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <button class="big" data-save="stems">🎚️<span>Every sound<small>a zip with each drum as its own WAV, plus the mix</small></span></button>
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
-  <div class="row"><button class="chip" data-clear="1">Clear it</button><button class="chip" data-how="1">How it works</button></div>`, (s) => s.onclick = async (e) => {
+  <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">How it works</button></div>
+  ${window.PopNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? '' : '<h4>On Android</h4><a class="big" href="PopPads.apk" download style="text-decoration:none;color:inherit">📱<span>Get the Android app<small>works offline, saves beats to your Music folder</small></span></a>'}`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
   if (e.target.closest('[data-how]')) { showHow(); return; }
-  if (e.target.closest('[data-clear]')) { song.patterns[song.cur] = new Array(16).fill(0); save(); drawAll(); closeSheet(); toast(`pattern ${song.cur + 1} cleared`); return; }
+  if (e.target.closest('[data-unmove]')) { song.motion[song.cur] = { mix: {}, pads: {} }; if (eng) eng.updateFx(); save(); drawAll(); closeSheet(); toast(`knob moves cleared from pattern ${song.cur + 1}`); return; }
+  if (e.target.closest('[data-clear]')) { song.patterns[song.cur] = new Array(16).fill(0); song.motion[song.cur] = { mix: {}, pads: {} }; save(); drawAll(); closeSheet(); toast(`pattern ${song.cur + 1} cleared`); return; }
   const b = e.target.closest('[data-save]'); if (!b) return;
   const st = s.querySelector('#s-status'), name = baseName(song);
   if (!song.patterns.some((p) => p.some(Boolean))) { st.textContent = 'There is nothing in the pattern yet.'; return; }
@@ -329,13 +425,25 @@ const HOW = `<h3>How Pop Pads works</h3><ul class="how-list">
   <li><i>👆</i><span><b>Tap a bubble</b> to play its drum. The bottom row is kicks and snares, hats above, then toms and percussion, cymbals and toys on top.</span></li>
   <li><i>✋</i><span><b>Hold a bubble</b> and it repeats in time. While holding, <b>slide up</b> to stutter the beat (further = tighter), <b>slide down</b> to jumble it. Let go to snap back.</span></li>
   <li><i>▶</i><span><b>Play</b> loops the pattern. <b>●</b> records: from a stop you get a bar of clicks first, then everything you tap is written in, snapped to the beat. <b>♩</b> turns the metronome on.</span></li>
-  <li><i>🔢</i><span><b>Steps</b> shows one drum at a time as 16 steps: pick a drum from the strip, tap the steps where it plays. Its sliders change its pitch, length, tone and volume.</span></li>
+  <li><i>🔢</i><span><b>Steps</b> shows one drum at a time as 16 steps: pick a drum from the strip, tap the steps where it plays. Its sliders change its pitch, length, filter, volume, crush, LFO and nudge (a touch early or late); the <b>Mix</b> tab has the whole beat's knobs.</span></li>
+  <li><i>✨</i><span><b>Hold a step</b> to give that one hit its own settings: a higher pitch, more crush, nudged off the grid… Steps with their own settings get a dot. Tap Done when finished.</span></li>
+  <li><i>🎚</i><span><b>Record knob moves</b>: while ● is recording, hold and move any knob and it is written into the pattern, so the sweep plays back every loop. Knobs with moves show ◆. Clear them from ☰.</span></li>
   <li><i>1</i><span><b>Patterns 1–8</b>: tap one to work on it. <b>Hold</b> one to copy the current pattern into it. <b>Chain</b>: tap it, tap patterns in the order to play them, tap done.</span></li>
   <li><i>🥤</i><span><b>Flavours</b> (top) swap the whole kit and keep your beat. <b>bpm</b> sets the tempo, or tap the beat.</span></li>
   <li><i>🎛</i><span><b>Filter</b> left darkens, right thins. <b>Drive</b> warms, <b>Crush</b> crunches, <b>Swing</b> shuffles. <b>LFO</b> moves the filter, volume or pitch in time.</span></li>
   <li><i>💾</i><span><b>☰</b> saves the beat: a loop (WAV), the pattern for Logic (MIDI), or every drum on its own (stems).</span></li>
 </ul>`;
-const showHow = () => openSheet(HOW);
+const showHow = () => openSheet(HOW.replace('</h3>', '</h3><button class="watch" id="watch">▶ Watch the video · 1½ min</button>'), (sh) => { sh.querySelector('#watch').onclick = () => { closeSheet(); showTour(); }; });
+// the video tutorial; the beat stops while it plays
+function showTour() {
+  const box = $('tour'), v = $('tour-video');
+  if (eng && eng.playing) $('play').click();
+  if (!v.src) v.src = 'media/tutorial.mp4';
+  box.hidden = false; v.currentTime = 0; v.play().catch(() => {});
+}
+const closeTour = () => { $('tour-video').pause(); $('tour').hidden = true; };
+$('tour-close').onclick = closeTour;
+$('tour-video').onended = closeTour;
 $('how-start').onclick = () => { $('start').classList.add('gone'); start(); showHow(); };
 
 // ---------- go ----------
@@ -343,6 +451,6 @@ $('go').onclick = async () => { $('start').classList.add('gone'); await start();
 // the Android app: the beat stops when you leave the app
 window.popPadsPause = () => { if (eng && eng.playing) $('play').click(); };
 // the Android back button closes a sheet first
-window.popPadsBack = () => { if (!$('sheet').hidden) { closeSheet(); return true; } return false; };
+window.popPadsBack = () => { if (!$('tour').hidden) { closeTour(); return true; } if (!$('sheet').hidden) { closeSheet(); return true; } return false; };
 drawAll();
 window.popPads = { get eng() { return eng; }, get song() { return song; }, start };

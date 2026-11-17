@@ -34,20 +34,24 @@
   <p id="hint"></p>
 
   <section id="panel">
+    <div class="tabs" id="tabs" hidden><button data-tab="drum" class="on">Drum</button><button data-tab="mix">Mix</button><span id="lock-note"></span><button class="chip small" id="p-clear">Clear</button><button class="chip small" id="lock-clear" hidden>Clear step</button><button class="chip small on" id="lock-done" hidden>Done</button></div>
     <div id="fx-panel">
-      <label class="sl"><span>Filter</span><input type="range" id="f-filter" min="-100" max="100" value="0"></label>
-      <label class="sl"><span>Drive</span><input type="range" id="f-drive" min="0" max="100" value="15"></label>
-      <label class="sl"><span>Crush</span><input type="range" id="f-crush" min="0" max="100" value="0"></label>
+      <label class="sl"><span>Filter</span><input type="range" data-scope="mix" data-key="filter" min="-100" max="100" value="0"></label>
+      <label class="sl"><span>Drive</span><input type="range" data-scope="mix" data-key="drive" min="0" max="100" value="15"></label>
+      <label class="sl"><span>Crush</span><input type="range" data-scope="mix" data-key="crush" min="0" max="100" value="0"></label>
       <label class="sl"><span>Swing</span><input type="range" id="f-swing" min="0" max="100" value="0"></label>
-      <label class="sl"><span>LFO</span><input type="range" id="f-lfo" min="0" max="100" value="0"></label>
+      <label class="sl"><span>LFO</span><input type="range" data-scope="mix" data-key="lfo" min="0" max="100" value="0"></label>
       <div class="lfo"><button class="chip small" id="lfo-to"></button><button class="chip small" id="lfo-rate"></button></div>
     </div>
     <div id="pad-panel" hidden>
-      <label class="sl"><span>Pitch</span><input type="range" id="p-pitch" min="-12" max="12" step="1" value="0"></label>
-      <label class="sl"><span>Length</span><input type="range" id="p-len" min="4" max="100" value="100"></label>
-      <label class="sl"><span>Tone</span><input type="range" id="p-tone" min="0" max="100" value="100"></label>
-      <label class="sl"><span>Volume</span><input type="range" id="p-vol" min="0" max="100" value="85"></label>
-      <div class="lfo"><button class="chip small" id="p-clear">Clear this sound</button></div>
+      <label class="sl"><span>Pitch</span><input type="range" data-scope="pad" data-key="pitch" min="-12" max="12" step="1" value="0"></label>
+      <label class="sl"><span>Length</span><input type="range" data-scope="pad" data-key="len" min="4" max="100" value="100"></label>
+      <label class="sl"><span>Filter</span><input type="range" data-scope="pad" data-key="filt" min="-100" max="100" value="0"></label>
+      <label class="sl"><span>Volume</span><input type="range" data-scope="pad" data-key="vol" min="0" max="100" value="85"></label>
+      <label class="sl"><span>Crush</span><input type="range" data-scope="pad" data-key="crush" min="0" max="100" value="0"></label>
+      <label class="sl"><span>LFO</span><input type="range" data-scope="pad" data-key="lfo" min="0" max="100" value="0"></label>
+      <label class="sl"><span>Nudge</span><input type="range" data-scope="pad" data-key="nudge" min="-50" max="50" value="0"></label>
+      <div class="lfo"><button class="chip small" id="p-lfo-to"></button></div>
     </div>
   </section>
 </div>
@@ -55,6 +59,7 @@
 <div id="scrim" hidden></div>
 <div id="sheet" hidden role="dialog"></div>
 <div id="toast"></div>
+<div id="tour" hidden role="dialog" aria-label="How Pop Pads works"><video id="tour-video" controls playsinline preload="none"></video><button id="tour-close" class="chip icon" aria-label="Close">✕</button></div>
 
 <div id="start">
   <div>
