@@ -120,6 +120,34 @@ await page.click('#chain'); for (const i of [0, 1, 0]) await page.click(`[data-p
 const chain = await page.evaluate(() => window.popPads.song.chain.join(','));
 check(copied && chain === '0,1,0', `hold copies a pattern, and patterns chain (${chain})`);
 
+// record from a stop: a bar of clicks (count-in) before the pattern starts
+const countIn = await page.evaluate(async () => {
+  const e = window.popPads.eng, g = e.graph, clicks = [], seen = [];
+  const oc = g.click.bind(g); g.click = (t, a) => { clicks.push({ t, a }); return oc(t, a); };
+  const ocount = e.onCount; e.onCount = (b) => { seen.push(b); ocount(b); };
+  window.__hits = [];
+  const t0 = e.ctx.currentTime;
+  document.getElementById('rec').click();
+  await new Promise((r) => setTimeout(r, 3600));
+  const firstHit = window.__hits.find((h) => h.seq);
+  document.getElementById('rec').click(); document.getElementById('play').click();
+  g.click = oc; e.onCount = ocount;
+  return { clicks: clicks.filter((c) => c.t < (firstHit ? firstHit.t : 99)).length, accent: clicks[0] && clicks[0].a, firstAfter: firstHit ? firstHit.t - t0 : null, seen };
+});
+const barSec = 4 * 60 / 92;
+check(countIn.clicks === 4 && countIn.accent && countIn.firstAfter > barSec && countIn.firstAfter < barSec + 0.3 && countIn.seen.join() === '1,2,3,4,0',
+  `record from a stop counts in one bar: 4 clicks, then the pattern (${countIn.firstAfter && countIn.firstAfter.toFixed(2)} s later; beats shown ${countIn.seen.join(',')})`);
+// the metronome clicks on every beat while playing
+const metro = await page.evaluate(async () => {
+  const e = window.popPads.eng, g = e.graph, clicks = [];
+  const oc = g.click.bind(g); g.click = (t, a) => { clicks.push(a); return oc(t, a); };
+  document.getElementById('metro').click(); document.getElementById('play').click();
+  await new Promise((r) => setTimeout(r, 2700));
+  document.getElementById('play').click(); document.getElementById('metro').click(); g.click = oc;
+  return clicks;
+});
+check(metro.length >= 4 && metro[0] === true && metro.filter(Boolean).length >= 1, `the metronome clicks each beat, louder on one (${metro.length} clicks)`);
+
 // knobs reach the sound
 await page.fill('#f-filter', '-70'); await page.dispatchEvent('#f-filter', 'input');
 const lp = await page.evaluate(() => new Promise((r) => setTimeout(() => r(window.popPads.eng.graph.lp.frequency.value), 300)));
@@ -153,6 +181,30 @@ await page.click('#scrim', { position: { x: 20, y: 20 } });
 // the beat is still there after a reload
 await page.reload();
 const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('poppads.song')));
+
+// fits the screen: small phone, a 412-wide phone with bigger text, and sideways
+const fits = [];
+for (const [w, h, label, zoom] of [[360, 640, 'small phone', 1], [412, 780, 'phone, larger text', 1.15], [915, 380, 'sideways', 1]]) {
+  const lp2 = await (await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true })).newPage();
+  lp2.on('pageerror', (e) => errors.push(String(e)));
+  await lp2.goto(`http://127.0.0.1:${server.address().port}/index.html`);
+  if (zoom !== 1) await lp2.addStyleTag({ content: `html { font-size: ${zoom * 100}%; } .chip, #top h1, .seg button { zoom: ${zoom}; }` });
+  await lp2.click('#go'); await lp2.waitForTimeout(400);
+  for (const m of ['play', 'steps']) {
+    await lp2.click(`[data-mode="${m}"]`); await lp2.waitForTimeout(250);
+    const r = await lp2.evaluate(() => {
+      const box = (s) => document.querySelector(s).getBoundingClientRect();
+      const W = innerWidth, H = innerHeight, menu = box('#menu'), grid = box('#grid'), panel = box('#panel'), sounds = document.getElementById('sounds');
+      return { menuIn: menu.right <= W + 0.5, gridIn: grid.bottom <= H + 0.5 && grid.top >= 0, noOverlap: document.body.classList.contains('wide') || grid.bottom <= panel.top + 0.5,
+        panelIn: document.body.classList.contains('wide') || panel.bottom <= H + 0.5, sounds: sounds.hidden ? null : sounds.getBoundingClientRect().height, grid: Math.round(grid.width) };
+    });
+    const ok = r.menuIn && r.gridIn && r.noOverlap && r.panelIn && (r.sounds === null || r.sounds >= 28) && r.grid >= 200;
+    fits.push(ok); if (!ok) console.log('   ', label, m, JSON.stringify(r));
+    await lp2.screenshot({ path: path.join(OUT, `fit-${w}x${h}-${m}.png`) });
+  }
+  await lp2.close();
+}
+check(fits.every(Boolean), `fits the screen on a small phone, a phone with larger text, and sideways (${fits.filter(Boolean).length}/${fits.length})`);
 check(kept && kept.kit === 'cream' && kept.chain.join() === '0,1,0' && kept.patterns[0][3] === ((1 << 4) | (1 << 12)), 'the song is kept on the device');
 check(errors.length === 0, 'no page errors ' + errors.join(' | '));
 console.log('output in', OUT);

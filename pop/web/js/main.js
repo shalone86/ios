@@ -80,8 +80,33 @@ function drawAll() {
   $('bpm').textContent = `${song.bpm} bpm`;
   $('fx-panel').hidden = mode !== 'play'; $('pad-panel').hidden = mode !== 'steps'; $('sounds').hidden = mode !== 'steps';
   document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+  showHint();
+  $('metro').classList.toggle('on', !!song.metro);
+  fit();
+}
+function showHint() {
+  $('hint').classList.remove('count');
   $('hint').textContent = mode === 'play' ? 'hold a pad to repeat · slide up to stutter · slide down to jumble' : `tap the steps where ${KITS[song.kit].pads[sel].name} plays`;
 }
+// the pads get whatever room the other rows leave (sideways: the right-hand side)
+function fit() {
+  const app = $('app'), grid = $('grid');
+  const wide = innerWidth > innerHeight * 1.15 && innerHeight < 700;
+  document.body.classList.toggle('wide', wide);
+  let size;
+  if (wide) size = Math.min(innerHeight - 28, innerWidth * 0.55);
+  else {
+    const cs = getComputedStyle(app), pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const rows = [...app.children].filter((el) => el !== grid && !el.hidden && el.offsetParent !== null);
+    const used = rows.reduce((a, el) => a + el.offsetHeight, 0) + 10 * rows.length + pad;
+    size = Math.min(app.clientWidth - 28, innerHeight - used - 6);
+  }
+  const px = Math.max(200, Math.floor(size));
+  grid.style.width = grid.style.maxWidth = `${px}px`;
+  grid.style.gap = `${Math.round(px * 0.03)}px`;   // a % gap is measured against the height, which overlaps rows
+}
+addEventListener('resize', fit);
+if (document.fonts) document.fonts.ready.then(fit);
 const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 2000); };
 
 // ---------- fizz in the background ----------
@@ -115,6 +140,11 @@ async function start() {
   eng.onStep = (s, pi, fx) => {
     document.querySelectorAll('.pat').forEach((p) => p.classList.toggle('now', +p.dataset.pat === pi && eng.playing));
     if (mode === 'steps') document.querySelectorAll('.step').forEach((el) => el.classList.toggle('now', +el.dataset.step === s && pi === song.cur && eng.playing));
+  };
+  // the count-in: 1 2 3 4 big in the hint line, then back to normal
+  eng.onCount = (beat) => {
+    if (!beat) { showHint(); return; }
+    $('hint').classList.add('count'); $('hint').textContent = '● '.repeat(beat).trim() + '  ' + beat;
   };
   eng.onWrite = () => { save(); if (mode === 'steps') { drawGrid(); drawSounds(); } drawPatterns(); };
 }
@@ -171,10 +201,12 @@ $('play').onclick = async () => {
 $('rec').onclick = async () => {
   await start();
   eng.rec = !eng.rec;
-  if (eng.rec && !eng.playing) { eng.play(); $('play').classList.add('on'); $('play').textContent = '■'; }
+  // from a stop, a bar of clicks first so you know where "one" is
+  if (eng.rec && !eng.playing) { eng.play(true); $('play').classList.add('on'); $('play').textContent = '■'; }
   $('rec').classList.toggle('on', eng.rec);
   if (eng.rec) toast(`recording into pattern ${song.cur + 1}`);
 };
+$('metro').onclick = () => { song.metro = !song.metro; save(); $('metro').classList.toggle('on', song.metro); toast(song.metro ? 'metronome on' : 'metronome off'); };
 document.querySelector('.seg').onclick = (e) => {
   const b = e.target.closest('[data-mode]'); if (!b) return;
   mode = b.dataset.mode; drawAll();
@@ -274,9 +306,10 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <button class="big" data-save="stems">🎚️<span>Every sound<small>a zip with each drum as its own WAV, plus the mix</small></span></button>
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
-  <div class="row"><button class="chip" data-clear="1">Clear it</button></div>`, (s) => s.onclick = async (e) => {
+  <div class="row"><button class="chip" data-clear="1">Clear it</button><button class="chip" data-how="1">How it works</button></div>`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
+  if (e.target.closest('[data-how]')) { showHow(); return; }
   if (e.target.closest('[data-clear]')) { song.patterns[song.cur] = new Array(16).fill(0); save(); drawAll(); closeSheet(); toast(`pattern ${song.cur + 1} cleared`); return; }
   const b = e.target.closest('[data-save]'); if (!b) return;
   const st = s.querySelector('#s-status'), name = baseName(song);
@@ -290,6 +323,20 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
     st.textContent = msg ? `✓ ${msg}` : '';
   } catch (err) { st.textContent = `Could not save: ${err.message}`; }
 });
+
+// ---------- how it works ----------
+const HOW = `<h3>How Pop Pads works</h3><ul class="how-list">
+  <li><i>👆</i><span><b>Tap a bubble</b> to play its drum. The bottom row is kicks and snares, hats above, then toms and percussion, cymbals and toys on top.</span></li>
+  <li><i>✋</i><span><b>Hold a bubble</b> and it repeats in time. While holding, <b>slide up</b> to stutter the beat (further = tighter), <b>slide down</b> to jumble it. Let go to snap back.</span></li>
+  <li><i>▶</i><span><b>Play</b> loops the pattern. <b>●</b> records: from a stop you get a bar of clicks first, then everything you tap is written in, snapped to the beat. <b>♩</b> turns the metronome on.</span></li>
+  <li><i>🔢</i><span><b>Steps</b> shows one drum at a time as 16 steps: pick a drum from the strip, tap the steps where it plays. Its sliders change its pitch, length, tone and volume.</span></li>
+  <li><i>1</i><span><b>Patterns 1–8</b>: tap one to work on it. <b>Hold</b> one to copy the current pattern into it. <b>Chain</b>: tap it, tap patterns in the order to play them, tap done.</span></li>
+  <li><i>🥤</i><span><b>Flavours</b> (top) swap the whole kit and keep your beat. <b>bpm</b> sets the tempo, or tap the beat.</span></li>
+  <li><i>🎛</i><span><b>Filter</b> left darkens, right thins. <b>Drive</b> warms, <b>Crush</b> crunches, <b>Swing</b> shuffles. <b>LFO</b> moves the filter, volume or pitch in time.</span></li>
+  <li><i>💾</i><span><b>☰</b> saves the beat: a loop (WAV), the pattern for Logic (MIDI), or every drum on its own (stems).</span></li>
+</ul>`;
+const showHow = () => openSheet(HOW);
+$('how-start').onclick = () => { $('start').classList.add('gone'); start(); showHow(); };
 
 // ---------- go ----------
 $('go').onclick = async () => { $('start').classList.add('gone'); await start(); };

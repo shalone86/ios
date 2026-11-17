@@ -85,7 +85,7 @@ check(maria === 0 && back.join() === 'alto_ah_mp_F3' && cdl.suggestedFilename() 
   `each singer's takes are kept apart and saved with their name (${cdl.suggestedFilename()}: ${listing})`);
 const pitch = await page.evaluate(() => [window.booth.pitchOf(57, 220), window.booth.pitchOf(57, 226), window.booth.pitchOf(57, 214)]);
 check(pitch[0] === 'in tune ✓' && /sharp/.test(pitch[1]) && /flat/.test(pitch[2]), 'the pitch reading says in tune, sharp or flat: ' + pitch.join(' | '));
-check((await page.$$('#script optgroup')).length === 3 && (await page.$$('#script option')).length === 16, 'the menu lists 2 tutorials, 12 choir batches and 2 Angelio sound sets');
+check((await page.$$('#script optgroup')).length === 3 && (await page.$$('#script option')).length === 17, 'the menu lists 3 tutorials, 12 choir batches and 2 Angelio sound sets');
 // an audio interface with the mic on input 2 only: the take keeps input 2
 const p2 = await context.newPage();
 p2.on('pageerror', (e) => errors.push(String(e)));

@@ -13,31 +13,39 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background: linear-gradient(180deg, color-mix(in srgb, var(--c1) 70%, #000) 0%, var(--c0) 55%, color-mix(in srgb, var(--c0) 70%, #000) 100%); transition: background 0.6s; }
 #app { position: relative; height: 100%; max-width: 520px; margin: 0 auto; display: flex; flex-direction: column;
   padding: calc(var(--safe-t) + 10px) 14px calc(var(--safe-b) + 10px); gap: 10px; }
+/* no row gets squeezed: the pads take whatever room is left (sized in main.js) */
+#app > * { flex-shrink: 0; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 #top { display: flex; align-items: center; gap: 8px; }
-#top h1 { flex: 1; margin: 0; font-size: 21px; font-weight: 600; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+#top h1 { flex: 1 1 auto; min-width: 0; overflow: hidden; margin: 0; font-size: clamp(16px, 5vw, 21px); font-weight: 600; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 #top h1 .dot { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--c2) 45%, var(--c1)); box-shadow: 0 0 10px var(--c2); }
 .chip { height: 36px; padding: 0 13px; border-radius: 18px; background: var(--glass); border: 1px solid var(--line); font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .chip.small { height: 30px; font-size: 13px; padding: 0 11px; }
 .chip.icon { width: 36px; padding: 0; justify-content: center; font-size: 17px; }
 .chip.on { background: rgba(255, 255, 255, .3); border-color: rgba(255, 255, 255, .6); }
-.swatch { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--c2) 50%, var(--c1)); }
+#kit { flex: 0 1 auto; min-width: 0; }
+#kit span { overflow: hidden; text-overflow: ellipsis; }
+#bpm, #menu { flex: 0 0 auto; }
+.swatch { flex: 0 0 auto;  width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--c2) 50%, var(--c1)); }
 
 #patterns { display: flex; gap: 6px; align-items: center; }
-.pat { flex: 1; aspect-ratio: 1; max-width: 40px; border-radius: 50%; background: var(--glass); border: 1px solid var(--line); font-size: 14px; font-weight: 600; position: relative; transition: transform .1s; }
+.pat { flex: 1 1 0; min-width: 0; aspect-ratio: 1; max-width: 40px; border-radius: 50%; background: var(--glass); border: 1px solid var(--line); font-size: 14px; font-weight: 600; position: relative; transition: transform .1s; }
 .pat.has { background: color-mix(in srgb, var(--c2) 35%, transparent); }
 .pat.cur { border: 2px solid var(--ink); }
 .pat.now { transform: scale(1.12); box-shadow: 0 0 12px var(--c2); }
 .pat sup { position: absolute; top: -6px; right: -4px; font-size: 10px; background: var(--ink); color: var(--c0); border-radius: 8px; padding: 0 4px; line-height: 15px; }
-#chain { margin-left: 4px; }
+#chain { margin-left: 4px; flex: 0 0 auto; }
 
 #bar { display: flex; align-items: center; gap: 10px; }
-.seg { flex: 1; display: flex; background: var(--glass); border: 1px solid var(--line); border-radius: 20px; padding: 3px; }
+.seg { flex: 1; min-width: 0; display: flex; background: var(--glass); border: 1px solid var(--line); border-radius: 20px; padding: 3px; }
 .seg button { flex: 1; height: 34px; border-radius: 17px; font-weight: 600; font-size: 15px; color: var(--dim); }
 .seg button.on { background: var(--ink); color: var(--c0); }
-.round { width: 46px; height: 46px; border-radius: 50%; background: var(--glass); border: 1px solid var(--line); font-size: 18px; }
+.round { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; background: var(--glass); border: 1px solid var(--line); font-size: 18px; }
 #play.on { background: var(--ink); color: var(--c0); }
 #rec { color: #ff5d6c; }
+#metro { font-size: 20px; }
+#metro.on { background: rgba(255,255,255,.3); border-color: rgba(255,255,255,.7); }
 #rec.on { background: #ff5d6c; color: #fff; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .65; } }
 
@@ -48,7 +56,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #sounds button.on { background: var(--ink); color: var(--c0); }
 #sounds button.has::after { content: ' •'; color: var(--c2); }
 
-#grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; width: 100%; max-width: min(100%, calc(100vh - 380px)); max-width: min(100%, calc(100dvh - 380px)); min-width: 250px; margin: auto auto 0; }
+#grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3%; width: 100%; margin: auto auto 0; }
 
 /* a pad: a fizzy soda bubble with a face */
 .pad { position: relative; aspect-ratio: 1; border-radius: 50%; touch-action: none;
@@ -73,6 +81,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .step.on { background: radial-gradient(circle at 34% 28%, #fff 0 7%, var(--c2) 40%, var(--c1)); color: rgba(0,0,0,.55); border-color: transparent; }
 .step.now { box-shadow: 0 0 0 3px var(--ink); }
 
+#hint.count { font-size: 28px; font-weight: 600; color: var(--ink); }
 #hint { margin: -2px 0 0; text-align: center; font-size: 13px; color: var(--dim); min-height: 1.2em; }
 
 #panel { margin-top: auto; margin-bottom: 0; background: rgba(0,0,0,.18); border: 1px solid var(--line); border-radius: 18px; padding: 10px 14px; }
@@ -110,7 +119,21 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 #start h2 { margin: 6px 0 4px; font-size: 44px; }
 #start p { margin: 0 0 24px; color: var(--dim); }
 #start button { padding: 14px 30px; border-radius: 28px; background: var(--ink); color: var(--c0); font-size: 18px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+#start .how { display: block; margin: 16px auto 0; padding: 8px 14px; background: none; box-shadow: none; color: var(--ink); font-size: 15px; opacity: .85; }
 #start #apk { display: block; margin-top: 22px; color: var(--dim); font-size: 13px; }
 .logo { display: flex; justify-content: center; gap: 6px; align-items: flex-end; }
 .logo i { display: block; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--c2) 45%, var(--c1)); }
 .logo i:nth-child(1) { width: 26px; height: 26px; } .logo i:nth-child(2) { width: 46px; height: 46px; } .logo i:nth-child(3) { width: 18px; height: 18px; }
+
+/* sideways on a phone: controls on the left, pads on the right */
+body.wide #app { max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-rows: min-content; column-gap: 22px; row-gap: 8px;
+  align-content: start; overflow-y: auto; touch-action: pan-y; padding-left: calc(env(safe-area-inset-left, 0px) + 14px); padding-right: calc(env(safe-area-inset-right, 0px) + 14px); }
+body.wide #app > :not(#grid) { grid-column: 1; }
+body.wide #grid { grid-column: 2; grid-row: 1 / span 20; align-self: start; position: sticky; top: 0; margin: 0; }
+body.wide #panel { margin-top: 0; }
+
+/* how it works */
+.how-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.how-list li { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; font-size: 15px; line-height: 1.35; }
+.how-list li i { font-style: normal; font-size: 22px; text-align: center; }
+.how-list b { color: var(--c2); }

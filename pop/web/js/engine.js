@@ -15,7 +15,7 @@ const CHH = 4, OHH = 5;   // the closed hat cuts off the open one, as on real ma
 
 export function newSong() {
   return {
-    v: 1, kit: 'cola', bpm: 92, swing: 0,
+    v: 1, kit: 'cola', bpm: 92, swing: 0, metro: false,
     fx: { filter: 0, drive: 0.15, crush: 0, lfo: 0, lfoRate: 2, lfoTo: 'filter' },
     tweaks: {},
     patterns: Array.from({ length: PATTERNS }, () => new Array(16).fill(0)),
@@ -28,6 +28,7 @@ export const tweakOf = (song, i) => {
 };
 const stepDur = (bpm) => 60 / bpm / 4;
 const swingAt = (song, s) => (s % 2 ? song.swing * stepDur(song.bpm) * 0.66 : 0);
+const mod16 = (n) => ((n % STEPS) + STEPS) % STEPS;
 
 // ---------- the sound path (works the same live and offline) ----------
 
@@ -112,6 +113,13 @@ export class Graph {
     T(this.lfoToVol.gain, fx.lfoTo === 'volume' ? lfo * 0.5 : 0);
     T(this.trem.gain, fx.lfoTo === 'volume' ? 1 - lfo * 0.5 : 1);
   }
+  // the metronome: a short blip, higher on the first beat of the bar, straight to the speakers
+  click(t, accent) {
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.frequency.value = accent ? 1760 : 1175;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(accent ? 0.35 : 0.22, t + 0.002); g.gain.setTargetAtTime(0, t + 0.004, 0.012);
+    o.connect(g).connect(this.dest); o.start(t); o.stop(t + 0.1);
+  }
   lfoPitch(t) {
     if (!this.fx || this.fx.lfoTo !== 'pitch' || !this.fx.lfo) return 0;
     const f = this.bpm / 60 / LFO_RATES[this.fx.lfoRate][1];
@@ -163,16 +171,18 @@ export class PopEngine {
   updateFx() { this.graph.setFx(this.song.fx, this.song.bpm); }
 
   // ----- the clock: runs while playing, or while a pad is held for repeats -----
-  ensureClock(fresh) {
+  // countIn: a bar of clicks before the pattern starts (steps -16 to -1)
+  ensureClock(fresh, countIn = false) {
     const now = this.ctx.currentTime;
     if (fresh || !this.clock) {
-      this.t0 = now + 0.06; this.n = 0; this.bars.clear(); this.skip.clear();
+      const lead = countIn ? STEPS : 0;
+      this.t0 = now + 0.08 + lead * stepDur(this.song.bpm); this.n = -lead; this.bars.clear(); this.skip.clear();
       if (this.playing) this.graph.restartLfo(this.t0);
     }
     if (!this.clock) this.clock = setInterval(() => this.pump(), 20);
     this.pump();
   }
-  timeOf(n) { return this.t0 + n * stepDur(this.song.bpm) + swingAt(this.song, n % STEPS); }
+  timeOf(n) { return this.t0 + n * stepDur(this.song.bpm) + swingAt(this.song, mod16(n)); }
   pump() {
     if (!this.playing && !this.held.size) { clearInterval(this.clock); this.clock = null; return; }
     const until = this.ctx.currentTime + 0.12;
@@ -188,9 +198,18 @@ export class PopEngine {
     return this.bars.get(b);
   }
   step(n, t) {
-    const s = n % STEPS, bar = Math.floor(n / STEPS);
+    const s = mod16(n), bar = Math.floor(n / STEPS);
+    const later = (fn) => setTimeout(fn, Math.max(0, (t - this.ctx.currentTime) * 1000));
+    if (n < 0) {
+      // the count-in: clicks only, and the beat number for the screen
+      if (s % 4 === 0) { this.graph.click(t, s === 0); if (this.onCount) { const beat = s / 4 + 1; later(() => this.onCount(beat)); } }
+      return;
+    }
+    if (n === 0 && this.onCount) later(() => this.onCount(0));
+    if (this.playing && this.song.metro && s % 4 === 0) this.graph.click(t, s === 0);
     if (this.playing) {
       const pi = this.patternForBar(bar), pat = this.song.patterns[pi];
+      if (!pat) return;
       // the step to read: itself, a looped window (stutter) or a random one (jumble)
       let src = s;
       if (this.perf.mode === 'stutter') { const w = this.perf.size, a = this.perf.start; src = a + (((s - a) % w) + w) % w; }
@@ -228,7 +247,8 @@ export class PopEngine {
     if (this.rec && this.playing) {
       // snap to the nearest step; if that step is still to come, don't play it twice
       const sd = stepDur(this.song.bpm), lat = this.ctx.outputLatency || this.ctx.baseLatency || 0;
-      const k = Math.max(0, Math.round((now + lat * 0.5 - this.t0) / sd));
+      const k = Math.round((now + lat * 0.5 - this.t0) / sd);
+      if (k < 0) return;                    // still counting in
       this.write(i, k);
       if (k >= this.n) this.skip.add(`${i}:${k}`);
     }
@@ -237,16 +257,16 @@ export class PopEngine {
   release(i) { this.held.delete(i); if (!this.held.size) this.setPerf(null); }
   // slide up: stutter (bigger slide, smaller loop); slide down: jumble (bigger slide, more mixed up)
   setPerf(mode, amount = 0) {
-    const s = this.playing ? (this.n % STEPS) : 0;
+    const s = this.playing ? mod16(this.n) : 0;
     if (mode === 'stutter') {
       const size = amount > 0.66 ? 1 : amount > 0.33 ? 2 : 4;
       if (this.perf.mode !== 'stutter' || this.perf.size !== size) this.perf = { mode, size, amount, start: Math.floor(s / size) * size };
     } else if (mode === 'jumble') this.perf = { mode, size: 0, amount: 0.3 + 0.7 * amount, start: 0 };
     else this.perf = { mode: null, size: 4, amount: 0, start: 0 };
   }
-  play() {
+  play(countIn = false) {
     if (this.ctx.state !== 'running') this.ctx.resume();
-    this.playing = true; this.ensureClock(true);
+    this.playing = true; this.ensureClock(true, countIn);
   }
   stop() { this.playing = false; this.rec = false; this.perf.mode = null; }
 }
