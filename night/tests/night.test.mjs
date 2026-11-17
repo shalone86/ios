@@ -99,6 +99,9 @@ check(mid < 0.9 && after.min === 0 && after.loops === 0 && !after.anim, 'the sle
 await page.screenshot({ path: path.join(OUT, 'night.png') });
 // the tutorial: ? opens it, the sea goes quiet, ✕ brings it back
 await page.click('#help');
+const links = await page.evaluate(() => [...document.querySelectorAll('#menu a.item')].map((a) => a.href).join(' '));
+check(/shalonely\.com\/boba\//.test(links) && /shalonely\.com\/pop\//.test(links), 'the menu links Boba Beats and Pop Pads');
+await page.click('#m-tour');
 await page.waitForTimeout(1500);
 const tour = await page.evaluate(() => ({ open: !document.getElementById('tour').hidden, src: document.getElementById('tour-video').currentSrc,
   ready: document.getElementById('tour-video').readyState, master: window.deepDrift.drift.master.gain.value }));

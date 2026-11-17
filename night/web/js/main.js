@@ -278,7 +278,11 @@ function closeTour() {
   if (drift) drift.hush(false);
 }
 $('tour-link').onclick = () => { $('start').classList.add('gone'); showTour(); };
-$('help').onclick = showTour;
+// the menu: the tutorial, and the other bubble apps
+$('help').onclick = () => { $('menu').hidden = false; };
+$('menu-close').onclick = () => { $('menu').hidden = true; };
+$('menu').addEventListener('click', (e) => { if (e.target.id === 'menu') $('menu').hidden = true; });
+$('m-tour').onclick = () => { $('menu').hidden = true; showTour(); };
 $('tour-close').onclick = closeTour;
 $('tour-video').onended = closeTour;
 

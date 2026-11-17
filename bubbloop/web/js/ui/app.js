@@ -3,7 +3,7 @@
 import { ROWS, COLS, STEP, BAR, KEY_NAMES, scaleById, chordLabel, cellNotes, CHORDS } from '../theory.js';
 import { Engine } from '../engine.js';
 import { padFor } from '../drums.js';
-import { getSample, prepareNatural, recordMic, addSample } from '../samples.js';
+import { getSample, prepareNatural, recordMic, addSample, unpackSamples } from '../samples.js';
 import { FX } from '../graph.js';
 import { instrumentById } from '../instruments.js';
 import * as S from '../state.js';
@@ -1167,11 +1167,37 @@ export function afterStructureChange(resync = true) {
 
 // ---------- boot ----------
 
+// A beat sent from Pop Pads (same website, so same storage): it waits in
+// IndexedDB and is opened as a new song when Boba starts with ?from=pop.
+async function fromPopPads() {
+  if (new URLSearchParams(location.search).get('from') !== 'pop') return null;
+  try { history.replaceState(null, '', location.pathname); } catch (e) { /* fine */ }
+  const file = await new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('bubble-handoff', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('songs');
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        const store = req.result.transaction('songs', 'readwrite').objectStore('songs'), get = store.get('pop');
+        get.onsuccess = () => { store.delete('pop'); resolve(get.result && get.result.file); };
+        get.onerror = () => resolve(null);
+      };
+    } catch (e) { resolve(null); }
+  });
+  if (!file) return null;
+  await unpackSamples(file.samples);
+  delete file.samples;
+  const p = S.repair(file);
+  if (p) S.saveProject(p);
+  return p;
+}
+
 async function boot() {
   mountIcons();
   $('logo-bubbles').innerHTML = [0, 1, 2, 3, 4].map((i) => `<div class="bub hue-${i}" style="--bob:${2.600 + i * 0.4}s;--delay:${-i * 0.7}s"><div class="orb"><div class="face">${FACE}</div></div></div>`).join('');
-  app.project = S.loadLast() || S.newProject();
-  app.trackId = (app.project.tracks.find((t) => t.role === 'melody') || app.project.tracks[0]).id;
+  const popped = await fromPopPads().catch(() => null);
+  app.project = popped || S.loadLast() || S.newProject();
+  app.trackId = popped ? popped.tracks[0].id : (app.project.tracks.find((t) => t.role === 'melody') || app.project.tracks[0]).id;
   engine.tapOffset = (app.settings.tapOffset || 0) / 1000;
   engine.metroPlay = !!app.settings.metroPlay;
   engine.smooth = app.settings.smooth || 'auto';
@@ -1191,6 +1217,7 @@ async function boot() {
     el.splash.classList.add('gone');
     try { await engine.wake(app.project); } catch (e) { toast('Audio could not start: ' + e.message, 4000); }
     renderAll();
+    if (popped) toast('Your Pop Pads beat is in: the drums are the Pop Pads track', 4000);
   };
   $('btn-start').onclick = start;
   // first visit: offer the tutorial on the start screen (it stays in the song menu)

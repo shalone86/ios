@@ -40,6 +40,13 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
 #tour video { width: min(100%, calc((100vh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16)); width: min(100%, calc((100dvh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16));
   aspect-ratio: 9 / 16; border-radius: 18px; background: #000; box-shadow: 0 0 40px rgba(90, 160, 255, .25); }
 #tour-close { position: absolute; top: calc(var(--safe-t) + 14px); right: 14px; width: 40px; padding: 0; z-index: 1; }
+#menu { position: fixed; inset: 0; z-index: 15; background: rgba(2, 5, 16, .7); display: flex; align-items: flex-end; justify-content: center; }
+#menu[hidden] { display: none; }
+#menu .card { position: relative; width: 100%; max-width: 460px; background: #0b1630; border: 1px solid var(--line); border-radius: 22px 22px 0 0; padding: 18px 18px calc(var(--safe-b) + 18px); }
+#menu h3 { margin: 0 0 12px; font-size: 18px; } #menu h4 { margin: 16px 0 8px; font-size: 13px; color: var(--dim); }
+#menu .item { display: block; width: 100%; text-align: left; padding: 12px 14px; margin-bottom: 8px; border-radius: 14px; background: var(--glass); border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; }
+#menu .item small { display: block; font-weight: 400; font-size: 13px; color: var(--dim); }
+#menu .x { position: absolute; top: 12px; right: 12px; width: 36px; padding: 0; justify-content: center; }
 #toast { position: fixed; left: 50%; top: calc(var(--safe-t) + 60px); transform: translateX(-50%); font-size: 14px; color: var(--dim); opacity: 0; transition: opacity .5s; pointer-events: none; }
 #toast.on { opacity: 1; }
 </style>
@@ -50,9 +57,18 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
   <h1>Deep Drift</h1>
   <button class="chip" id="mood">Deep</button>
   <button class="chip" id="timer">sleep: off</button>
-  <button class="chip" id="help" aria-label="How it works">?</button>
+  <button class="chip" id="help" aria-label="Menu">☰</button>
 </header>
 <div id="toast"></div>
+<div id="menu" hidden><div class="card" role="dialog" aria-label="Menu">
+  <button class="chip x" id="menu-close" aria-label="Close">✕</button>
+  <h3>Deep Drift</h3>
+  <button class="item" id="m-tour">▶ How it works<small>a 2 minute video</small></button>
+  <h4>Bubble apps</h4>
+  <a class="item" href="https://shalonely.com/boba/">🧋 Boba Beats<small>make whole songs out of bubbles</small></a>
+  <a class="item" href="https://shalonely.com/pop/">🥤 Pop Pads<small>a fizzy little drum machine</small></a>
+  <a class="item" id="m-apk" href="DeepDrift.apk" download>📱 Android app<small>keeps playing with the screen off</small></a>
+</div></div>
 <section id="panel">
   <div class="row" id="voices"></div>
   <label class="sl"><span>Depth</span><input type="range" id="depth" min="0" max="100" value="50"></label>
@@ -65,7 +81,7 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
 </section>
 <div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights to start them singing.<br>tap again to let one rest. hold one to hum.</p><button id="go">dive in</button><button id="tour-link">▶ how it works · 2 min</button><a id="apk" href="DeepDrift.apk" download>Android app: keeps playing with the screen off</a></div></div>
 <div id="tour" hidden role="dialog" aria-label="How Deep Drift works"><video id="tour-video" controls playsinline preload="none"></video><button id="tour-close" class="chip" aria-label="Close">✕</button></div>
-<script>if (window.DriftNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent)) document.getElementById('apk').remove();</script>
+<script>if (window.DriftNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent)) { document.getElementById('apk').remove(); document.getElementById('m-apk').remove(); }</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

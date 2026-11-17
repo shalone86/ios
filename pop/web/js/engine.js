@@ -171,7 +171,7 @@ export class Graph {
     return this.curves[k];
   }
   // one hit of pad `i` from buffer `buf` at time t
-  play(i, buf, t, tw, vel = 1) {
+  play(i, buf, t, tw, vel = 1, out = this.input) {
     const ctx = this.ctx, src = ctx.createBufferSource(), g = ctx.createGain();
     src.buffer = buf;
     // the drum's own LFO moves its pitch, filter or volume, in time with the mix LFO
@@ -188,7 +188,7 @@ export class Graph {
     if (f < -0.02) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1; lp.frequency.value = 20000 * Math.pow(180 / 20000, -f); node = node.connect(lp); }
     else if (f > 0.02) { const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.Q.value = 0.9; hp.frequency.value = 20 * Math.pow(3000 / 20, f); node = node.connect(hp); }
     const pan = ctx.createStereoPanner(); pan.pan.value = PANS[i];
-    node.connect(g).connect(pan).connect(this.input);
+    node.connect(g).connect(pan).connect(out);
     src.start(t); src.stop(t + end + 0.02);
     if (i === CHH && this.openHat && this.openHat.until > t) {
       const o = this.openHat.g.gain; o.cancelScheduledValues(t); o.setValueAtTime(o.value, t); o.setTargetAtTime(0, t, 0.008);

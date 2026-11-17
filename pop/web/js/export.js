@@ -106,3 +106,81 @@ export async function deliver(bytes, name, mime) {
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   return 'Downloaded';
 }
+
+// ---------- handing the beat to Boba Beats ----------
+// A Boba Beats song: a "Pop Pads" sampler track holding the drums as they
+// sound here (pitch, length, filter, crush and volume baked in), placed on
+// Boba's bubbles in the same 4×4 layout, with the pattern (or chain) as its
+// notes; plus Boba's usual bass, chords and melody tracks, empty.
+const B_PPQ = 96, B_STEP = 24, B_BAR = 384, B_COLS = 5;
+const bid = () => Math.random().toString(36).slice(2, 10);
+
+async function padSample(song, i, sr) {
+  const { Graph, tweakOf } = await import('./engine.js');
+  const { renderKit } = await import('./kits.js');
+  const buf = (await renderKit(song.kit, sr))[i], tw = { ...tweakOf(song, i), lfo: 0, nudge: 0 };
+  const rate = Math.pow(2, tw.pitch / 12), len = buf.duration / rate * Math.max(0.04, tw.len) + 0.03;
+  const ctx = new OfflineAudioContext(1, Math.ceil(len * sr), sr);
+  const g = new Graph(ctx);
+  g.play(i, buf, 0, tw, 1, ctx.destination);
+  const out = (await ctx.startRendering()).getChannelData(0);
+  const pcm = new Int16Array(out.length);
+  for (let k = 0; k < out.length; k++) pcm[k] = Math.max(-32768, Math.min(32767, Math.round(out[k] * 32767)));
+  const bytes = new Uint8Array(pcm.buffer);
+  let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
+  return { name: KITS[song.kit].pads[i].name, root: 60, pitched: false, sr, pcm: btoa(s) };
+}
+
+export async function bobaSong(song) {
+  const { padAt } = await import('./engine.js');
+  let bars = song.chain.length > 1 ? song.chain.slice() : [song.cur];
+  // Boba loops are 1, 2, 4 or 8 bars: a chain of another length is repeated to fit
+  const size = [1, 2, 4, 8].find((n) => n >= bars.length) || 8;
+  while (bars.length < size) bars.push(bars[bars.length % (song.chain.length > 1 ? song.chain.length : 1)]);
+  bars = bars.slice(0, size);
+  const used = [...Array(16).keys()].filter((i) => bars.some((b) => song.patterns[b][i]));
+  const samples = {}, kit = {};
+  for (const i of used) {
+    const id = 's' + bid();
+    samples[id] = await padSample(song, i, 44100);
+    kit[Math.floor(i / 4) * B_COLS + (i % 4)] = id;
+  }
+  const ev = [];
+  bars.forEach((pi, b) => {
+    for (let st = 0; st < STEPS; st++) for (const i of used) {
+      if (!((song.patterns[pi][i] >> st) & 1)) continue;
+      const nudge = padAt(song, pi, i, st).nudge || 0;
+      const t = Math.max(0, Math.min(size * B_BAR - 1, b * B_BAR + st * B_STEP + Math.round(nudge * B_STEP)));
+      ev.push({ t, d: B_STEP, r: Math.floor(i / 4), c: i % 4, v: 0.85 });
+    }
+  });
+  ev.sort((a, b) => a.t - b.t);
+  const track = (role, name, inst, extra = {}) => ({ id: bid(), role, name, inst, vol: 0.8, pan: 0, oct: 0, rev: 0.1, dly: 0, chord: 'off', ...extra });
+  const pop = track('melody', 'Pop Pads', 'sampler', { vol: 0.9, rev: 0, smp: { mode: 'kit', key: null, kit } });
+  const others = [track('bass', 'Bass', 'bassGuitar', { rev: 0 }), track('pads', 'Pads', 'epiano', { vol: 0.7, rev: 0.3, chord: 'triad', pan: -0.1 }), track('melody', 'Melody', 'piano', { vol: 0.75, rev: 0.25, dly: 0.15, pan: 0.1 })];
+  const tracks = [pop, ...others];
+  const now = Date.now();
+  return {
+    v: 1, id: bid(), name: `Pop Pads ${KITS[song.kit].name} beat`, created: now, modified: now,
+    bpm: song.bpm, swing: Math.min(1, song.swing * 1.32), key: 0, scale: 'minor', quant: B_STEP, metro: true, master: 'sweet',
+    tracks, sections: [{ bars: size, ev: Object.fromEntries(tracks.map((t) => [t.id, t === pop ? ev : []])), fx: [], mute: {} }],
+    cur: 0, song: [], latch: {}, space: { rev: 'hall', dly: 'ping' },
+    samples,
+  };
+}
+
+// The website: Pop Pads and Boba Beats share this site's storage, so the song
+// waits in IndexedDB and Boba picks it up when it opens with ?from=pop.
+export function handOff(file) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('bubble-handoff', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('songs');
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const tx = req.result.transaction('songs', 'readwrite');
+      tx.objectStore('songs').put({ file, at: Date.now() }, 'pop');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}

@@ -4,7 +4,10 @@
 
 import { PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, laneOf, motionOf, hasMotion, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
 import { KITS, KIT_ORDER } from './kits.js';
-import { loopWav, stemsZip, patternMidi, deliver, baseName } from './export.js';
+import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff } from './export.js';
+
+// the other bubble apps (in the Android app these open in the browser)
+const APPS = [['Boba Beats', 'https://shalonely.com/boba/', '🧋', 'make whole songs out of bubbles'], ['Deep Drift', 'https://shalonely.com/night/', '🪼', 'a sleepy sea that sings you to sleep']];
 
 const $ = (id) => document.getElementById(id);
 const SAVE = 'poppads.song';
@@ -398,13 +401,34 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <button class="big" data-save="wav">🎵<span>Loop<small>a WAV that loops cleanly in any app</small></span></button>
   <button class="big" data-save="midi">🎹<span>Pattern for Logic<small>MIDI on the GM drum notes</small></span></button>
   <button class="big" data-save="stems">🎚️<span>Every sound<small>a zip with each drum as its own WAV, plus the mix</small></span></button>
+  <button class="big" data-boba="1">🧋<span>Send to Boba Beats<small>${window.PopNative ? 'saves a Boba song: open it there from its song menu → Import song file' : 'opens Boba with these drums and this beat, ready to add bass and chords'}</small></span></button>
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
   <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">How it works</button></div>
+  <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
   ${window.PopNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? '' : '<h4>On Android</h4><a class="big" href="PopPads.apk" download style="text-decoration:none;color:inherit">📱<span>Get the Android app<small>works offline, saves beats to your Music folder</small></span></a>'}`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
   if (e.target.closest('[data-how]')) { showHow(); return; }
+  if (e.target.closest('[data-boba]')) {
+    const st = s.querySelector('#s-status');
+    const bars = song.chain.length > 1 ? song.chain : [song.cur];
+    if (!bars.some((b) => song.patterns[b].some(Boolean))) { st.textContent = 'There is nothing in the pattern yet.'; return; }
+    try {
+      st.textContent = 'Packing the drums…';
+      const file = await bobaSong(song);
+      if (window.PopNative) {
+        const msg = await deliver(new TextEncoder().encode(JSON.stringify(file)), `${baseName(song)}.bobabeats.json`, 'application/json');
+        st.textContent = `✓ ${msg}. In Boba Beats: song menu → Import song file.`;
+      } else {
+        await handOff(file);
+        st.textContent = '✓ Opening Boba Beats…';
+        if (eng && eng.playing) $('play').click();
+        location.href = new URL('../boba/?from=pop', location.href).href.replace(/\/pop\/\.\.\//, '/');
+      }
+    } catch (err) { st.textContent = `Could not send it: ${err.message}`; }
+    return;
+  }
   if (e.target.closest('[data-unmove]')) { song.motion[song.cur] = { mix: {}, pads: {} }; if (eng) eng.updateFx(); save(); drawAll(); closeSheet(); toast(`knob moves cleared from pattern ${song.cur + 1}`); return; }
   if (e.target.closest('[data-clear]')) { song.patterns[song.cur] = new Array(16).fill(0); song.motion[song.cur] = { mix: {}, pads: {} }; save(); drawAll(); closeSheet(); toast(`pattern ${song.cur + 1} cleared`); return; }
   const b = e.target.closest('[data-save]'); if (!b) return;

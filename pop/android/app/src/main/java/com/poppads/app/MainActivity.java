@@ -204,7 +204,13 @@ public class MainActivity extends Activity {
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            return !HOST.equals(request.getUrl().getHost());
+            Uri u = request.getUrl();
+            if (HOST.equals(u.getHost())) return false;
+            // a link to the other bubble apps (or anywhere else on the web) opens in the browser
+            if ("https".equals(u.getScheme()) && request.isForMainFrame()) {
+                try { startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, u)); } catch (Exception e) { Log.w(TAG, "no browser for " + u); }
+            }
+            return true;
         }
 
         @Override
