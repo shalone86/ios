@@ -39,7 +39,7 @@ self.onmessage = async (e) => {
     // mastering chain for the chosen preset; with no preset (stems, Raw) it
     // only makes sure nothing goes over the ceiling
     const info = masterChain(channels, m.sampleRate, m.preset, {
-      ceilingDb: m.format === 'mp3' ? -1.5 : -1,     // MP3 encoding adds a little overshoot
+      ceilingDb: m.format === 'mp3' ? -2.5 : -1,     // MP3 encoding overshoots; this keeps the decoded peaks under full scale
       seamless: !!m.seamless,
     });
     progress(0.05);

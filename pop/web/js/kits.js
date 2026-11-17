@@ -73,10 +73,10 @@ const I = {
     if (clk) click(ctx, dest, clk, 2500);
   },
   // the long tuned 808 sub, with a little glide and drive
-  sub(ctx, out, { f = 49, glide = 1.25, d = 0.7, drive = 0.6 }) {
+  sub(ctx, out, { f = 49, glide = 1.25, d = 0.7, drive = 0.6, pd = 0.06 }) {
     const s = shaper(ctx, 1 + drive * 3), g = ctx.createGain(); g.gain.value = 0.85;
     s.connect(g).connect(out);
-    body(ctx, s, { f0: f * glide, f1: f, pd: 0.06, d, attack: 0.003 });
+    body(ctx, s, { f0: f * glide, f1: f, pd, d, attack: 0.003 });
     click(ctx, s, 0.15, 1500);
   },
   snare(ctx, out, p) {
@@ -133,6 +133,17 @@ const I = {
     g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(0.9, 0.002);
     g.gain.setTargetAtTime(0.45, 0.01, 0.05); g.gain.setValueAtTime(0.4, gate); g.gain.linearRampToValueAtTime(0, gate + 0.015);
     n.connect(filt(ctx, 'bandpass', 2500, 0.5)).connect(g).connect(out); n.start(0); n.stop(END);
+  },
+  // the 80s orchestra hit: a big stacked chord with a bright attack that darkens fast
+  stab(ctx, out, { f = 262, d = 0.16 }) {
+    const lp = filt(ctx, 'lowpass', 6000, 1.2);
+    lp.frequency.setValueAtTime(7000, 0); lp.frequency.setTargetAtTime(1300, 0.01, 0.09);
+    const g = envGain(ctx, 0.9, d, 0.004);
+    for (const [m, lvl] of [[0.5, 0.5], [1, 0.6], [1.5, 0.45], [2, 0.4], [2.52, 0.3], [3, 0.2]]) {
+      for (const det of [-6, 7]) { const o = osc(ctx, 'sawtooth', f * m); o.detune.value = det; const og = ctx.createGain(); og.gain.value = lvl * 0.18; o.connect(og).connect(lp); o.start(0); o.stop(END); }
+    }
+    lp.connect(g).connect(out);
+    hiss(ctx, out, { type: 'bandpass', f: 2500, q: 0.8, d: 0.02, lvl: 0.5 });
   },
   vinyl(ctx, out, { d = 0.25 }) {
     // a crackle hit: a few random pops over a soft hiss
@@ -244,13 +255,15 @@ export const KITS = {
   },
   cherry: {
     name: 'Cherry', style: '80s machine', hue: 350, color: ['#3a0714', '#9b1b3b', '#ff7b9c'],
+    // the big gated room of 80s records, on the snare, clap and toms
+    gate: { pads: [2, 3, 8, 9, 10], mix: 0.7, close: 0.26 },
     pads: [
-      ['Kick', 'kick', { f0: 200, f1: 56, pd: 0.03, d: 0.22, clk: 0.4, knock: 0.3 }, 0.95, 1],
-      ['Thud', 'kick', { f0: 150, f1: 62, pd: 0.03, d: 0.16, clk: 0.2, knock: 0.15 }, 0.9, 0.8],
+      ['Kick', 'kick', { f0: 190, f1: 60, pd: 0.025, d: 0.15, clk: 0.55, knock: 0.55 }, 0.95, 0.8],
+      ['Thud', 'kick', { f0: 150, f1: 66, pd: 0.03, d: 0.12, clk: 0.3, knock: 0.35 }, 0.9, 0.7],
       ['Gated', 'gated', {}, 0.85, 0.6],
       ['Clap', 'clap', { band: 1500, d: 0.14, bursts: 4 }, 0.8, 0.6],
-      ['Chick', 'hat', { d: 0.025, band: 8500, hiss: 0.5 }, 0.55, 0.3],
-      ['Shhh', 'hat', { d: 0.2, band: 8500, hiss: 0.5 }, 0.5, 1.2],
+      ['Chick', 'hat', { d: 0.022, band: 10500, high: 8000, ratio: 1.3, hiss: 0.3 }, 0.55, 0.3],
+      ['Shhh', 'hat', { d: 0.2, band: 10500, high: 8000, ratio: 1.3, hiss: 0.3 }, 0.5, 1.2],
       ['Stick', 'rim', { f: 1500 }, 0.6, 0.2],
       ['Cowbell', 'bell', { f1: 587, f2: 845, d: 0.1 }, 0.55, 0.5],
       ['Pew L', 'tom', { f: 90, drop: 1.4, d: 0.3, type: 'triangle' }, 0.8, 1.2],
@@ -260,7 +273,7 @@ export const KITS = {
       ['Crash', 'cym', { d: 0.9, band: 7000 }, 0.55, 3],
       ['Tamb', 'tamb', { d: 0.1 }, 0.5, 0.5],
       ['Conga', 'conga', { f: 280, d: 0.15 }, 0.7, 0.6],
-      ['Bleep', 'zap', { from: 1200, to: 1100, pd: 0.2, d: 0.08 }, 0.4, 0.4],
+      ['Stab', 'stab', { f: 262 }, 0.7, 0.8],
     ],
   },
   grape: {
@@ -285,11 +298,12 @@ export const KITS = {
     ],
   },
   rootbeer: {
-    name: 'Root Beer', style: 'boom-bap', hue: 30, color: ['#2a1405', '#6b3a12', '#e0a35a'], dust: { lp: 9000, bits: 12, drive: 0.6, crackle: 0.02 },
+    // an old 12-bit sampler: a lower sample rate (its grit and alias), saturation, a little vinyl
+    name: 'Root Beer', style: 'boom-bap', hue: 30, color: ['#2a1405', '#6b3a12', '#e0a35a'], dust: { lp: 11000, bits: 12, drive: 1, crackle: 0.03, hold: 2 },
     pads: [
-      ['Boom', 'kick', { f0: 170, f1: 52, pd: 0.03, d: 0.22, clk: 0.35, knock: 0.5, drive: 0.6 }, 0.95, 0.9],
-      ['Bap', 'kick', { f0: 140, f1: 58, pd: 0.025, d: 0.16, clk: 0.4, knock: 0.6, drive: 0.8 }, 0.9, 0.7],
-      ['Crack', 'snare', { t1: 210, t2: 310, td: 0.06, nd: 0.13, band: 3200, mix: 0.7, drive: 0.7 }, 0.85, 0.7],
+      ['Boom', 'kick', { f0: 160, f1: 48, pd: 0.035, d: 0.24, clk: 0.4, knock: 0.8, drive: 1 }, 0.95, 0.9],
+      ['Bap', 'kick', { f0: 130, f1: 55, pd: 0.025, d: 0.16, clk: 0.5, knock: 0.9, drive: 1.2 }, 0.9, 0.7],
+      ['Crack', 'snare', { t1: 185, t2: 290, td: 0.08, nd: 0.17, band: 2600, nf: 'bandpass', mix: 0.78, drive: 1.1 }, 0.85, 0.8],
       ['Clap', 'clap', { band: 1300, d: 0.12 }, 0.75, 0.5],
       ['Tss', 'hat', { d: 0.03, band: 9000, hiss: 0.5 }, 0.55, 0.3],
       ['Tsss', 'hat', { d: 0.16, band: 9000, hiss: 0.5 }, 0.5, 1],
@@ -308,12 +322,12 @@ export const KITS = {
   orange: {
     name: 'Orange', style: 'trap', hue: 28, color: ['#3a1500', '#b4520c', '#ffb052'],
     pads: [
-      ['808', 'sub', { f: 49, glide: 1.4, d: 1.0, drive: 0.9 }, 0.95, 3],
-      ['808 Hi', 'sub', { f: 65, glide: 1.4, d: 0.8, drive: 0.9 }, 0.9, 2.6],
-      ['Snare', 'snare', { t1: 220, t2: 340, td: 0.04, nd: 0.1, band: 5500, mix: 0.7 }, 0.85, 0.5],
+      ['808', 'sub', { f: 46, glide: 2.2, pd: 0.14, d: 1.2, drive: 1.3 }, 0.95, 3.2],
+      ['808 Hi', 'sub', { f: 69, glide: 1.9, pd: 0.12, d: 0.9, drive: 1.3 }, 0.9, 2.6],
+      ['Snare', 'snare', { t1: 240, t2: 360, td: 0.03, nd: 0.07, band: 6500, mix: 0.75 }, 0.85, 0.4],
       ['Clap', 'clap', { band: 1400, d: 0.2, bursts: 4, gap: 0.008 }, 0.85, 0.7],
-      ['Ts', 'hat', { d: 0.018, band: 11000, high: 8500, hiss: 0.4 }, 0.5, 0.2],
-      ['Tsh', 'hat', { d: 0.12, band: 11000, high: 8500, hiss: 0.4 }, 0.45, 0.9],
+      ['Ts', 'hat', { d: 0.012, band: 12500, high: 9800, ratio: 1.15, hiss: 0.55 }, 0.5, 0.15],
+      ['Tsh', 'hat', { d: 0.08, band: 12500, high: 9800, ratio: 1.15, hiss: 0.55 }, 0.45, 0.7],
       ['Rim', 'rim', { f: 2000 }, 0.6, 0.2],
       ['Pluck', 'clink', { f: 1046, d: 0.08 }, 0.5, 0.4],
       ['Tom L', 'tom', { f: 110, drop: 0.8, d: 0.2 }, 0.75, 0.9],
@@ -354,7 +368,7 @@ for (const k of Object.values(KITS)) k.pads = k.pads.map(([name, inst, params, p
 // ---------- rendering ----------
 
 // Render one pad into a stereo buffer at sample rate `sr`.
-async function renderPad(kit, pad, sr) {
+async function renderPad(kit, pad, sr, idx) {
   const n = Math.ceil(pad.len * sr), ctx = new OfflineAudioContext(1, n, sr);
   let dest = ctx.destination;
   // the dusty flavours go through a little tape-and-sampler colour
@@ -368,9 +382,20 @@ async function renderPad(kit, pad, sr) {
     dest = sh;
   }
   const out = ctx.createGain(); out.connect(dest);
+  if (kit.gate && kit.gate.pads.includes(idx)) {
+    // a bright room, slammed shut a moment later: the gated reverb
+    const { mix, close } = kit.gate, ir = ctx.createBuffer(2, Math.floor(sr * 1.2), sr);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); let seed = 11 + c * 31; for (let i = 0; i < d.length; i++) { seed = (seed * 16807) % 2147483647; d[i] = (seed / 1073741823.5 - 1) * Math.exp(-i / sr * 2.2) * 0.06; } }
+    const room = ctx.createConvolver(); room.normalize = false; room.buffer = ir;
+    const gg = ctx.createGain(); gg.gain.setValueAtTime(mix, 0); gg.gain.setValueAtTime(mix, close); gg.gain.linearRampToValueAtTime(0, close + 0.025);
+    out.connect(room).connect(gg).connect(dest);
+  }
   I[pad.inst](ctx, out, pad.params || {});
   if (kit.dust && kit.dust.crackle) hiss(ctx, ctx.destination, { type: 'bandpass', f: 1500, q: 0.4, d: 0.15, lvl: kit.dust.crackle });
   const buf = await ctx.startRendering(), d = buf.getChannelData(0);
+  // the old sampler's lower sample rate: hold each sample for a few (its alias is the grit)
+  const hold = kit.dust && kit.dust.hold;
+  if (hold > 1) for (let i = 0; i < d.length; i++) if (i % hold) d[i] = d[i - (i % hold)];
   // even out: every pad peaks at its set level, and fades cleanly to its end
   let peak = 0; for (const x of d) peak = Math.max(peak, Math.abs(x));
   const g = peak > 0 ? pad.peak / peak : 0, fade = Math.min(d.length, Math.round(sr * 0.02));
@@ -382,6 +407,6 @@ const cache = new Map();
 // all sixteen pads of a kit, rendered once per sample rate
 export function renderKit(id, sr) {
   const key = `${id}@${sr}`;
-  if (!cache.has(key)) cache.set(key, Promise.all(KITS[id].pads.map((p) => renderPad(KITS[id], p, sr))));
+  if (!cache.has(key)) cache.set(key, Promise.all(KITS[id].pads.map((p, i) => renderPad(KITS[id], p, sr, i))));
   return cache.get(key);
 }

@@ -93,7 +93,8 @@ function drawGrid() {
   } else {
     const bits = song.patterns[song.cur][sel], lanes = motionOf(song, song.cur).pads[sel] || {};
     const locked = (st) => Object.values(lanes).some((l) => l && l[st] != null);
-    g.innerHTML = [...Array(16).keys()].map((st) => `<button class="step ${(bits >> st) & 1 ? 'on' : ''} ${st % 4 === 0 ? 'beat' : ''} ${locked(st) ? 'lock' : ''} ${st === lockStep ? 'sel' : ''}" data-step="${st}">${st + 1}</button>`).join('');
+    const rep = (st) => padSettings(song, song.cur, sel, st).rep || 1;
+    g.innerHTML = [...Array(16).keys()].map((st) => `<button class="step ${(bits >> st) & 1 ? 'on' : ''} ${st % 4 === 0 ? 'beat' : ''} ${locked(st) ? 'lock' : ''} ${st === lockStep ? 'sel' : ''}" data-step="${st}">${st + 1}${(bits >> st) & 1 && rep(st) > 1 ? `<small class="rep">×${rep(st)}</small>` : ''}</button>`).join('');
   }
 }
 function drawSounds() {
@@ -123,7 +124,9 @@ function drawPanel() {
   });
   $('f-swing').value = Math.round(song.swing * 100);
   $('lfo-to').textContent = `LFO → ${song.fx.lfoTo}`; $('lfo-rate').textContent = LFO_RATES[song.fx.lfoRate][0];
-  $('p-lfo-to').textContent = `LFO → ${base.lfoTo}`;
+  $('p-lfo-to').textContent = `LFO→${base.lfoTo}`;
+  $('p-rep').textContent = `repeat ×${here.rep || 1}`;
+  $('p-rep').classList.toggle('on', (here.rep || 1) > 1);
   const name = KITS[song.kit].pads[sel].name;
   $('p-clear').textContent = `Clear ${name}`;
   $('p-clear').hidden = lockStep != null || tab === 'mix'; $('lock-clear').hidden = $('lock-done').hidden = lockStep == null;
@@ -151,10 +154,11 @@ function showHint() {
 function fit() {
   const app = $('app'), grid = $('grid');
   const VH = (window.visualViewport && visualViewport.height) || innerHeight;
-  const wide = innerWidth > VH * 1.15 && VH < 700;
+  // a laptop, a tablet sideways, a phone sideways: controls left, pads right
+  const wide = innerWidth > VH * 1.1 && innerWidth >= 700;
   document.body.classList.toggle('wide', wide);
   let size;
-  if (wide) size = Math.min(VH - 28, innerWidth * 0.55);
+  if (wide) size = Math.min(VH - 40, innerWidth - Math.min(460, innerWidth * 0.42) - 90, 660);
   else {
     const cs = getComputedStyle(app), pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
     const rows = [...app.children].filter((el) => el !== grid && !el.hidden && el.offsetParent !== null);
@@ -163,7 +167,8 @@ function fit() {
   }
   const px = Math.max(200, Math.floor(size));
   grid.style.width = grid.style.maxWidth = `${px}px`;
-  grid.style.gap = `${Math.round(px * 0.03)}px`;   // a % gap is measured against the height, which overlaps rows
+  grid.style.gap = `${Math.round(px * 0.03)}px`;
+  grid.style.setProperty('--g', `${px}px`);          // labels and step numbers grow with the pads   // a % gap is measured against the height, which overlaps rows
 }
 addEventListener('resize', fit);
 if (window.visualViewport) visualViewport.addEventListener('resize', fit);
@@ -379,6 +384,18 @@ document.querySelectorAll('#panel input[data-scope]').forEach((el) => {
 $('f-swing').addEventListener('input', (e) => { song.swing = +e.target.value / 100; save(); });
 $('lfo-to').onclick = () => { song.fx.lfoTo = LFO_TARGETS[(LFO_TARGETS.indexOf(song.fx.lfoTo) + 1) % LFO_TARGETS.length]; if (eng) eng.updateFx(); save(); drawPanel(); };
 $('lfo-rate').onclick = () => { song.fx.lfoRate = (song.fx.lfoRate + 1) % LFO_RATES.length; if (eng) eng.updateFx(); save(); drawPanel(); };
+// repeat (ratchet): 1 to 4 hits in the step, for the drum or (with a step held) that step
+$('p-rep').onclick = () => {
+  if (lockStep != null) {
+    const lane = laneOf(song, song.cur, sel, 'rep', true), now = padSettings(song, song.cur, sel, lockStep).rep || 1;
+    lane[lockStep] = (now % 4) + 1;
+    if (eng) eng.hit(sel, undefined, false, padSettings(song, song.cur, sel, lockStep));
+  } else {
+    const all = song.tweaks[song.kit] = song.tweaks[song.kit] || [], t = tweakOf(song, sel);
+    all[sel] = { ...t, rep: ((t.rep || 1) % 4) + 1 };
+  }
+  save(); drawPanel(); drawGrid();
+};
 $('p-lfo-to').onclick = () => {
   const all = song.tweaks[song.kit] = song.tweaks[song.kit] || [], t = tweakOf(song, sel);
   all[sel] = { ...t, lfoTo: LFO_TARGETS[(LFO_TARGETS.indexOf(t.lfoTo) + 1) % LFO_TARGETS.length] };
@@ -472,11 +489,14 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
   <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">▶ How it works</button></div>
+  <h4>Everything</h4>
+  <div class="row"><button class="chip" data-fresh="1">✨ Start fresh</button></div>
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
   ${window.PopNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? '' : '<h4>On Android</h4><a class="big" href="PopPads.apk" download style="text-decoration:none;color:inherit">📱<span>Get the Android app<small>works offline, saves beats to your Music folder</small></span></a>'}`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
   if (e.target.closest('[data-how]')) { closeSheet(); showTour(); return; }
+  if (e.target.closest('[data-fresh]')) { startFresh(); return; }
   if (e.target.closest('[data-boba]')) {
     const st = s.querySelector('#s-status');
     const bars = song.chain.length > 1 ? song.chain : [song.cur];
@@ -510,6 +530,26 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
     st.textContent = msg ? `✓ ${msg}` : '';
   } catch (err) { st.textContent = `Could not save: ${err.message}`; }
 });
+
+// ---------- start fresh ----------
+// Every pattern, chain, knob move and drum setting goes; the flavor and the
+// tempo stay. One tap of ↶ brings it all back.
+function startFresh() {
+  openSheet(`<h3>Start fresh?</h3>
+    <p style="margin:0 0 12px;color:var(--dim);font-size:14px">Clears all 8 patterns, the chain, knob moves and drum settings. Keeps the flavor and the tempo. ↶ brings it all back.</p>
+    <button class="big" data-f="go">✨<span>Start fresh</span></button>
+    <button class="big" data-f="no">↩<span>Keep my beats</span></button>`, (r) => r.onclick = (e) => {
+    const b = e.target.closest('[data-f]'); if (!b) return;
+    if (b.dataset.f === 'go') {
+      const fresh = newSong();
+      Object.assign(song, { patterns: fresh.patterns, motion: fresh.motion, chain: [0], cur: 0, tweaks: {}, fx: fresh.fx, swing: 0 });
+      lockStep = null; chainEdit = false;
+      if (eng) { eng.updateFx(); eng.bars.clear(); }
+      save(); drawAll(); toast('a fresh start ✨ (↶ to undo)');
+    }
+    closeSheet();
+  });
+}
 
 // ---------- how it works: the video ----------
 // the video tutorial; the beat stops while it plays

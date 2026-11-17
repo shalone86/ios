@@ -44,12 +44,12 @@ export function newSong() {
 }
 // a drum's own settings: pitch (semitones), length, filter (-1 dark … 1 thin),
 // volume, crush, and its own LFO (amount, and what it moves)
-export const PAD_KEYS = ['pitch', 'len', 'filt', 'vol', 'crush', 'lfo', 'nudge'];
+export const PAD_KEYS = ['pitch', 'len', 'filt', 'vol', 'crush', 'lfo', 'nudge', 'rep'];
 export const MIX_KEYS = ['filter', 'drive', 'crush', 'verb', 'lfo'];
 export const tweakOf = (song, i) => {
   const t = { ...((song.tweaks[song.kit] || [])[i] || {}) };
   if (t.tone != null && t.filt == null) t.filt = t.tone < 1 ? t.tone - 1 : 0;      // the old one-way Tone knob
-  return { pitch: 0, len: 1, filt: 0, vol: 0.85, crush: 0, lfo: 0, lfoTo: 'pitch', nudge: 0, ...t };
+  return { pitch: 0, len: 1, filt: 0, vol: 0.85, crush: 0, lfo: 0, lfoTo: 'pitch', nudge: 0, rep: 1, ...t };
 };
 // Motion: per pattern, a lane of 16 values per knob (null = the knob's own
 // setting). Recorded by moving a knob while recording, or set step by step.
@@ -315,7 +315,9 @@ export class PopEngine {
         if (this.skip.delete(`${i}:${n}`)) continue;
         const tw = padAt(this.song, pi, i, src);
         for (const m of this.touching.values()) if (m.scope === i) tw[m.key] = m.value;
-        this.hit(i, Math.max(this.ctx.currentTime, t + (tw.nudge || 0) * sd), true, tw);
+        // a repeat (ratchet): 2, 3 or 4 hits spread over the step, each a little softer
+        const k = Math.max(1, Math.min(4, Math.round(tw.rep || 1))), at = Math.max(this.ctx.currentTime, t + (tw.nudge || 0) * sd);
+        for (let j = 0; j < k; j++) this.hit(i, at + (j * sd) / k, true, j ? { ...tw, vol: tw.vol * Math.pow(0.85, j) } : tw);
       }
       if (this.onStep) { const d = Math.max(0, (t - this.ctx.currentTime) * 1000); setTimeout(() => this.onStep(s, pi), d); }
     }
@@ -395,8 +397,8 @@ export async function renderSong(song, { loops = 1, solo = null, sr = 44100, tai
       if (key !== last) { last = key; graph.setFx(fx, song.bpm, t); }
       for (let i = 0; i < 16; i++) {
         if (!((pat[i] >> s) & 1) || (solo != null && solo !== i)) continue;
-        const tw = padAt(song, pi, i, s);
-        graph.play(i, bufs[i], Math.max(0, t + (tw.nudge || 0) * sd), tw);
+        const tw = padAt(song, pi, i, s), k = Math.max(1, Math.min(4, Math.round(tw.rep || 1))), at = Math.max(0, t + (tw.nudge || 0) * sd);
+        for (let j = 0; j < k; j++) graph.play(i, bufs[i], at + (j * sd) / k, j ? { ...tw, vol: tw.vol * Math.pow(0.85, j) } : tw);
       }
     }
   }

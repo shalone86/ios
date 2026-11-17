@@ -25,26 +25,26 @@ import { loudness, peakOf } from './master.js';
 // ---------- presets (ids match MASTERS in graph.js) ----------
 
 export const CHAINS = {
-  sweet: {      // Pop: bright, polished, competitive
-    lufs: -8, tape: 0.35, bump: 1, air: -0.5, stab: 0.5, tilt: -3.2,
+  sweet: {      // Pop: bright and polished, comfortably loud (-8 was too hot on laptops and in MP3s)
+    lufs: -11, tape: 0.35, bump: 1, air: -0.5, stab: 0.5, tilt: -3.2,
     bands: [[-5, 2.2, 25, 160], [-4, 1.8, 12, 120], [-5, 2.2, 4, 80]],
     width: [0, 1.05, 1.25], glue: [2, 30, 180], clip: 2,
     peakRoom: [9, 7, 7], maxSquash: 4,
   },
   punchy: {     // big drums: lows held tighter, transients left to the clipper
-    lufs: -8, tape: 0.45, bump: 1.5, air: 0, stab: 0.4, tilt: -3.5,
+    lufs: -10, tape: 0.45, bump: 1.5, air: 0, stab: 0.4, tilt: -3.5,
     bands: [[-6, 3, 30, 120], [-3, 1.6, 15, 120], [-4, 2, 3, 70]],
     width: [0, 1, 1.2], glue: [1.6, 30, 120], clip: 3, release: 60,
     peakRoom: [9, 8, 8], maxSquash: 4,
   },
   cozy: {       // warm lo-fi: more tape, darker top, less loud on purpose
-    lufs: -10, tape: 0.8, bump: 2, air: -3, stab: 0.3, tilt: -4.2,
+    lufs: -12, tape: 0.8, bump: 2, air: -3, stab: 0.3, tilt: -4.2,
     bands: [[-5, 2, 30, 200], [-4, 1.6, 15, 160], [-6, 2.4, 5, 100]],
     width: [0, 1, 1.1], glue: [2.2, 40, 250], clip: 1.5, release: 120,
     peakRoom: [10, 8, 7], maxSquash: 2.5,
   },
-  loud: {       // club and car: as loud as it gets without falling apart
-    lufs: -6.5, tape: 0.55, bump: 1, air: 0.5, stab: 0.5, tilt: -3,
+  loud: {       // club and car: loud, without falling apart
+    lufs: -8.5, tape: 0.55, bump: 1, air: 0.5, stab: 0.5, tilt: -3,
     bands: [[-7, 3, 20, 120], [-6, 2.4, 10, 100], [-7, 2.6, 3, 60]],
     width: [0, 1.05, 1.3], glue: [2.4, 25, 120], clip: 4, release: 50,
     peakRoom: [8, 6, 6], maxSquash: 6,

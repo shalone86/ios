@@ -340,36 +340,69 @@ export function chop(data, sr, max = 25) {
 
 // Start recording from the microphone. Resolves to { stop, level } where
 // stop() resolves to { data, sr } and level() is the current input level 0..1.
+// The microphone is recorded on the audio thread (an AudioWorklet), so a
+// busy screen (playback, animation) cannot drop pieces of the recording;
+// the older ScriptProcessor ran on the main thread and lost blocks when it
+// was late, which left crackles baked into the sample. It is kept only as a
+// fallback for browsers without worklets.
+const GRAB = `registerProcessor('bb-grab', class extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Float32Array(2048); this.n = 0; this.on = true; this.port.onmessage = () => { this.on = false; this.flush(); }; }
+  flush() { if (this.n) { this.port.postMessage(this.buf.slice(0, this.n)); this.n = 0; } }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!this.on) return false;
+    if (ch) { for (let i = 0; i < ch.length; i++) { this.buf[this.n++] = ch[i]; if (this.n === this.buf.length) this.flush(); } }
+    return true;
+  }
+});`;
+const grabUrl = URL.createObjectURL(new Blob([GRAB], { type: 'text/javascript' }));
+const grabReady = new WeakMap();
+
 export async function recordMic(ctx) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
   });
   const src = ctx.createMediaStreamSource(stream);
-  const tap = ctx.createScriptProcessor(4096, 1, 1);
   const mute = ctx.createGain();
   mute.gain.value = 0;
   const chunks = [];
-  let total = 0, lvl = 0;
+  let total = 0, lvl = 0, tap, worklet = false;
   const limit = ctx.sampleRate * MAX_SECONDS;
-  tap.onaudioprocess = (e) => {
-    const d = e.inputBuffer.getChannelData(0);
+  const take = (d) => {
     let p = 0;
     for (let i = 0; i < d.length; i++) p = Math.max(p, Math.abs(d[i]));
     lvl = p;
-    if (total < limit) { chunks.push(new Float32Array(d)); total += d.length; }
+    if (total < limit) { chunks.push(d); total += d.length; }
   };
+  try {
+    if (!grabReady.has(ctx)) grabReady.set(ctx, ctx.audioWorklet.addModule(grabUrl));
+    await grabReady.get(ctx);
+    tap = new AudioWorkletNode(ctx, 'bb-grab', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
+    tap.port.onmessage = (e) => take(e.data);
+    worklet = true;
+  } catch (e) {
+    tap = ctx.createScriptProcessor(4096, 1, 1);
+    tap.onaudioprocess = (ev) => take(new Float32Array(ev.inputBuffer.getChannelData(0)));
+  }
   src.connect(tap).connect(mute).connect(ctx.destination);
+  const finish = () => {
+    try { src.disconnect(); tap.disconnect(); mute.disconnect(); } catch (e) { /* gone */ }
+    stream.getTracks().forEach((t) => t.stop());
+    const data = new Float32Array(total);
+    let o = 0;
+    for (const c of chunks) { data.set(c.subarray(0, Math.min(c.length, total - o)), o); o += c.length; if (o >= total) break; }
+    return { data, sr: ctx.sampleRate };
+  };
   return {
     level: () => lvl,
     full: () => total >= limit,
+    worklet,
     stop() {
-      tap.onaudioprocess = null;
-      try { src.disconnect(); tap.disconnect(); mute.disconnect(); } catch (e) { /* gone */ }
-      stream.getTracks().forEach((t) => t.stop());
-      const data = new Float32Array(total);
-      let o = 0;
-      for (const c of chunks) { data.set(c, o); o += c.length; }
-      return { data, sr: ctx.sampleRate };
+      if (!worklet) { tap.onaudioprocess = null; return finish(); }
+      // let the worklet hand over its last partial block first
+      tap.port.postMessage('stop');
+      const out = finish.bind(null);
+      return new Promise((resolve) => setTimeout(() => resolve(out()), 60));
     },
   };
 }

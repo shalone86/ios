@@ -23,10 +23,10 @@ const FILTER_HZ = [180, 320, 560, 1000, 1800, 3200];
 export const MASTERS = [
   { id: 'raw',    name: 'Raw',    hint: 'untouched',        low: 0,   mid: 0,    high: 0,    thr: 0,   ratio: 1,   drive: 0,   lufs: null },
   // the live sound is a preview; exports go through the full chain in codec/chain.js
-  { id: 'sweet',  name: 'Pop',       hint: 'bright, polished, radio loud', low: 0.5, mid: -1.5, high: 3,    thr: -18, ratio: 2.2, drive: 0.3, lufs: -8 },
-  { id: 'punchy', name: 'Punchy',    hint: 'big drums, still loud',        low: 3,   mid: -2,   high: 2,    thr: -22, ratio: 3.5, drive: 0.5, lufs: -8 },
-  { id: 'cozy',   name: 'Cozy',      hint: 'warm tape, lo-fi level',       low: 2.5, mid: 0.5,  high: -2.5, thr: -20, ratio: 2.5, drive: 0.8, lufs: -10 },
-  { id: 'loud',   name: 'Loud',      hint: 'club and car, as loud as it goes', low: 2, mid: -1, high: 3,    thr: -26, ratio: 4.5, drive: 0.7, lufs: -6.5 },
+  { id: 'sweet',  name: 'Pop',       hint: 'bright, polished, comfortably loud', low: 0.5, mid: -1.5, high: 3,    thr: -18, ratio: 2.2, drive: 0.3, lufs: -11 },
+  { id: 'punchy', name: 'Punchy',    hint: 'big drums, still loud',        low: 3,   mid: -2,   high: 2,    thr: -22, ratio: 3.5, drive: 0.5, lufs: -10 },
+  { id: 'cozy',   name: 'Cozy',      hint: 'warm tape, lo-fi level',       low: 2.5, mid: 0.5,  high: -2.5, thr: -20, ratio: 2.5, drive: 0.8, lufs: -12 },
+  { id: 'loud',   name: 'Loud',      hint: 'club and car, the loudest', low: 2, mid: -1, high: 3,    thr: -26, ratio: 4.5, drive: 0.7, lufs: -8.5 },
   { id: 'stream', name: 'Streaming', hint: 'gentle; services level to this anyway', low: 0.5, mid: -1, high: 1.5, thr: -18, ratio: 1.8, drive: 0.2, lufs: -14 },
 ];
 export const masterById = (id) => MASTERS.find((m) => m.id === id) || MASTERS[1];
@@ -440,7 +440,9 @@ function buildMaster(ctx, sh, presetId, offline) {
     const lim = ctx.createDynamicsCompressor();
     lim.threshold.value = -1.5; lim.knee.value = 0; lim.ratio.value = 20;
     lim.attack.value = 0.002; lim.release.value = 0.12;
-    dPost.connect(lim).connect(output);
+    // the live preview sits 2 dB under the limiter: kinder to laptop and phone speakers
+    const trim = ctx.createGain(); trim.gain.value = 0.8;
+    dPost.connect(lim).connect(trim).connect(output);
   }
   const m = {
     input, output,

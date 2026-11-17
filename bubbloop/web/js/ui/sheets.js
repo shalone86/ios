@@ -431,7 +431,7 @@ function sampler(t) {
       await e.wake(p);
       if (recorder) {
         const r = recorder; recorder = null;
-        await put(r.stop(), kit ? `Pad ${slot + 1}` : 'My sound');
+        await put(await r.stop(), kit ? `Pad ${slot + 1}` : 'My sound');
         return;
       }
       try {

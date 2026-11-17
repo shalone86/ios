@@ -67,7 +67,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   box-shadow: inset 0 -6px 14px rgba(0,0,0,.25), 0 6px 16px rgba(0,0,0,.25); transition: transform .08s; }
 .pad::after { content: ''; position: absolute; left: 22%; top: 16%; width: 18%; height: 11%; border-radius: 50%; background: rgba(255,255,255,.7); transform: rotate(-30deg); }
 .pad svg { position: absolute; inset: 18% 18% 22%; width: 64%; height: 60%; overflow: visible; pointer-events: none; }
-.pad b { position: absolute; left: 0; right: 0; bottom: 9%; text-align: center; font-size: clamp(9px, 2.6vw, 12px); font-weight: 600; color: rgba(0,0,0,.55); pointer-events: none; white-space: nowrap; }
+.pad b { position: absolute; left: 0; right: 0; bottom: 9%; text-align: center; font-size: max(9px, calc(var(--g, 360px) / 32)); font-weight: 600; color: rgba(0,0,0,.55); pointer-events: none; white-space: nowrap; }
 .pad .open, .pad .wink, .pad .dizzy, .pad .o { display: none; }
 .pad.hit { transform: scale(.88, .84); }
 .pad.hit .o { display: inline; } .pad.hit .smile { display: none; }
@@ -79,7 +79,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 @keyframes wobble { 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
 
 /* steps: the same grid, as sixteen steps of one sound */
-.step { aspect-ratio: 1; border-radius: 50%; background: var(--glass); border: 2px solid var(--line); font-size: 13px; font-weight: 600; color: var(--dim); position: relative; }
+.step { aspect-ratio: 1; border-radius: 50%; background: var(--glass); border: 2px solid var(--line); font-size: max(12px, calc(var(--g, 360px) / 26)); font-weight: 600; color: var(--dim); position: relative; }
 .step.beat { border-color: rgba(255,255,255,.45); }
 .step.on { background: radial-gradient(circle at 34% 28%, #fff 0 7%, var(--c2) 40%, var(--c1)); color: rgba(0,0,0,.55); border-color: transparent; }
 .step.now { box-shadow: 0 0 0 3px var(--ink); }
@@ -98,6 +98,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 #lock-note { flex: 1; text-align: right; font-size: 12px; color: var(--c2); font-weight: 600; }
 .lfo.wide { grid-column: 1 / -1; justify-content: center; }
 .sl.moving span::after { content: ' ◆'; color: var(--c2); font-size: 10px; }
+.step small.rep { position: absolute; left: 0; right: 0; bottom: 14%; font-size: 10px; font-weight: 700; color: var(--ink); }
+.step.on small.rep { color: rgba(0,0,0,.6); }
 .step.lock::after { content: ''; position: absolute; right: 16%; top: 16%; width: 18%; height: 18%; border-radius: 50%; background: var(--ink); box-shadow: 0 0 6px var(--c2); }
 .step.sel { box-shadow: 0 0 0 3px var(--c2), 0 0 16px var(--c2); }
 #panel.locked { border-color: var(--c2); box-shadow: 0 0 0 1px var(--c2) inset; }
@@ -146,8 +148,8 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 .logo i:nth-child(1) { width: 26px; height: 26px; } .logo i:nth-child(2) { width: 46px; height: 46px; } .logo i:nth-child(3) { width: 18px; height: 18px; }
 
 /* sideways on a phone: controls on the left, pads on the right */
-body.wide #app { max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-rows: min-content; column-gap: 22px; row-gap: 8px;
-  align-content: start; overflow-y: auto; touch-action: pan-y; padding-left: calc(env(safe-area-inset-left, 0px) + 14px); padding-right: calc(env(safe-area-inset-right, 0px) + 14px); }
+body.wide #app { max-width: 1200px; display: grid; grid-template-columns: minmax(300px, 460px) auto; grid-auto-rows: min-content; column-gap: 40px; row-gap: 10px;
+  justify-content: center; align-content: center; overflow-y: auto; touch-action: pan-y; padding-left: calc(env(safe-area-inset-left, 0px) + 14px); padding-right: calc(env(safe-area-inset-right, 0px) + 14px); }
 body.wide #app > :not(#grid) { grid-column: 1; }
 body.wide #grid { grid-column: 2; grid-row: 1 / span 20; align-self: start; position: sticky; top: 0; margin: 0; }
 body.wide #panel { margin-top: 0; }

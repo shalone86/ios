@@ -403,7 +403,7 @@ async function finishBubbleRecording(job) {
   if (!job.recorder) { job.stop = true; return; }       // let go before the microphone opened
   if (bubbleRec === job) bubbleRec = null;
   job.cell.classList.remove('rec');
-  const sound = job.recorder.stop();
+  const sound = await job.recorder.stop();
   if (sound.data.length < sound.sr * 0.08) { toast('Hold the bubble while you make the sound'); return; }
   const made = await addSample(sound.data, sound.sr, `Pad ${job.slot + 1}`);
   if (!made) { toast('That was silent: try again, a little louder'); return; }

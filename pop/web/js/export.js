@@ -2,7 +2,7 @@
 // lands on the right drums in Logic's Drum Kit Designer or any GM kit), and
 // every sound on its own (stems) so a DAW can mix them.
 
-import { renderSong, STEPS } from './engine.js';
+import { renderSong, STEPS, padAt as padSettings } from './engine.js';
 import { KITS } from './kits.js';
 import { finalize } from './codec/master.js';
 import { toInt } from './codec/pcm.js';
@@ -57,12 +57,17 @@ export function patternMidi(song, { loops = 1 } = {}) {
   const ev = [];
   const swingTicks = Math.round(song.swing * tps * 0.66);
   for (let b = 0; b < bars.length * loops; b++) {
-    const pat = song.patterns[bars[b % bars.length]];
+    const pi = bars[b % bars.length], pat = song.patterns[pi];
     for (let s = 0; s < STEPS; s++) {
       const at = (b * STEPS + s) * tps + (s % 2 ? swingTicks : 0);
       for (let i = 0; i < 16; i++) if ((pat[i] >> s) & 1) {
-        const note = KITS[song.kit].pads[i].gm;
-        ev.push([at, 0x99, note, 100], [at + Math.round(tps * 0.9), 0x89, note, 0]);
+        // nudges and repeats come along, so the MIDI plays like the app
+        const note = KITS[song.kit].pads[i].gm, tw = padSettings(song, pi, i, s);
+        const k = Math.max(1, Math.min(4, Math.round(tw.rep || 1))), t0 = Math.max(0, at + Math.round((tw.nudge || 0) * tps));
+        for (let j = 0; j < k; j++) {
+          const t = t0 + Math.round((j * tps) / k);
+          ev.push([t, 0x99, note, j ? 80 : 100], [t + Math.max(2, Math.round((tps / k) * 0.9)), 0x89, note, 0]);
+        }
       }
     }
   }
@@ -149,9 +154,11 @@ export async function bobaSong(song) {
   bars.forEach((pi, b) => {
     for (let st = 0; st < STEPS; st++) for (const i of used) {
       if (!((song.patterns[pi][i] >> st) & 1)) continue;
-      const nudge = padAt(song, pi, i, st).nudge || 0;
-      const t = Math.max(0, Math.min(size * B_BAR - 1, b * B_BAR + st * B_STEP + Math.round(nudge * B_STEP)));
-      ev.push({ t, d: B_STEP, r: Math.floor(i / 4), c: i % 4, v: 0.85 });
+      const tw = padAt(song, pi, i, st), nudge = tw.nudge || 0, k = Math.max(1, Math.min(4, Math.round(tw.rep || 1)));
+      for (let j = 0; j < k; j++) {
+        const t = Math.max(0, Math.min(size * B_BAR - 1, b * B_BAR + st * B_STEP + Math.round(nudge * B_STEP + (j * B_STEP) / k)));
+        ev.push({ t, d: Math.max(4, Math.round(B_STEP / k)), r: Math.floor(i / 4), c: i % 4, v: j ? 0.7 : 0.85 });
+      }
     }
   });
   ev.sort((a, b) => a.t - b.t);

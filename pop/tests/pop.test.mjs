@@ -242,6 +242,29 @@ const rendered = await page.evaluate(async () => {
 });
 check(rendered > 0.001, 'saved loops include the knob moves and step settings');
 
+// repeat: ×3 on a drum plays three hits in its step
+await page.click('[data-mode="steps"]'); await page.click('[data-sel="6"]');
+await page.click('#p-rep'); await page.click('#p-rep');
+const repLabel = await page.textContent('#p-rep');
+const ratchet = await page.evaluate(async () => {
+  const s = window.popPads.song, e = window.popPads.eng, keep = JSON.stringify(s.patterns[s.cur]);
+  s.patterns[s.cur] = new Array(16).fill(0); s.patterns[s.cur][6] = 1;
+  window.__hits = []; e.play(); await new Promise((r) => setTimeout(r, 900)); e.stop();
+  s.patterns[s.cur] = JSON.parse(keep);
+  const h = window.__hits.filter((x) => x.i === 6 && x.seq);
+  return { n: h.length, gaps: h.slice(1).map((x, k) => +(x.t - h[k].t).toFixed(3)) };
+});
+check(repLabel === 'repeat ×3' && ratchet.n === 3 && ratchet.gaps.every((g) => Math.abs(g - 60 / 92 / 4 / 3) < 0.003), `repeat ×3 plays three hits in the step (${ratchet.n}, ${ratchet.gaps.join(' / ')} s apart)`);
+await page.click('#p-rep'); await page.click('#p-rep');
+await page.click('[data-mode="play"]');
+
+// start fresh: clears every pattern, and ↶ brings them back
+await page.click('#menu'); await page.click('[data-fresh]'); await page.click('[data-f="go"]'); await page.waitForTimeout(700);
+const fresh = await page.evaluate(() => window.popPads.song.patterns.every((p) => !p.some(Boolean)) && window.popPads.song.chain.join() === '0');
+await page.click('#undo'); await page.waitForTimeout(300);
+const restored = await page.evaluate(() => window.popPads.song.patterns.some((p) => p.some(Boolean)));
+check(fresh && restored, 'Start fresh clears every pattern, and ↶ brings them back');
+
 // reverb: a drum room that rings after the snare, and hardly touches the kick
 const verb = await page.evaluate(async () => {
   const { newSong, renderSong } = await import('/js/engine.js');
@@ -311,7 +334,7 @@ const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('poppads.
 
 // fits the screen: small phone, a 412-wide phone with bigger text, and sideways
 const fits = [];
-for (const [w, h, label, zoom] of [[360, 640, 'small phone', 1], [412, 780, 'phone, larger text', 1.15], [915, 380, 'sideways', 1]]) {
+for (const [w, h, label, zoom] of [[360, 640, 'small phone', 1], [412, 780, 'phone, larger text', 1.15], [915, 380, 'sideways', 1], [1440, 820, 'laptop', 1]]) {
   const lp2 = await (await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true })).newPage();
   lp2.on('pageerror', (e) => errors.push(String(e)));
   await lp2.goto(`http://127.0.0.1:${server.address().port}/index.html`);
@@ -331,7 +354,7 @@ for (const [w, h, label, zoom] of [[360, 640, 'small phone', 1], [412, 780, 'pho
   }
   await lp2.close();
 }
-check(fits.every(Boolean), `fits the screen on a small phone, a phone with larger text, and sideways (${fits.filter(Boolean).length}/${fits.length})`);
+check(fits.every(Boolean), `fits the screen on a small phone, a phone with larger text, sideways and a laptop (${fits.filter(Boolean).length}/${fits.length})`);
 check(kept && kept.kit === 'cream' && kept.chain.join() === '0,1,0' && kept.patterns[0][3] === ((1 << 4) | (1 << 12)), 'the song is kept on the device');
 check(errors.length === 0, 'no page errors ' + errors.join(' | '));
 console.log('output in', OUT);
