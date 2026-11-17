@@ -191,24 +191,30 @@ function buildRack(ctx, sh, project, lite = null) {
     for (const w of windows[k]) if (w.t1 === Infinity) w.t1 = t;
   };
 
+  // The caught slice fades in and out over a few milliseconds, so it loops
+  // without a click at the seam, and the switch from the dry sound to the
+  // loop (and back) is a quick crossfade rather than a hard cut.
   function stutOn(t, len, until) {
-    const L = Math.max(256, Math.round(len * sr)) / sr;
+    const L = Math.max(256, Math.round(len * sr)) / sr, F = Math.min(0.004, L / 4);
     hist.delayTime.setValueAtTime(L, t);
     loop.delayTime.setValueAtTime(L, t);
-    hGate.gain.setValueAtTime(1, t);
-    fbGate.gain.setValueAtTime(0, t);
+    hGate.gain.cancelScheduledValues(t);
+    hGate.gain.setValueAtTime(0, t);
+    hGate.gain.linearRampToValueAtTime(1, t + F);
+    fbGate.gain.setTargetAtTime(0, t, 0.0015);
     if (until == null || t + L < until) {
-      hGate.gain.setValueAtTime(0, t + L);
+      hGate.gain.setValueAtTime(1, t + L - F);
+      hGate.gain.linearRampToValueAtTime(0, t + L);
       fbGate.gain.setValueAtTime(1, t + L);
     }
-    sDry.gain.setValueAtTime(0, t);
-    sWet.gain.setValueAtTime(1, t);
+    sDry.gain.setTargetAtTime(0, t, 0.0015);
+    sWet.gain.setTargetAtTime(1, t, 0.0015);
   }
   function stutOff(t) {
-    hGate.gain.setValueAtTime(0, t);
-    fbGate.gain.setValueAtTime(0, t);
-    sDry.gain.setValueAtTime(1, t);
-    sWet.gain.setValueAtTime(0, t);
+    hGate.gain.setTargetAtTime(0, t, 0.0015);
+    fbGate.gain.setTargetAtTime(0, t, 0.0015);
+    sDry.gain.setTargetAtTime(1, t, 0.0015);
+    sWet.gain.setTargetAtTime(0, t, 0.0015);
   }
 
   function tapeOn(t, dur, T) {
@@ -242,25 +248,34 @@ function buildRack(ctx, sh, project, lite = null) {
   }
 
   // One 16th of Glitch: pick a small mischief and schedule it start to end.
+  // About a third of the 16ths pass through untouched, so the beat stays
+  // recognisable; every trick fades in and out over a few milliseconds.
   function glitchStep(idx, t, dur) {
     const end = t + dur;
     const r = rand01(idx * 7919 + 13);
-    if (r < 0.3) { stutOn(t, dur / 2, end); stutOff(end); }
-    else if (r < 0.45) { stutOn(t, dur / 4, end); stutOff(end); }
-    else if (r < 0.58) {
-      gate.gain.setTargetAtTime(0, t + dur / 2, 0.001);
-      gate.gain.setTargetAtTime(1, end, 0.001);
-    } else if (r < 0.72) {
-      crush.set(true, t, 0.001); crush.set(false, end, 0.001);
-      stutOn(t, dur / 2, end); stutOff(end);
-    } else if (r < 0.84) { tapeOn(t, dur, dur * 1.25); tapeOff(end, true); }
-    else if (r < 0.93) { stutOn(t, dur / 3, end); stutOff(end); }
+    // a new slice is caught a moment after the 16th starts, once the last
+    // one's loop has died away; otherwise its tail is caught and clicks
+    const s0 = t + 0.006;
+    if (r < 0.26) { stutOn(s0, dur / 2, end); stutOff(end); }
+    else if (r < 0.38) { stutOn(s0, dur / 4, end); stutOff(end); }
+    else if (r < 0.47) {
+      gate.gain.setTargetAtTime(0, t + dur / 2, 0.003);
+      gate.gain.setTargetAtTime(1, end, 0.003);
+    } else if (r < 0.55) {
+      crush.set(true, t, 0.003); crush.set(false, end, 0.003);
+      stutOn(s0, dur / 2, end); stutOff(end);
+    } else if (r < 0.63) {
+      tapeOn(t, dur, dur * 1.25);
+      tapeG.gain.setTargetAtTime(0, Math.max(t, end - 0.015), 0.003);   // all the way down before the reset
+      tapeOff(end, true);
+    }
+    else if (r < 0.68) { stutOn(s0, dur / 3, end); stutOff(end); }
   }
   function glitchClear(t) {
     for (const p of [...stutParams, ...crush.params, gate.gain]) p.cancelScheduledValues(t);
     stutOff(t);
-    crush.set(false, t, 0.001);
-    gate.gain.setTargetAtTime(1, t, 0.001);
+    crush.set(false, t, 0.003);
+    gate.gain.setTargetAtTime(1, t, 0.003);
     tapeOff(t, false);
   }
 

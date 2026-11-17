@@ -124,3 +124,6 @@ window.SCRIPTS = {
     window.SCRIPTS['angelio-sounds-' + id] = { title: 'Angelio · letter sounds (' + who + "'s voice)", group: 'Angelio', sounds: true, tip: '', lines };
   }
 })();
+
+// lines added after a script was first recorded: shown with a NEW badge
+window.NEW_LINES = { 'pop-pads': ['locks', 'motion'] };

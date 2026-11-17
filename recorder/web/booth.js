@@ -301,11 +301,12 @@ async function exportAll() {
 
 // ---------- screen ----------
 const line = () => S[scriptId].lines[idx];
+const isNew = (f) => ((window.NEW_LINES || {})[scriptId] || []).includes(f);
 function render() {
   const sc = S[scriptId], [file, text, hint] = line();
   $('num').textContent = `Line ${idx + 1} of ${sc.lines.length}`;
   const who = isChoir() && slug(singer) ? slug(singer) + '_' : '';
-  $('file').textContent = `${who}${file}.wav`;
+  $('file').textContent = `${isNew(file) ? 'NEW · ' : ''}${who}${file}.wav`;
   $('choir-opts').hidden = !isChoir();
   $('text').textContent = text;
   $('hint').textContent = line()[3] != null || sc.sounds ? hint : `On screen: ${hint}. ${sc.tip}`;
@@ -318,7 +319,7 @@ function render() {
   $('export').disabled = !done;
   $('export').textContent = done === sc.lines.length ? `Save all ${done} as a zip` : `Save ${done} of ${sc.lines.length} as a zip`;
   $('list').innerHTML = sc.lines.map(([f, t], i) => `<li data-i="${i}" class="${i === idx ? 'cur' : ''} ${takes[f] ? 'done' : ''}">
-    <b>${takes[f] ? '✓' : i + 1}</b><span>${t.replace(/[<&]/g, (c) => (c === '<' ? '&lt;' : '&amp;'))}</span><em>${takes[f] ? (takes[f].pcm.length / takes[f].rate).toFixed(1) + ' s' : ''}</em></li>`).join('');
+    <b>${takes[f] ? '✓' : i + 1}</b><span>${isNew(f) ? '<i class="new">NEW</i> ' : ''}${t.replace(/[<&]/g, (c) => (c === '<' ? '&lt;' : '&amp;'))}</span><em>${takes[f] ? (takes[f].pcm.length / takes[f].rate).toFixed(1) + ' s' : ''}</em></li>`).join('');
 }
 function go(i) {
   if (recording) stopRec();
