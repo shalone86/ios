@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#030716">
 <title>Deep Drift</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
 <style>
 @font-face { font-family: 'Fredoka'; font-weight: 400; font-display: swap; src: url('fonts/fredoka-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Fredoka'; font-weight: 600; font-display: swap; src: url('fonts/fredoka-latin-600-normal.woff2') format('woff2'); }
@@ -32,7 +35,8 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
 #start h2 { margin: 0 0 6px; font-size: 40px; font-weight: 600; }
 #start p { margin: 0 0 26px; color: var(--dim); }
 #start button { padding: 14px 30px; border-radius: 28px; font-size: 18px; font-weight: 600; background: rgba(150, 210, 255, .16); border: 1px solid rgba(170, 220, 255, .45); box-shadow: 0 0 30px rgba(120, 190, 255, .25); }
-#apk { display: block; margin-top: 26px; font-size: 13px; color: var(--dim); }
+#start #apk { display: block; margin: 22px auto 0; max-width: 300px; padding: 6px 12px; font-size: 13px; font-weight: 400; color: var(--dim); background: none; border: 0; box-shadow: none; text-decoration: underline; }
+#apk[hidden], #m-apk[hidden] { display: none; }
 #start #tour-link { display: block; margin: 16px auto 0; padding: 8px 14px; font-size: 15px; font-weight: 600; background: none; border: 0; box-shadow: none; color: var(--ink); opacity: .85; }
 #help { width: 36px; padding: 0; }
 #tour { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(2, 5, 16, .95); padding: calc(var(--safe-t) + 10px) 10px calc(var(--safe-b) + 10px); }
@@ -67,7 +71,7 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
   <h4>Bubble apps</h4>
   <a class="item" href="https://shalonely.com/boba/">🧋 Boba Beats<small>make whole songs out of bubbles</small></a>
   <a class="item" href="https://shalonely.com/pop/">🥤 Pop Pads<small>a fizzy little drum machine</small></a>
-  <a class="item" id="m-apk" href="DeepDrift.apk" download>📱 Android app<small>keeps playing with the screen off</small></a>
+  <button class="item" id="m-apk" hidden>📲 Put it on your home screen<small>opens like an app, works with no signal</small></button>
 </div></div>
 <section id="panel">
   <div class="row" id="voices"></div>
@@ -79,9 +83,8 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
     <button class="chip" id="hum">Hum: off</button>
   </div>
 </section>
-<div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights to start them singing.<br>tap again to let one rest. hold one to hum.</p><button id="go">dive in</button><button id="tour-link">▶ how it works · 2 min</button><a id="apk" href="DeepDrift.apk" download>Android app: keeps playing with the screen off</a></div></div>
+<div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights to start them singing.<br>tap again to let one rest. hold one to hum.</p><button id="go">dive in</button><button id="tour-link">▶ how it works · 2 min</button><button id="apk" hidden>put it on your home screen</button></div></div>
 <div id="tour" hidden role="dialog" aria-label="How Deep Drift works"><video id="tour-video" controls playsinline preload="none"></video><button id="tour-close" class="chip" aria-label="Close">✕</button></div>
-<script>if (window.DriftNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent)) { document.getElementById('apk').remove(); document.getElementById('m-apk').remove(); }</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

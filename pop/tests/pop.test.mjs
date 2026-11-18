@@ -285,7 +285,7 @@ await page.click('#bpm');
 await page.click('#scrim', { position: { x: 20, y: 20 } });
 const closedTap = await page.evaluate(() => document.getElementById('sheet').hidden);
 await page.click('#menu');
-const apk = await page.evaluate(() => !!document.querySelector('#sheet a[href="PopPads.apk"]'));
+const apk = await page.evaluate(() => !!document.querySelector('#sheet [data-install]'));
 const pull = (to) => page.evaluate(async (dist) => {
   const sh = document.getElementById('sheet'), b = sh.getBoundingClientRect(), x = b.left + 60, y0 = b.top + 20;
   const t = (y) => new Touch({ identifier: 9, target: sh, clientX: x, clientY: y });
@@ -297,7 +297,7 @@ const pull = (to) => page.evaluate(async (dist) => {
 }, to);
 const short = await pull(60), long = await pull(200);
 check(closedTap && apk && /translateY\(6\dpx\)/.test(short.moved) && !short.hidden && short.after === '' && long.hidden,
-  `menus follow the finger (${short.moved}), spring back from a short pull, close from a long one or a tap outside; ☰ links the Android app`);
+  `menus follow the finger (${short.moved}), spring back from a short pull, close from a long one or a tap outside; ☰ offers to put it on the home screen`);
 await page.click('#menu'); await page.click('[data-how]'); await page.waitForTimeout(1200);
 const tour = await page.evaluate(() => ({ open: !document.getElementById('tour').hidden, src: document.getElementById('tour-video').currentSrc, ready: document.getElementById('tour-video').readyState }));
 await page.click('#tour-close');

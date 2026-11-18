@@ -1,5 +1,6 @@
 // Deep Drift: a dark sea of sleepy, glowing orbs that sing when touched.
 
+import { offer, install, goOffline } from './install.js';
 import { Drift, MOODS, orbNotes, VOICE_NAMES } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -276,6 +277,13 @@ function showTour() {
 function closeTour() {
   $('tour-video').pause(); $('tour').hidden = true;
   if (drift) drift.hush(false);
+}
+// on the website: offer to put Deep Drift on the home screen as an app (no APK needed)
+goOffline();
+if (offer()) {
+  const b = $('apk'), m = $('m-apk'); b.hidden = false; m.hidden = false;
+  b.onclick = async () => { const how = await install(); if (how) { b.textContent = how; b.style.textDecoration = 'none'; } else { b.hidden = true; m.hidden = true; } };
+  m.onclick = async () => { const how = await install(); if (how) m.querySelector('small').textContent = how; else { b.hidden = true; m.hidden = true; } };
 }
 $('tour-link').onclick = () => { $('start').classList.add('gone'); showTour(); };
 // the menu: the tutorial, and the other bubble apps

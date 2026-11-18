@@ -11,6 +11,7 @@ import { midiName } from '../theory.js';
 import { FILLS } from '../seq.js';
 import { exportProject, FORMATS } from '../exporter.js';
 import { canShare, shareFile, saveFile, isNative } from '../platform.js';
+import { offer, install } from '../install.js';
 import { mountIcons, icon, mascot, GLYPHS, DONE_ART } from './art.js';
 import { showTour, app, curTrack, renderAll, afterEdit, afterStructureChange, selectTrack, toast, touch, trackMascot, openProject } from './app.js';
 
@@ -135,8 +136,9 @@ function project() {
       <button class="pill" data-act="file">Save song file</button>
       <button class="pill" data-act="open">Import song file</button>
       ${app.midi && app.midi.supported ? `<button class="pill" data-act="midi">${icon('midi')}MIDI</button>` : ''}
-      ${isNative ? '' : `<a class="pill" href="BobaBeats.apk" download="BobaBeats.apk" data-apk>${icon('share')}Android app</a>`}
+      ${offer() ? `<button class="pill" data-act="install">📲 Put it on your home screen</button>` : ''}
     </div>
+    <p class="sub" id="p-install" hidden></p>
     <input type="file" id="p-file" accept=".json,.bobabeats,.bubbloop,application/json" hidden>
     ${others.length ? `<h3>Saved songs</h3><div class="list">${others.map((o) => `
       <div class="item"><button class="sp" data-open="${o.id}" style="text-align:left"><b>${esc(o.name)}</b><small>${Math.round(o.bpm)} bpm · ${ago(o.modified)}</small></button>
@@ -226,6 +228,7 @@ function project() {
       else if (act === 'export') exporter();
       else if (act === 'midi') midiSheet();
       else if (act === 'open') file.click();
+      else if (act === 'install') { const how = await install(); const t = root.querySelector('#p-install'); if (how) { t.textContent = how; t.hidden = false; } else { b.remove(); t.hidden = true; } }
       else if (act === 'file') {
         try {
           const saved = await saveFile(`${p.name.replace(/[\\/:*?"<>|]/g, ' ')}.bobabeats.json`, 'application/json', new TextEncoder().encode(JSON.stringify({ ...JSON.parse(S.serialize(p)), samples: await packSamples(sampleIds(p)) })));

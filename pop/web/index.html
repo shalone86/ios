@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#3a160c">
 <title>Pop Pads</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -69,10 +72,9 @@
     <p>a fizzy little drum machine</p>
     <button id="go">pop it open</button>
     <button id="how-start" class="how">how it works</button>
-    <a id="apk" href="PopPads.apk" download>Android app</a>
+    <button id="apk" hidden>put it on your home screen</button>
   </div>
 </div>
-<script>if (window.PopNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent)) document.getElementById('apk').remove();</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

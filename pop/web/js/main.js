@@ -4,6 +4,7 @@
 
 import { PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, laneOf, motionOf, hasMotion, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
 import { KITS, KIT_ORDER } from './kits.js';
+import { offer, install, goOffline } from './install.js';
 import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff } from './export.js';
 
 // the other bubble apps (in the Android app these open in the browser)
@@ -492,10 +493,12 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <h4>Everything</h4>
   <div class="row"><button class="chip" data-fresh="1">✨ Start fresh</button></div>
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
-  ${window.PopNative || /iPhone|iPad|Macintosh/.test(navigator.userAgent) ? '' : '<h4>On Android</h4><a class="big" href="PopPads.apk" download style="text-decoration:none;color:inherit">📱<span>Get the Android app<small>works offline, saves beats to your Music folder</small></span></a>'}`, (s) => s.onclick = async (e) => {
+  ${offer() ? '<h4>On your phone</h4><button class="big" data-install="1">📲<span>Put it on your home screen<small>opens like an app, works with no signal</small></span></button>' : ''}`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
   if (e.target.closest('[data-how]')) { closeSheet(); showTour(); return; }
+  const I = e.target.closest('[data-install]');
+  if (I) { const how = await install(); if (how) I.querySelector('small').textContent = how; else closeSheet(); return; }
   if (e.target.closest('[data-fresh]')) { startFresh(); return; }
   if (e.target.closest('[data-boba]')) {
     const st = s.querySelector('#s-status');
@@ -565,6 +568,12 @@ $('tour-video').onended = closeTour;
 $('how-start').onclick = () => { $('start').classList.add('gone'); start(); showTour(); };
 
 // ---------- go ----------
+// on the website: offer to put Pop Pads on the home screen as an app (no APK needed)
+goOffline();
+if (offer()) {
+  const b = $('apk'); b.hidden = false;
+  b.onclick = async () => { const how = await install(); if (how) { b.textContent = how; b.style.textDecoration = 'none'; } else b.hidden = true; };
+}
 $('go').onclick = async () => { $('start').classList.add('gone'); await start(); };
 // the Android app: the beat stops when you leave the app
 window.popPadsPause = () => { if (eng && eng.playing) $('play').click(); };
