@@ -139,11 +139,25 @@ async function padSample(song, i, tw, sr) {
   const mono = new Float32Array(L.length);
   let end = 0;
   for (let k = 0; k < L.length; k++) { mono[k] = (L[k] + R[k]) / 2; if (Math.abs(mono[k]) > 0.0005) end = k; }
-  const n = Math.min(mono.length, end + Math.round(sr * 0.02)), pcm = new Int16Array(n);
-  for (let k = 0; k < n; k++) pcm[k] = Math.max(-32768, Math.min(32767, Math.round(mono[k] * (k > n - 200 ? (n - k) / 200 : 1) * 32767)));
-  const bytes = new Uint8Array(pcm.buffer);
-  let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
-  return { name: KITS[song.kit].pads[i].name, root: 60, pitched: false, sr, pcm: btoa(s) };
+  const n = Math.min(mono.length, end + Math.round(sr * 0.02)), data = mono.slice(0, n);
+  for (let k = Math.max(0, n - 200); k < n; k++) data[k] *= (n - k) / 200;
+  return { name: KITS[song.kit].pads[i].name, sr, data };
+}
+// Boba levels its own samples to 90% of full scale and plays every sampler
+// sound relative to that; Pop's drums come out of its mix much lower. So the
+// whole kit is raised together until its loudest drum peaks at 90%, which
+// keeps the balance between the drums exactly as it was in Pop Pads.
+function packForBoba(drums) {
+  let top = 0;
+  for (const d of drums) for (const v of d.data) top = Math.max(top, Math.abs(v));
+  const g = top > 0 ? 0.9 / top : 1;
+  return drums.map((d) => {
+    const pcm = new Int16Array(d.data.length);
+    for (let k = 0; k < pcm.length; k++) pcm[k] = Math.max(-32768, Math.min(32767, Math.round(d.data[k] * g * 32767)));
+    const bytes = new Uint8Array(pcm.buffer);
+    let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
+    return { name: d.name, root: 60, pitched: false, sr: d.sr, pcm: btoa(s) };
+  });
 }
 
 // Boba's bubbles not used by the 4×4 layout: the right-hand column and the top row
@@ -173,12 +187,13 @@ export async function bobaSong(song) {
     versions.push({ i, tw, slot }); slotOf.set(`${i}|${key}`, slot);
   }
   const samples = {}, kit = {};
+  const drums = [];
   for (const v of versions) {
-    const id = 's' + bid();
-    samples[id] = await padSample(song, v.i, v.tw, 44100);
-    if (v.slot !== Math.floor(v.i / 4) * B_COLS + (v.i % 4)) samples[id].name += ' ✦';
-    kit[v.slot] = id;
+    const d = await padSample(song, v.i, v.tw, 44100);
+    if (v.slot !== Math.floor(v.i / 4) * B_COLS + (v.i % 4)) d.name += ' ✦';
+    drums.push(d);
   }
+  packForBoba(drums).forEach((packed, k) => { const id = 's' + bid(); samples[id] = packed; kit[versions[k].slot] = id; });
   const track = (role, name, inst, extra = {}) => ({ id: bid(), role, name, inst, vol: 0.8, pan: 0, oct: 0, rev: 0.1, dly: 0, chord: 'off', ...extra });
   const pop = track('melody', 'Pop Pads', 'sampler', { vol: 0.9, rev: 0, smp: { mode: 'kit', key: null, kit } });
   const others = [track('bass', 'Bass', 'bassGuitar', { rev: 0 }), track('pads', 'Pads', 'epiano', { vol: 0.7, rev: 0.3, chord: 'triad', pan: -0.1 }), track('melody', 'Melody', 'piano', { vol: 0.75, rev: 0.25, dly: 0.15, pan: 0.1 })];

@@ -56,15 +56,17 @@ const got = await page.evaluate(async () => {
   const { getSample } = await import('/boba/js/samples.js');
   const ids = Object.entries(t.smp.kit);
   const lens = ids.map(([slot, id]) => { const sm = getSample(id); return sm ? sm.buffer.duration : 0; });
+  let top = 0; for (const [, id] of ids) { const b = getSample(id).buffer; for (let c = 0; c < b.numberOfChannels; c++) for (const x of b.getChannelData(c)) top = Math.max(top, Math.abs(x)); }
   return {
     name: p.name, inst: t.inst, mode: t.smp.mode, bars: sec.bars, bpm: p.bpm, slots: ids.map(([k]) => +k).sort((a, b) => a - b),
-    lens, events: all, sections: p.sections.map((x) => x.bars).join(), songOrder: p.song.map((b) => `${'AB'[b.sec]}×${b.rep}`).join(' '), stepVersion: ev.some((e) => e.r === 0 && e.c === 4 && e.t === 12 * 24), hatNudged: ev.some((e) => e.r === 1 && e.c === 0 && e.t === 2 * 24 + 6), focus: window.bubbloop.trackId === t.id,
+    lens, top, events: all, sections: p.sections.map((x) => x.bars).join(), songOrder: p.song.map((b) => `${'AB'[b.sec]}×${b.rep}`).join(' '), stepVersion: ev.some((e) => e.r === 0 && e.c === 4 && e.t === 12 * 24), hatNudged: ev.some((e) => e.r === 1 && e.c === 0 && e.t === 2 * 24 + 6), focus: window.bubbloop.trackId === t.id,
     url: location.search, others: p.tracks.slice(1).map((x) => x.role).join(','), again: localStorage.getItem('bubbloop.last') === p.id,
   };
 });
 check(got.name === 'Pop Pads Lime beat' && got.inst === 'sampler' && got.mode === 'kit' && got.focus && got.others === 'bass,pads,melody',
   `Boba opens a new song with a Pop Pads sampler kit track first, then bass, chords and melody (${got.name})`);
 check(got.slots.join() === '0,2,4,5' && got.lens.every((d) => d > 0.05), `the drums land on Boba's bubbles in the same layout, a step's own pitch on a spare bubble (slots ${got.slots}), sounds loaded (${got.lens.map((d) => d.toFixed(2)).join(', ')} s)`);
+check(Math.abs(got.top - 0.9) < 0.03, `the kit arrives at Boba's own sample level: its loudest drum peaks at 90% (${got.top.toFixed(2)})`);
 check(got.stepVersion, 'the step with its own settings plays its own version of the drum');
 check(got.sections === '1,1' && got.songOrder === 'A×1 B×1 A×1' && got.bpm === 100 && got.events === 2 + 2 + 8 + 2 + 2, `each pattern is a Boba loop and the chain is the song (${got.songOrder}; ${got.events} notes)`);
 check(got.hatNudged, 'a nudged hit keeps its nudge');
@@ -79,7 +81,7 @@ const level = await page.evaluate(async () => {
   document.getElementById('btn-play').click();
   return peak;
 });
-check(level > 0.05, `Boba plays the Pop Pads drums (peak ${level.toFixed(2)})`);
+check(level > 0.3, `Boba plays the Pop Pads drums out loud (peak ${level.toFixed(2)})`);
 
 // the song-file route (the Android apps): the same file imports into Boba
 await page.goto(`${base}/pop/`);
