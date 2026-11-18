@@ -579,28 +579,42 @@ export function buildGraph(ctx, project, kit, opts = {}) {
 
   // Sampler: one sound stretched across the bubbles (keyboard mode), or a
   // different sound on each bubble (kit mode).
-  g.playSample = (track, row, col, chord, vel, t, dur, acc = 0) => {
+  g.playSample = (track, row, col, chord, vel, t0, dur, acc = 0) => {
     const ch = channel(track);
     const smp = track.smp || {};
     const kit = smp.mode === 'kit';
     const sample = getSample(kit ? (smp.kit || {})[row * 5 + col] : smp.key);
     if (!sample) return [];
     const notes = kit ? [null] : cellNotes(g.project, track, row, col, chord, acc);
-    ch.voices = ch.voices.filter((v) => v.until > t);
-    while (ch.voices.length + notes.length > 12 && ch.voices.length) ch.voices.shift().kill(t);
+    ch.voices = ch.voices.filter((v) => v.until > t0);
+    while (ch.voices.length + notes.length > 12 && ch.voices.length) ch.voices.shift().kill(t0);
+    let seed = (row * 31 + col * 7 + Math.round(t0 * 1000)) | 0;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };   // the same each time it renders
     const scale = notes.length > 1 ? 1 / Math.sqrt(notes.length * 0.75) : 1;
-    return notes.map((m) => {
+    return notes.map((m, idx) => {
       const src = ctx.createBufferSource();
       // natural pitch: a version prepared with the formants kept, if ready
       const nat = m != null && smp.shift !== 'classic' ? naturalBuffer(sample, m, smp.formant || 0) : null;
       src.buffer = nat || sample.buffer;
       const rate = m == null || nat ? 1 : Math.pow(2, (m - sample.root) / 12);
       src.playbackRate.value = rate;
+      // Natural-pitch notes of a chord all come from the same recording and
+      // line up almost exactly, so together they comb-filter into a whoosh.
+      // Each note after the first starts a few ms later, a few cents off and
+      // a little to one side, so they sound like voices, not one smeared one.
+      let base = 0, t = t0;
+      if (nat && notes.length > 1 && idx > 0) {
+        t = t0 + 0.009 * idx + rnd() * 0.006;
+        base = (idx % 2 ? 1 : -1) * (3 + rnd() * 3);
+        src.detune.value = base;
+      }
       const gn = ctx.createGain();
       const peak = (0.25 + 0.75 * vel * vel) * scale * 0.8;
       gn.gain.setValueAtTime(0, t);
       gn.gain.linearRampToValueAtTime(peak, t + 0.004);
-      src.connect(gn).connect(ch.bus);
+      let out = gn;
+      if (base) { const pn = ctx.createStereoPanner(); pn.pan.value = (idx % 2 ? 0.22 : -0.22); gn.connect(pn); out = pn; }
+      src.connect(gn); out.connect(ch.bus);
       src.start(t);
       const h = {
         t, until: t + src.buffer.duration / rate,
@@ -619,9 +633,9 @@ export function buildGraph(ctx, project, kit, opts = {}) {
           try { src.stop(at + 0.05); } catch (e) { /* done */ }
           h.until = Math.min(h.until, at + 0.05);
         },
-        bend(cents, at) { src.detune.setTargetAtTime(cents, at, 0.015); },
+        bend(cents, at) { src.detune.setTargetAtTime(base + cents, at, 0.015); },
       };
-      if (!sh.offline) src.onended = () => { try { gn.disconnect(); } catch (e) { /* gone */ } };
+      if (!sh.offline) src.onended = () => { try { gn.disconnect(); out.disconnect(); } catch (e) { /* gone */ } };
       if (dur != null) h.release(t + Math.max(0.03, dur));
       ch.voices.push(h);
       return h;

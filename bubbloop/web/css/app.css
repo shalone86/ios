@@ -530,3 +530,6 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 @media (prefers-reduced-motion: reduce) {
   .bub, #sky .cloud, #sky .glow, #sky .stars { animation: none; }
 }
+
+/* the recording meter turns red when the mic is overloaded */
+#s-level.hot { background: linear-gradient(90deg, #ff8fb8, #d43d62) !important; }

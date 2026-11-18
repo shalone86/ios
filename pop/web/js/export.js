@@ -120,58 +120,94 @@ export async function deliver(bytes, name, mime) {
 const B_PPQ = 96, B_STEP = 24, B_BAR = 384, B_COLS = 5;
 const bid = () => Math.random().toString(36).slice(2, 10);
 
-async function padSample(song, i, sr) {
-  const { Graph, tweakOf } = await import('./engine.js');
+// One drum as a one-shot for Boba's sampler, with its settings and the mix
+// (filter, drive, crush and the reverb's tail) baked in. `tw`: the settings
+// for this version of the drum (its own, or a step's).
+async function padSample(song, i, tw, sr) {
+  const { Graph } = await import('./engine.js');
   const { renderKit } = await import('./kits.js');
-  const buf = (await renderKit(song.kit, sr))[i], tw = { ...tweakOf(song, i), lfo: 0, nudge: 0 };
-  const rate = Math.pow(2, tw.pitch / 12), len = buf.duration / rate * Math.max(0.04, tw.len) + 0.03;
-  const ctx = new OfflineAudioContext(1, Math.ceil(len * sr), sr);
-  const g = new Graph(ctx);
-  g.play(i, buf, 0, tw, 1, ctx.destination);
-  const out = (await ctx.startRendering()).getChannelData(0);
-  const pcm = new Int16Array(out.length);
-  for (let k = 0; k < out.length; k++) pcm[k] = Math.max(-32768, Math.min(32767, Math.round(out[k] * 32767)));
+  const buf = (await renderKit(song.kit, sr))[i];
+  const rate = Math.pow(2, tw.pitch / 12), verb = (song.fx.verb || 0) > 0.02 ? 1.1 : 0;
+  const len = buf.duration / rate * Math.max(0.04, tw.len) + 0.03 + verb;
+  const ctx = new OfflineAudioContext(2, Math.ceil(len * sr), sr);
+  const g = await Graph.create(ctx);
+  // the LFO moves over time, so it cannot live in a one-shot: it is left out
+  g.setFx({ ...song.fx, lfo: 0 }, song.bpm, 0);
+  g.play(i, buf, 0, { ...tw, lfo: 0, nudge: 0, rep: 1 });
+  const out = await ctx.startRendering(), L = out.getChannelData(0), R = out.getChannelData(1);
+  // mono for Boba's sampler, trimmed where the sound has died away
+  const mono = new Float32Array(L.length);
+  let end = 0;
+  for (let k = 0; k < L.length; k++) { mono[k] = (L[k] + R[k]) / 2; if (Math.abs(mono[k]) > 0.0005) end = k; }
+  const n = Math.min(mono.length, end + Math.round(sr * 0.02)), pcm = new Int16Array(n);
+  for (let k = 0; k < n; k++) pcm[k] = Math.max(-32768, Math.min(32767, Math.round(mono[k] * (k > n - 200 ? (n - k) / 200 : 1) * 32767)));
   const bytes = new Uint8Array(pcm.buffer);
   let s = ''; for (let k = 0; k < bytes.length; k += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
   return { name: KITS[song.kit].pads[i].name, root: 60, pitched: false, sr, pcm: btoa(s) };
 }
 
+// Boba's bubbles not used by the 4×4 layout: the right-hand column and the top row
+const SPARE = [4, 9, 14, 19, 24, 20, 21, 22, 23];
+
 export async function bobaSong(song) {
-  const { padAt } = await import('./engine.js');
-  let bars = song.chain.length > 1 ? song.chain.slice() : [song.cur];
-  // Boba loops are 1, 2, 4 or 8 bars: a chain of another length is repeated to fit
-  const size = [1, 2, 4, 8].find((n) => n >= bars.length) || 8;
-  while (bars.length < size) bars.push(bars[bars.length % (song.chain.length > 1 ? song.chain.length : 1)]);
-  bars = bars.slice(0, size);
-  const used = [...Array(16).keys()].filter((i) => bars.some((b) => song.patterns[b][i]));
-  const samples = {}, kit = {};
+  const { padAt, tweakOf } = await import('./engine.js');
+  const chain = song.chain.length > 1 ? song.chain.slice() : [song.cur];
+  // one Boba section (loop) per pattern, in the order they first appear; the
+  // chain becomes Boba's song, so any length comes across
+  const order = [...new Set(chain)];
+  const used = [...Array(16).keys()].filter((i) => order.some((pi) => song.patterns[pi][i]));
+  // every version of each drum: its own settings, and each different set a step gives it
+  const look = (tw) => JSON.stringify(['pitch', 'len', 'filt', 'vol', 'crush'].map((k) => +(tw[k] || 0).toFixed(3)));
+  const versions = [];                // { i, key, tw, slot }
+  const slotOf = new Map();           // `${i}|${key}` -> Boba slot
+  let spare = 0;
   for (const i of used) {
-    const id = 's' + bid();
-    samples[id] = await padSample(song, i, 44100);
-    kit[Math.floor(i / 4) * B_COLS + (i % 4)] = id;
+    const own = tweakOf(song, i), key = look(own), slot = Math.floor(i / 4) * B_COLS + (i % 4);
+    versions.push({ i, tw: own, slot }); slotOf.set(`${i}|${key}`, slot);
   }
-  const ev = [];
-  bars.forEach((pi, b) => {
-    for (let st = 0; st < STEPS; st++) for (const i of used) {
-      if (!((song.patterns[pi][i] >> st) & 1)) continue;
-      const tw = padAt(song, pi, i, st), nudge = tw.nudge || 0, k = Math.max(1, Math.min(4, Math.round(tw.rep || 1)));
-      for (let j = 0; j < k; j++) {
-        const t = Math.max(0, Math.min(size * B_BAR - 1, b * B_BAR + st * B_STEP + Math.round(nudge * B_STEP + (j * B_STEP) / k)));
-        ev.push({ t, d: Math.max(4, Math.round(B_STEP / k)), r: Math.floor(i / 4), c: i % 4, v: j ? 0.7 : 0.85 });
-      }
-    }
-  });
-  ev.sort((a, b) => a.t - b.t);
+  for (const pi of order) for (let st = 0; st < STEPS; st++) for (const i of used) {
+    if (!((song.patterns[pi][i] >> st) & 1)) continue;
+    const tw = padAt(song, pi, i, st), key = look(tw);
+    if (slotOf.has(`${i}|${key}`) || spare >= SPARE.length) continue;
+    const slot = SPARE[spare++];
+    versions.push({ i, tw, slot }); slotOf.set(`${i}|${key}`, slot);
+  }
+  const samples = {}, kit = {};
+  for (const v of versions) {
+    const id = 's' + bid();
+    samples[id] = await padSample(song, v.i, v.tw, 44100);
+    if (v.slot !== Math.floor(v.i / 4) * B_COLS + (v.i % 4)) samples[id].name += ' ✦';
+    kit[v.slot] = id;
+  }
   const track = (role, name, inst, extra = {}) => ({ id: bid(), role, name, inst, vol: 0.8, pan: 0, oct: 0, rev: 0.1, dly: 0, chord: 'off', ...extra });
   const pop = track('melody', 'Pop Pads', 'sampler', { vol: 0.9, rev: 0, smp: { mode: 'kit', key: null, kit } });
   const others = [track('bass', 'Bass', 'bassGuitar', { rev: 0 }), track('pads', 'Pads', 'epiano', { vol: 0.7, rev: 0.3, chord: 'triad', pan: -0.1 }), track('melody', 'Melody', 'piano', { vol: 0.75, rev: 0.25, dly: 0.15, pan: 0.1 })];
   const tracks = [pop, ...others];
+  const sections = order.map((pi) => {
+    const ev = [];
+    for (let st = 0; st < STEPS; st++) for (const i of used) {
+      if (!((song.patterns[pi][i] >> st) & 1)) continue;
+      const tw = padAt(song, pi, i, st), slot = slotOf.get(`${i}|${look(tw)}`) ?? (Math.floor(i / 4) * B_COLS + (i % 4));
+      const k = Math.max(1, Math.min(4, Math.round(tw.rep || 1)));
+      for (let j = 0; j < k; j++) {
+        const t = Math.max(0, Math.min(B_BAR - 1, st * B_STEP + Math.round((tw.nudge || 0) * B_STEP + (j * B_STEP) / k)));
+        ev.push({ t, d: Math.max(4, Math.round(B_STEP / k)), r: Math.floor(slot / B_COLS), c: slot % B_COLS, v: j ? 0.7 : 0.85 });
+      }
+    }
+    ev.sort((a, b) => a.t - b.t);
+    return { bars: 1, ev: Object.fromEntries(tracks.map((t) => [t.id, t === pop ? ev : []])), fx: [], mute: {} };
+  });
+  // the chain, as Boba's song: repeats of the same pattern in a row become one block
+  const songBlocks = [];
+  for (const pi of chain) {
+    const sec = order.indexOf(pi), last = songBlocks[songBlocks.length - 1];
+    if (last && last.sec === sec) last.rep++; else songBlocks.push({ sec, rep: 1, off: {}, fx: [] });
+  }
   const now = Date.now();
   return {
     v: 1, id: bid(), name: `Pop Pads ${KITS[song.kit].name} beat`, created: now, modified: now,
     bpm: song.bpm, swing: Math.min(1, song.swing * 1.32), key: 0, scale: 'minor', quant: B_STEP, metro: true, master: 'sweet',
-    tracks, sections: [{ bars: size, ev: Object.fromEntries(tracks.map((t) => [t.id, t === pop ? ev : []])), fx: [], mute: {} }],
-    cur: 0, song: [], latch: {}, space: { rev: 'hall', dly: 'ping' },
+    tracks, sections, cur: 0, song: chain.length > 1 ? songBlocks : [], latch: {}, space: { rev: 'hall', dly: 'ping' },
     samples,
   };
 }

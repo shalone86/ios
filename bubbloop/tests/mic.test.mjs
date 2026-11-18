@@ -49,6 +49,17 @@ console.log(`    recorded ${r.got.toFixed(2)} s of ${r.secs.toFixed(2)} s, sharp
 check(r.worklet, 'the microphone is recorded on the audio thread');
 check(Math.abs(r.got - r.secs) < 0.15, 'nothing is lost while the screen is busy (the take is complete)');
 check(r.gaps === 0 && r.worst < r.smooth * 4, 'no gaps or crackles in the recording');
+// too loud for the mic: a tone with its tops flattened gets its round peaks back
+const dc = await page.evaluate(async () => {
+  const { declip } = await import('/js/samples.js');
+  const sr = 48000, n = sr, x = new Float32Array(n), truth = new Float32Array(n);
+  for (let i = 0; i < n; i++) { truth[i] = 1.5 * Math.sin(2 * Math.PI * 180 * i / sr) + 0.2 * Math.sin(2 * Math.PI * 530 * i / sr); x[i] = Math.max(-1, Math.min(1, truth[i])); }
+  const err = (y) => { let e = 0, s = 0; for (let i = 0; i < n; i++) { e += (y[i] - truth[i]) ** 2; s += truth[i] ** 2; } return 10 * Math.log10(e / s); };
+  const before = err(x), fixed = declip(x), after = err(x);
+  return { before, after, fixed };
+});
+console.log(`    clipped tone: ${dc.before.toFixed(1)} dB error before, ${dc.after.toFixed(1)} dB after repairing ${dc.fixed} flattened peaks`);
+check(dc.fixed > 100 && dc.after < dc.before - 6, 'a recording too loud for the mic gets its flattened peaks rebuilt');
 check(errors.length === 0, 'no page errors ' + errors.join(' | '));
 await browser.close(); server.close();
 console.log(failed ? `${failed} failed` : 'all microphone checks passed');

@@ -358,6 +358,48 @@ const GRAB = `registerProcessor('bb-grab', class extends AudioWorkletProcessor {
 const grabUrl = URL.createObjectURL(new Blob([GRAB], { type: 'text/javascript' }));
 const grabReady = new WeakMap();
 
+// A sound too loud for the microphone comes in with its peaks flattened at
+// full scale, and that clipping crackles. Each flattened run is rebuilt from
+// the wave on either side (a cubic fitted through 4 points each side), so the
+// peak gets its round top back; the sample is levelled afterwards anyway.
+export function declip(x) {
+  let top = 0;
+  for (let i = 0; i < x.length; i++) top = Math.max(top, Math.abs(x[i]));
+  if (top < 0.9) return 0;
+  const lim = top * 0.985;
+  let fixed = 0;
+  for (let i = 4; i < x.length - 4; i++) {
+    if (Math.abs(x[i]) < lim || Math.abs(x[i - 1]) >= lim) continue;
+    let j = i; while (j < x.length - 4 && Math.abs(x[j]) >= lim) j++;
+    const len = j - i;
+    if (len < 2 || len > 400) { i = j; continue; }
+    // fit y = a + b t + c t^2 + d t^3 through the 4 samples before and after
+    const ts = [], ys = [];
+    for (let k = 4; k >= 1; k--) { ts.push(-k); ys.push(x[i - k]); }
+    for (let k = 0; k < 4; k++) { ts.push(len + k); ys.push(x[j + k]); }
+    const A = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], B = [0, 0, 0, 0];
+    for (let n = 0; n < ts.length; n++) {
+      const p = [1, ts[n], ts[n] ** 2, ts[n] ** 3];
+      for (let r = 0; r < 4; r++) { B[r] += p[r] * ys[n]; for (let c = 0; c < 4; c++) A[r][c] += p[r] * p[c]; }
+    }
+    for (let c = 0; c < 4; c++) {                     // Gaussian elimination
+      let piv = c; for (let r = c + 1; r < 4; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+      [A[c], A[piv]] = [A[piv], A[c]]; [B[c], B[piv]] = [B[piv], B[c]];
+      for (let r = c + 1; r < 4; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k < 4; k++) A[r][k] -= f * A[c][k]; B[r] -= f * B[c]; }
+    }
+    const co = [0, 0, 0, 0];
+    for (let r = 3; r >= 0; r--) { let v = B[r]; for (let k = r + 1; k < 4; k++) v -= A[r][k] * co[k]; co[r] = v / A[r][r]; }
+    const sign = Math.sign(x[i]);
+    for (let k = 0; k < len; k++) {
+      const v = co[0] + co[1] * k + co[2] * k * k + co[3] * k * k * k;
+      // the rebuilt top must stay outside the clip level, on the right side
+      x[i + k] = sign * Math.max(lim, Math.min(top * 2, Math.abs(v)));
+    }
+    fixed++; i = j;
+  }
+  return fixed;
+}
+
 export async function recordMic(ctx) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
@@ -366,12 +408,13 @@ export async function recordMic(ctx) {
   const mute = ctx.createGain();
   mute.gain.value = 0;
   const chunks = [];
-  let total = 0, lvl = 0, tap, worklet = false;
+  let total = 0, lvl = 0, tap, worklet = false, hot = 0;
   const limit = ctx.sampleRate * MAX_SECONDS;
   const take = (d) => {
     let p = 0;
     for (let i = 0; i < d.length; i++) p = Math.max(p, Math.abs(d[i]));
     lvl = p;
+    if (p > 0.97) hot = performance.now();
     if (total < limit) { chunks.push(d); total += d.length; }
   };
   try {
@@ -391,10 +434,12 @@ export async function recordMic(ctx) {
     const data = new Float32Array(total);
     let o = 0;
     for (const c of chunks) { data.set(c.subarray(0, Math.min(c.length, total - o)), o); o += c.length; if (o >= total) break; }
-    return { data, sr: ctx.sampleRate };
+    const repaired = declip(data);
+    return { data, sr: ctx.sampleRate, repaired };
   };
   return {
     level: () => lvl,
+    tooHot: () => performance.now() - hot < 600,     // clipped in the last moment
     full: () => total >= limit,
     worklet,
     stop() {

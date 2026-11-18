@@ -118,9 +118,20 @@ public class MainActivity extends Activity {
             top = insets.getSystemWindowInsetTop(); bottom = insets.getSystemWindowInsetBottom();
         }
         float d = getResources().getDisplayMetrics().density;
+        safeTop = top / d; safeBottom = bottom / d;
+        sendInsets();
+    }
+
+    // The status bar and gesture bar sizes, kept so they can be sent again once
+    // the page has loaded: sent before that, they are lost and the page draws
+    // under the clock.
+    private float safeTop = 0, safeBottom = 0;
+    private void sendInsets() {
+        if (web == null) return;
         web.evaluateJavascript(String.format(Locale.US,
                 "document.documentElement.style.setProperty('--safe-t','%.1fpx');"
-                        + "document.documentElement.style.setProperty('--safe-b','%.1fpx');", top / d, bottom / d), null);
+                        + "document.documentElement.style.setProperty('--safe-b','%.1fpx');"
+                        + "window.dispatchEvent(new Event('resize'));", safeTop, safeBottom), null);
     }
 
     // The page keeps running in the background only while it is playing;
@@ -197,6 +208,11 @@ public class MainActivity extends Activity {
                 try { startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, u)); } catch (Exception e) { Log.w(TAG, "no browser for " + u); }
             }
             return true;
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            sendInsets();
         }
 
         @Override

@@ -306,10 +306,16 @@ check(Math.abs(parseFloat(probe(mp3, 'format=duration')) - wavDur) < 0.2, 'MP3 h
 const mid = await exportAs('midi');
 check(fs.readFileSync(mid).subarray(0, 4).toString() === 'MThd', 'MIDI file written');
 
-const loop = await exportAs('wav', async () => { await click('[data-what="loop"]'); await click('[data-opt="seamless"]'); });
+const loop = await exportAs('wav', async () => { await click('[data-what="loop"]'); });
 const loopDur = parseFloat(probe(loop, 'format=duration'));
 const bars = await state(() => { const p = window.bubbloop.project; return p.sections[p.cur].bars * 240 / p.bpm; });
-check(Math.abs(loopDur - bars) < 0.002, `seamless loop is exactly ${bars.toFixed(3)}s (${loopDur.toFixed(3)}s)`);
+check(Math.abs(loopDur - bars) < 0.002, `a loop export is seamless on its own: exactly ${bars.toFixed(3)}s (${loopDur.toFixed(3)}s)`);
+// every loop, each its own seamless file, in one zip
+const zipped = await exportAs('wav', async () => { await click('[data-what="loops"]'); });
+const inside = String(execFileSync('unzip', ['-Z1', zipped])).trim().split('\n');
+const lens = await state(() => window.bubbloop.project.sections.map((sec) => sec.bars * 240 / window.bubbloop.project.bpm));
+const durs = inside.map((n) => { const f = path.join(OUT, 'zip-' + n.replace(/[^\w.-]+/g, '_')); fs.writeFileSync(f, execFileSync('unzip', ['-p', zipped, n])); return parseFloat(probe(f, 'format=duration')); });
+check(inside.length === lens.length && durs.every((d, i) => Math.abs(d - lens[i]) < 0.002), `All loops: a zip of ${inside.length} seamless loops (${inside.join(', ')})`);
 
 await click('#btn-project');
 check(await page.locator('[data-act="tour"]').count() === 1, 'the song menu keeps a "How it works" button to rewatch it');

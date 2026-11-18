@@ -11,8 +11,8 @@ android {
         applicationId 'com.poppads.app'
         minSdk 24
         targetSdk 35
-        versionCode 8
-        versionName '0.8'
+        versionCode 9
+        versionName '0.9'
     }
 
     // The whole app is the web folder; the Android side is a thin shell.

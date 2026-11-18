@@ -38,7 +38,8 @@ const sent = await page.evaluate(() => {
   s.patterns[0] = new Array(16).fill(0); s.patterns[1] = new Array(16).fill(0);
   s.patterns[0][0] = 1 | (1 << 8); s.patterns[0][2] = (1 << 4) | (1 << 12); s.patterns[0][4] = 0b0101010101010101;
   s.patterns[1][0] = 1 | (1 << 10); s.patterns[1][2] = (1 << 4) | (1 << 12);
-  s.motion[0] = { mix: {}, pads: { 4: { nudge: [null, null, 0.25, ...new Array(13).fill(null)] } } };
+  s.motion[0] = { mix: {}, pads: { 4: { nudge: [null, null, 0.25, ...new Array(13).fill(null)] }, 2: { pitch: [...new Array(12).fill(null), 7, null, null, null] } } };
+  s.fx.verb = 0.5; s.fx.crush = 0.3;
   s.tweaks.lime = []; s.tweaks.lime[2] = { pitch: 5 };
   s.chain = [0, 1, 0]; s.bpm = 100;
   return { hits: 2 + 2 + 8 + 2 + 2 + 2 + 2 + 8 };
@@ -51,20 +52,21 @@ await page.waitForFunction(() => window.bubbloop && window.bubbloop.project, nul
 await page.evaluate(() => document.getElementById('btn-start').click());
 await page.waitForTimeout(1500);
 const got = await page.evaluate(async () => {
-  const p = window.bubbloop.project, t = p.tracks[0], sec = p.sections[0], ev = sec.ev[t.id];
+  const p = window.bubbloop.project, t = p.tracks[0], sec = p.sections[0], ev = sec.ev[t.id], all = p.sections.reduce((n, x) => n + x.ev[t.id].length, 0);
   const { getSample } = await import('/boba/js/samples.js');
   const ids = Object.entries(t.smp.kit);
   const lens = ids.map(([slot, id]) => { const sm = getSample(id); return sm ? sm.buffer.duration : 0; });
   return {
     name: p.name, inst: t.inst, mode: t.smp.mode, bars: sec.bars, bpm: p.bpm, slots: ids.map(([k]) => +k).sort((a, b) => a - b),
-    lens, events: ev.length, hatNudged: ev.some((e) => e.r === 1 && e.c === 0 && e.t === 2 * 24 + 6), focus: window.bubbloop.trackId === t.id,
+    lens, events: all, sections: p.sections.map((x) => x.bars).join(), songOrder: p.song.map((b) => `${'AB'[b.sec]}×${b.rep}`).join(' '), stepVersion: ev.some((e) => e.r === 0 && e.c === 4 && e.t === 12 * 24), hatNudged: ev.some((e) => e.r === 1 && e.c === 0 && e.t === 2 * 24 + 6), focus: window.bubbloop.trackId === t.id,
     url: location.search, others: p.tracks.slice(1).map((x) => x.role).join(','), again: localStorage.getItem('bubbloop.last') === p.id,
   };
 });
 check(got.name === 'Pop Pads Lime beat' && got.inst === 'sampler' && got.mode === 'kit' && got.focus && got.others === 'bass,pads,melody',
   `Boba opens a new song with a Pop Pads sampler kit track first, then bass, chords and melody (${got.name})`);
-check(got.slots.join() === '0,2,5' && got.lens.every((d) => d > 0.05), `the drums land on Boba's bubbles in the same layout (slots ${got.slots}), sounds loaded (${got.lens.map((d) => d.toFixed(2)).join(', ')} s)`);
-check(got.bars === 4 && got.bpm === 100 && got.events === sent.hits + 8 + 2 + 2, `the 3-bar chain fills a 4-bar loop at 100 bpm (${got.events} notes)`);
+check(got.slots.join() === '0,2,4,5' && got.lens.every((d) => d > 0.05), `the drums land on Boba's bubbles in the same layout, a step's own pitch on a spare bubble (slots ${got.slots}), sounds loaded (${got.lens.map((d) => d.toFixed(2)).join(', ')} s)`);
+check(got.stepVersion, 'the step with its own settings plays its own version of the drum');
+check(got.sections === '1,1' && got.songOrder === 'A×1 B×1 A×1' && got.bpm === 100 && got.events === 2 + 2 + 8 + 2 + 2, `each pattern is a Boba loop and the chain is the song (${got.songOrder}; ${got.events} notes)`);
 check(got.hatNudged, 'a nudged hit keeps its nudge');
 check(got.url === '' && got.again, 'the song is saved in Boba, and the hand-over is used up');
 // the Pop Pads track actually sounds: play Boba and listen to its output level

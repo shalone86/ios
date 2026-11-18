@@ -407,6 +407,7 @@ function sampler(t) {
     ${t.smp.shift === 'classic' ? '' : `<div class="field"><span>Formant</span><span class="stepper"><button data-formant="-1">−</button><span>${(t.smp.formant || 0) > 0 ? '+' : ''}${t.smp.formant || 0}</span><button data-formant="1">+</button></span><span class="sub" style="margin:0">${(t.smp.formant || 0) < 0 ? 'bigger, darker' : (t.smp.formant || 0) > 0 ? 'smaller, brighter' : 'as recorded'}</span></div>`}`}
     <button class="pill primary" id="s-rec">${recorder ? 'Stop' : 'Record with the microphone'}</button>
     <div class="progress" ${recorder ? '' : 'hidden'}><i id="s-level"></i></div>
+    <p class="sub" id="s-hot" hidden style="color:#d43d62;font-weight:700;margin-top:4px">Too loud for the mic: move back a little (it is repaired, but softer sounds best)</p>
     <div class="wrap" style="margin-top:10px">
       <button class="pill" id="s-file">Import an audio file</button>
       ${kit ? '<button class="pill" id="s-chop">Chop a file across the bubbles</button>' : ''}
@@ -449,6 +450,11 @@ function sampler(t) {
         const bar = document.getElementById('s-level');
         if (!recorder || !bar) return;
         bar.style.width = `${Math.min(100, recorder.level() * 140)}%`;
+        // too loud for the microphone: say so while it is happening
+        const hot = recorder.tooHot && recorder.tooHot();
+        bar.classList.toggle('hot', !!hot);
+        const tip = document.getElementById('s-hot');
+        if (tip) tip.hidden = !hot;
         if (recorder.full()) { document.getElementById('s-rec').click(); return; }
         requestAnimationFrame(meter);
       };
@@ -718,7 +724,7 @@ function space() {
 
 // ---------- export ----------
 
-const exportChoice = { format: 'wav', what: 'song', hires: false, seamless: false };
+const exportChoice = { format: 'wav', what: 'song', hires: false };
 
 function masterBlurb(m) {
   const hint = m.hint[0].toUpperCase() + m.hint.slice(1);
@@ -729,7 +735,8 @@ function exporter() {
   const p = app.project;
   const hasSong = p.song.length > 0;
   const c = exportChoice;
-  if (!hasSong) c.what = 'loop';
+  if (!hasSong && c.what === 'song') c.what = 'loop';
+  if (c.what === 'loops' && p.sections.length < 2) c.what = 'loop';
   const sec = S.SECTION_NAMES[p.cur];
   const draw = () => show(`
     <h2>Export</h2>
@@ -738,20 +745,22 @@ function exporter() {
     <div class="wrap">
       <button class="pill ${c.what === 'song' ? 'on' : ''}" data-what="song" ${hasSong ? '' : 'disabled'}>Whole song${hasSong ? ` · ${Math.floor(S.songSeconds(p) / 60)}:${String(Math.round(S.songSeconds(p)) % 60).padStart(2, '0')}` : ''}</button>
       <button class="pill ${c.what === 'loop' ? 'on' : ''}" data-what="loop">Loop ${sec}</button>
+      ${p.sections.length > 1 ? `<button class="pill ${c.what === 'loops' ? 'on' : ''}" data-what="loops">All ${p.sections.length} loops · zip</button>` : ''}
     </div>
+    ${c.what === 'song' ? '' : `<p class="sub" style="margin-top:8px">${c.what === 'loops' ? 'Each loop as its own file, all in one zip. ' : ''}Loops are seamless: they repeat perfectly in a DAW.</p>`}
     ${hasSong ? '' : '<p class="sub" style="margin-top:8px">To export a whole song, arrange your loops in the Song tab first.</p>'}
     <h3>Format</h3>
-    <div class="cards">${FORMATS.map((f) => `<button class="card ${c.format === f.id ? 'on' : ''}" data-format="${f.id}"><b>${f.name}</b><small>${f.hint}</small></button>`).join('')}</div>
+    <div class="cards">${FORMATS.filter((f) => c.what !== 'loops' || ['wav', 'm4a', 'mp3'].includes(f.id)).map((f) => `<button class="card ${c.format === f.id ? 'on' : ''}" data-format="${f.id}"><b>${f.name}</b><small>${f.hint}</small></button>`).join('')}</div>
     ${c.format === 'midi' || c.format === 'pack' ? '' : `
     <h3>Mastering</h3>
     <div class="wrap">${MASTERS.map((m) => `<button class="pill ${p.master === m.id ? 'on' : ''}" data-master="${m.id}" ${c.format === 'stems' ? 'disabled' : ''}>${m.name}</button>`).join('')}</div>
     <p class="sub" style="margin-top:8px">${c.format === 'stems' ? 'Stems are left unmastered so you can mix them yourself.' : masterBlurb(MASTERS.find((m) => m.id === p.master))}</p>
     <h3>Options</h3>
     ${c.format === 'mp3' ? '' : `<div class="field"><span>24-bit</span><span style="flex:1"></span><button class="toggle ${c.hires ? 'on' : ''}" data-opt="hires" aria-label="24-bit"></button></div>`}
-    ${c.what === 'loop' && c.format !== 'stems' ? `<div class="field"><span>Seamless loop</span><span style="flex:1"></span><button class="toggle ${c.seamless ? 'on' : ''}" data-opt="seamless" aria-label="Seamless loop"></button></div><p class="sub">On: the file loops perfectly in a DAW. Off: the last notes ring out.</p>` : ''}`}
+`}
     <button class="pill primary" id="x-go" style="margin-top:14px">Export ${FORMATS.find((f) => f.id === c.format).name}</button>
   `, (root) => {
-    on(root, '[data-what]', (b) => { c.what = b.dataset.what; draw(); });
+    on(root, '[data-what]', (b) => { c.what = b.dataset.what; if (c.what === 'loops' && !['wav', 'm4a', 'mp3'].includes(c.format)) c.format = 'wav'; draw(); });
     on(root, '[data-format]', (b) => { c.format = b.dataset.format; draw(); });
     on(root, '[data-master]', (b) => { app.engine.setMaster(b.dataset.master); touch(); draw(); });
     on(root, '[data-opt]', (b) => { c[b.dataset.opt] = !c[b.dataset.opt]; draw(); });
@@ -768,7 +777,7 @@ function exporter() {
     `);
     const bar = body.querySelector('#x-bar'), label = body.querySelector('#x-label');
     try {
-      const res = await exportProject(p, { format: c.format, what: c.what, master: p.master, bits: c.hires ? 24 : (c.format === 'stems' ? 24 : 16), seamless: c.seamless },
+      const res = await exportProject(p, { format: c.format, what: c.what, master: p.master, bits: c.hires ? 24 : (c.format === 'stems' ? 24 : 16) },
         (text, frac) => { label.textContent = text; bar.style.width = `${Math.round(frac * 100)}%`; });
       busy = false;
       const first = res.files[0];

@@ -6,6 +6,7 @@ import { buildPack } from './codec/sfz.js';
 import { masterById } from './graph.js';
 import { saveFile } from './platform.js';
 import { SECTION_NAMES } from './state.js';
+import { encodeZip } from './codec/zip.js';
 
 export const FORMATS = [
   { id: 'wav',   name: 'WAV',            hint: 'studio quality',          ext: 'wav', mime: 'audio/wav' },
@@ -45,11 +46,14 @@ function encode(msg, transfer, onProgress) {
 
 const safe = (s) => s.replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Boba Beats';
 
-// options: { format, what: 'song'|'loop', master, bits, kbps, seamless }
+// options: { format, what: 'song'|'loop'|'loops', master, bits, kbps }
+// Loops are always seamless (they loop perfectly in a DAW); a song rings out.
+// 'loops' is every section as its own seamless loop, in one zip.
 // onStatus(label, fraction) is called as work moves along.
 // Resolves to { files: [{ name, where, uri, mime }], info }.
 export async function exportProject(project, options, onStatus = () => {}) {
   const fmt = FORMATS.find((f) => f.id === options.format) || FORMATS[0];
+  if (options.what === 'loops') return exportAllLoops(project, fmt, options, onStatus);
   const what = options.what === 'song' && project.song.length ? 'song' : 'loop';
   const base = safe(project.name) + (what === 'loop' ? ` (loop ${SECTION_NAMES[project.cur]})` : '');
   const files = [];
@@ -71,7 +75,7 @@ export async function exportProject(project, options, onStatus = () => {}) {
 
   const preset = masterById(options.master || project.master);
   const withMaster = { ...project, master: preset.id };
-  const seamless = what === 'loop' && !!options.seamless;
+  const seamless = what === 'loop';
   const common = { what, passes: 1, seamless, sampleRate: 44100 };
 
   if (fmt.id === 'stems') {
@@ -102,4 +106,29 @@ export async function exportProject(project, options, onStatus = () => {}) {
   const name = `${base}.${fmt.ext}`;
   files.push({ name, ...(await saveFile(name, fmt.mime, out.bytes, (v) => onStatus('Saving', 0.92 + v * 0.08))) });
   return { files, info: out.info, seconds: r.seconds };
+}
+
+// Every section as its own seamless loop (WAV, Apple Lossless or MP3), mastered
+// the same way, all in one zip: "My song A.wav", "My song B.wav"…
+async function exportAllLoops(project, fmt, options, onStatus) {
+  const format = ['wav', 'm4a', 'mp3'].includes(fmt.id) ? fmt : FORMATS[0];
+  const preset = masterById(options.master || project.master);
+  const n = project.sections.length, entries = [];
+  for (let i = 0; i < n; i++) {
+    const L = SECTION_NAMES[i], part = (v) => (i + v) / n * 0.9;
+    const one = { ...project, master: preset.id, cur: i };
+    onStatus(`Loop ${L}: rendering`, part(0));
+    const r = await renderProject(one, { what: 'loop', passes: 1, seamless: true, sampleRate: 44100, master: false, onProgress: (v) => onStatus(`Loop ${L}: rendering`, part(v * 0.5)) });
+    onStatus(`Loop ${L}: mastering`, part(0.55));
+    const out = await encode({
+      format: format.id, channels: r.channels, sampleRate: r.sampleRate,
+      bits: options.bits || 16, kbps: options.kbps || 256, title: `${project.name} ${L}`,
+      preset: preset.id, seamless: true,
+    }, r.channels.map((c) => c.buffer), (v) => onStatus(`Loop ${L}: mastering`, part(0.55 + v * 0.45)));
+    entries.push({ name: `${safe(project.name)} ${L}.${format.ext}`, bytes: out.bytes });
+  }
+  onStatus('Zipping', 0.92);
+  const name = `${safe(project.name)} loops.zip`;
+  const files = [{ name, ...(await saveFile(name, 'application/zip', encodeZip(entries), (v) => onStatus('Saving', 0.94 + v * 0.06))) }];
+  return { files, info: null };
 }
