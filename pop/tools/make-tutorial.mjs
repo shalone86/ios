@@ -21,15 +21,15 @@ import { createRequire } from 'node:module';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(here, '../web');
-const OUT = path.join(WEB, 'media/tutorial.mp4');
-const OWN = path.join(here, 'tutorial-voice/own');
+const OUT = process.env.TUTORIAL_OUT || path.join(WEB, 'media/tutorial.mp4');
+const OWN = process.env.TUTORIAL_VOICE || path.join(here, 'tutorial-voice/own');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-tour-'));
 const require = createRequire(import.meta.url);
 let pw;
 for (const id of ['playwright', '/opt/node-tools/node_modules/playwright']) { try { pw = require(id); break; } catch (e) { /* next */ } }
 
 // ---------- narration: trim each take by its own noise level, even out the volume ----------
-const KEYS = ['intro', 'tap', 'hold', 'stutter', 'jumble', 'flavor', 'record', 'metro', 'steps', 'shape', 'locks', 'patterns', 'chain', 'knobs', 'motion', 'save', 'bye'];
+const KEYS = ['intro', 'tap', 'melody', 'hold', 'stutter', 'jumble', 'flavor', 'record', 'metro', 'steps', 'shape', 'pitch', 'locks', 'tune', 'copy', 'chain', 'knobs', 'motion', 'export', 'bye'];
 const clips = {};
 const db = (file, flt) => {
   const o = String(execFileSync('sh', ['-c', `ffmpeg -hide_banner -i "${file}" -af "${flt}volumedetect" -f null - 2>&1 | grep mean_volume || true`]));
@@ -207,6 +207,11 @@ if (await say('tap', 'Tap a bubble to play a drum', 'kicks and snares on the bot
   await taps([0, 4, 2, 4, 0, 0, 2, 4], 170);
   await finishLine();
 }
+if (await say('melody', 'Bass, chord and lead', 'in every flavor · real notes', 'high')) {
+  await wait(700);
+  for (const i of [1, 1, 14, 15, 1, 14]) { await touch(pad(i), 120); await wait(420); }
+  await finishLine();
+}
 await press('#play'); await wait(600);
 if (await say('hold', 'Hold a bubble', 'it repeats in time', 'low')) { await wait(400); await touch(pad(5), 2200); await finishLine(); }
 if (await say('stutter', 'Keep holding, slide up', 'to stutter · further = tighter', 'low')) {
@@ -245,22 +250,40 @@ if (await say('steps', 'Steps', 'pick a drum, tap where it plays', 'low')) {
   await finishLine();
 }
 if (await say('shape', 'Shape that drum', 'pitch, length, filter, volume…', 'high')) {
-  await slide('#pad-panel [data-key="pitch"]', 5, 1200);
   await slide('#pad-panel [data-key="filt"]', -45, 1300);
   await slide('#pad-panel [data-key="len"]', 45, 1100);
   await finishLine();
 }
+if (await say('pitch', 'Pitch', 'a 3rd, a 4th, a 5th, an octave', 'high')) {
+  await press('[data-sel="14"]'); await wait(700);
+  for (let k = 0; k < 4; k++) { await press('#pitch-up'); await wait(650); }
+  for (let k = 0; k < 4; k++) { await press('#pitch-dn'); await wait(350); }
+  await finishLine();
+}
+await press('[data-sel="7"]'); await wait(300);
 if (await say('locks', 'Hold a step', 'that one hit gets its own settings', 'high')) {
   await touch('.step[data-step="14"]', 600); await wait(400);
-  await slide('#pad-panel [data-key="pitch"]', 12, 1000);
+  await press('#pitch-up'); await wait(400); await press('#pitch-up'); await wait(400);
   await slide('#pad-panel [data-key="nudge"]', 30, 900);
   await wait(500); await press('#lock-done');
   await finishLine();
 }
+if (await say('tune', 'A bass line', 'a pitch on each step', 'high')) {
+  // the bass: four notes, then the third and fourth get their own pitches
+  await press('[data-sel="1"]'); await wait(500);
+  for (const st of [0, 6, 8, 12]) { await touch(`.step[data-step="${st}"]`, 120); await wait(300); }
+  for (const [st, ups] of [[8, 3], [12, 4]]) {
+    await touch(`.step[data-step="${st}"]`, 600); await wait(300);
+    for (let k = 0; k < ups; k++) { await press('#pitch-up'); await wait(300); }
+    await press('#lock-done'); await wait(300);
+  }
+  await wait(1200);
+  await finishLine();
+}
 await press('[data-mode="play"]'); await wait(400);
-if (await say('patterns', 'Eight patterns', 'hold a number to copy your beat', 'low')) {
-  // hold a number: its menu offers to copy the current pattern there
-  await wait(600); await touch('[data-pat="1"]', 750); await wait(900);
+if (await say('copy', 'Eight patterns', 'tap an empty one: start fresh or copy', 'low')) {
+  // an empty pattern asks: start it empty, or as a copy of this one
+  await wait(600); await press('[data-pat="1"]'); await wait(1100);
   await press('[data-p="copy"]'); await wait(1000);
   await finishLine();
 }
@@ -287,8 +310,8 @@ if (await say('motion', 'Record knob moves', 'hold a knob while recording', 'hig
   await finishLine();
 }
 await press('#play'); await wait(300);
-if (await say('save', 'Save it', 'a loop, MIDI for Logic, or every drum', '')) {
-  await wait(500); await press('#menu'); await wait(Math.max(1200, clips.save.seconds * 1000 - 1500));
+if (await say('export', 'Save it', 'the whole song · a loop · MIDI · every sound · Boba', '')) {
+  await wait(500); await press('#menu'); await wait(Math.max(1200, clips.export.seconds * 1000 - 1500));
   await closeMenu();
   await finishLine();
 }

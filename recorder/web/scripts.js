@@ -27,6 +27,7 @@ window.SCRIPTS = {
     lines: [
       ['intro', 'This is Pop Pads. A fizzy little drum machine.', 'the app opens'],
       ['tap', 'Tap a bubble to play a drum. Kicks and snares are on the bottom row, hats and percussion above.', 'pads are tapped'],
+      ['melody', 'Every flavor also has a bass, right next to the kick, and a chord and a lead up in the corner. They play real notes.', 'the bass, chord and lead are tapped'],
       ['hold', 'Hold a bubble, and it repeats in time.', 'a pad is held'],
       ['stutter', 'Keep holding, and slide up to stutter the beat. Slide further for a tighter stutter.', 'the finger slides up'],
       ['jumble', 'Slide down to jumble it up. Let go, and it snaps back.', 'the finger slides down, then lets go'],
@@ -35,12 +36,14 @@ window.SCRIPTS = {
       ['metro', 'Turn on the metronome to help keep time.', 'the metronome button'],
       ['steps', 'In Steps, pick a drum, and tap the steps where it plays.', 'steps mode'],
       ['shape', 'These sliders change that drum\'s pitch, length, tone, and volume.', 'the drum\'s sliders'],
+      ['pitch', 'Pitch moves in musical steps. A third, a fourth, a fifth, an octave. The semitones are shown underneath.', 'the pitch buttons are tapped'],
       ['locks', 'Hold a step, and that one hit gets its own settings. Even nudge it a little early or late.', 'a step is held and its sliders move'],
-      ['patterns', 'There are eight patterns. Hold a number to copy your beat into it.', 'a pattern is copied'],
+      ['tune', 'Give each step of the bass its own pitch, and your beat turns into a song.', 'a bass line gets its notes'],
+      ['copy', 'There are eight patterns. Tap an empty one to start fresh, or to copy your beat into it.', 'a pattern is copied'],
       ['chain', 'Tap chain, then tap patterns in order to play them one after another.', 'a chain is made'],
       ['knobs', 'Filter, drive, crush, and swing shape the whole beat. The LFO moves the sound in time.', 'the knobs move'],
       ['motion', 'While recording, hold and move any knob, and the move plays back every loop.', 'a knob sweeps while recording'],
-      ['save', 'When you\'re happy, save it. A loop, the pattern for Logic, or every drum on its own.', 'the save menu'],
+      ['export', 'When you\'re happy, save it. The whole song, a loop, MIDI for Logic, or every sound on its own. Or send it to Boba Beats.', 'the save menu'],
       ['bye', 'Now make it pop!', 'the end screen'],
     ],
   },
@@ -126,4 +129,4 @@ window.SCRIPTS = {
 })();
 
 // lines added after a script was first recorded: shown with a NEW badge
-window.NEW_LINES = { 'pop-pads': ['locks', 'motion'] };
+window.NEW_LINES = { 'pop-pads': ['melody', 'pitch', 'tune', 'copy', 'export'] };
