@@ -2,7 +2,7 @@
 // beats into one sound at a time (Steps); eight patterns to chain; a few
 // knobs; and saving the beat as WAV, MIDI or stems.
 
-import { PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, laneOf, motionOf, hasMotion, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
+import { INTERVALS, PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, laneOf, motionOf, hasMotion, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
 import { KITS, KIT_ORDER } from './kits.js';
 import { offer, install, goOffline } from './install.js';
 import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff } from './export.js';
@@ -126,6 +126,7 @@ function drawPanel() {
   $('f-swing').value = Math.round(song.swing * 100);
   $('lfo-to').textContent = `LFO → ${song.fx.lfoTo}`; $('lfo-rate').textContent = LFO_RATES[song.fx.lfoRate][0];
   $('p-lfo-to').textContent = `LFO→${base.lfoTo}`;
+  showPitch(here.pitch || 0);
   $('p-rep').textContent = `repeat ×${here.rep || 1}`;
   $('p-rep').classList.toggle('on', (here.rep || 1) > 1);
   const name = KITS[song.kit].pads[sel].name;
@@ -246,6 +247,7 @@ $('grid').addEventListener('pointerdown', async (e) => {
   // a new first finger while others are "down": those were lost touches, let them go
   if (e.isPrimary) for (const id of [...touches.keys()]) letGo(id);
   const i = +pad.dataset.pad;
+  sel = i;                              // the pad last played is the one Steps opens on
   try { pad.setPointerCapture(e.pointerId); } catch (err) { /* a pointer the browser can't capture: moves still reach the grid */ }
   eng.tap(i);
   const t = { pad: i, el: pad, y0: e.clientY, holding: false };
@@ -356,7 +358,7 @@ $('patterns').onclick = (e) => {
 // Every knob works the same way. Moved while recording (and playing), it is
 // written onto the steps it passes; while a step is held in Steps mode, it
 // sets that step only; otherwise it changes the setting itself.
-function setKnob(el) {
+function setKnob(el, tapped = false) {
   const { scope, key } = el.dataset, pi = song.cur;
   let v = toVal(key, +el.value);
   if ((key === 'filter' || key === 'filt') && Math.abs(v) < 0.06) v = 0;     // a little notch at the middle
@@ -364,7 +366,7 @@ function setKnob(el) {
   const who = scope === 'mix' ? 'mix' : sel;
   if (scope === 'pad' && lockStep != null) {
     laneOf(song, pi, sel, key, true)[lockStep] = v;
-  } else if (eng && eng.rec && eng.playing && key !== 'nudge') {
+  } else if (eng && eng.rec && eng.playing && key !== 'nudge' && !tapped) {
     eng.touch(who, key, v);
   } else if (scope === 'mix') {
     song.fx[key] = v; if (eng) eng.updateFx();
@@ -382,6 +384,28 @@ document.querySelectorAll('#panel input[data-scope]').forEach((el) => {
     if (eng && el.dataset.scope === 'pad') eng.hit(sel, undefined, false, lockStep != null ? padSettings(song, song.cur, sel, lockStep) : tweakOf(song, sel));
   });
 });
+// Pitch: − and + step through the intervals a drummer reaches for (a third,
+// a fourth, a fifth, an octave), with the semitones shown underneath. Tap
+// the middle to step one semitone at a time instead.
+const NAMES = ['Root', 'half step', 'whole step', 'minor 3rd', 'major 3rd', '4th', 'tritone', '5th', 'minor 6th', 'major 6th', 'minor 7th', 'major 7th', 'octave'];
+let fine = false;
+function showPitch(v) {
+  const n = Math.round(v), name = n ? `${NAMES[Math.abs(n)]} ${n > 0 ? 'up' : 'down'}` : 'Root';
+  $('pitch-val').querySelector('b').textContent = name;
+  $('pitch-val').querySelector('small').textContent = `${n > 0 ? '+' : ''}${n} semitone${Math.abs(n) === 1 ? '' : 's'}${fine ? ' · fine' : ''}`;
+  $('pitch-val').classList.toggle('fine', fine);
+}
+function nudgePitch(dir) {
+  const el = document.querySelector('#panel input[data-key="pitch"]'), now = Math.round(+el.value);
+  const next = fine ? now + dir : dir > 0 ? (INTERVALS.find((x) => x > now) ?? now) : ([...INTERVALS].reverse().find((x) => x < now) ?? now);
+  el.value = Math.max(-12, Math.min(12, next));
+  setKnob(el, true); showPitch(+el.value);
+  if (eng) eng.hit(sel, undefined, false, lockStep != null ? padSettings(song, song.cur, sel, lockStep) : tweakOf(song, sel));
+  if (mode === 'steps') drawGrid();
+}
+$('pitch-dn').onclick = () => nudgePitch(-1);
+$('pitch-up').onclick = () => nudgePitch(1);
+$('pitch-val').onclick = () => { fine = !fine; showPitch(+document.querySelector('#panel input[data-key="pitch"]').value); toast(fine ? 'pitch moves a semitone at a time' : 'pitch moves by musical steps'); };
 $('f-swing').addEventListener('input', (e) => { song.swing = +e.target.value / 100; save(); });
 $('lfo-to').onclick = () => { song.fx.lfoTo = LFO_TARGETS[(LFO_TARGETS.indexOf(song.fx.lfoTo) + 1) % LFO_TARGETS.length]; if (eng) eng.updateFx(); save(); drawPanel(); };
 $('lfo-rate').onclick = () => { song.fx.lfoRate = (song.fx.lfoRate + 1) % LFO_RATES.length; if (eng) eng.updateFx(); save(); drawPanel(); };
@@ -483,8 +507,9 @@ $('bpm').onclick = () => openSheet(`<h3>Tempo</h3>
 let loops = 2;
 $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <p style="margin:0 0 10px;color:var(--dim);font-size:14px">${song.chain.length > 1 ? `The chain: ${song.chain.map((c) => c + 1).join(' → ')}` : `Pattern ${song.cur + 1}`}, played <span class="row" style="display:inline-flex">${[1, 2, 4].map((n) => `<button class="chip small ${n === loops ? 'on' : ''}" data-loops="${n}">${n}×</button>`).join('')}</span></p>
+  <button class="big" data-save="song">🎶<span>Song<small>a WAV from the first beat to the last ring-out, to play or share</small></span></button>
   <button class="big" data-save="wav">🎵<span>Loop<small>a WAV that loops cleanly in any app</small></span></button>
-  <button class="big" data-save="midi">🎹<span>Pattern for Logic<small>MIDI on the GM drum notes</small></span></button>
+  <button class="big" data-save="midi">🎹<span>Pattern for Logic<small>MIDI: drums on the GM drum notes, bass, chords and lead on their own tracks</small></span></button>
   <button class="big" data-save="stems">🎚️<span>Every sound<small>a zip with each drum as its own WAV, plus the mix</small></span></button>
   <button class="big" data-boba="1">🧋<span>Send to Boba Beats<small>${window.PopNative ? 'saves a Boba song: open it there from its song menu → Import song file' : 'opens Boba with these drums and this beat, ready to add bass and chords'}</small></span></button>
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
@@ -527,6 +552,7 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   try {
     st.textContent = 'Making it…';
     let msg;
+    if (b.dataset.save === 'song') msg = await deliver((await loopWav(song, { loops, tail: 2.5 })).bytes, `${name}-song.wav`, 'audio/wav');
     if (b.dataset.save === 'wav') msg = await deliver((await loopWav(song, { loops })).bytes, `${name}.wav`, 'audio/wav');
     if (b.dataset.save === 'midi') msg = await deliver(patternMidi(song, { loops }), `${name}.mid`, 'audio/midi');
     if (b.dataset.save === 'stems') msg = await deliver(await stemsZip(song, { loops: 1 }, (m) => { st.textContent = m; }), `${name}-stems.zip`, 'application/zip');

@@ -193,7 +193,7 @@ await page.click('[data-mode="play"]'); await page.click('[data-mode="steps"]');
 await touch('.step[data-step="8"]', 'pointerdown', 40); await page.waitForTimeout(500); await touch('.step[data-step="8"]', 'pointerup', 40);
 const sel8 = await page.evaluate(() => !!document.querySelector('.step[data-step="8"].sel') && document.getElementById('panel').classList.contains('locked'));
 const P = '#pad-panel [data-key="pitch"]', NUD = '#pad-panel [data-key="nudge"]';
-await page.fill(P, '7'); await page.dispatchEvent(P, 'input'); await page.dispatchEvent(P, 'change');
+for (let k = 0; k < 4; k++) await page.click('#pitch-up');   // Root → minor 3rd → major 3rd → 4th → 5th
 await page.fill(NUD, '30'); await page.dispatchEvent(NUD, 'input');
 await page.click('#lock-done');
 const locks = await page.evaluate(async () => {

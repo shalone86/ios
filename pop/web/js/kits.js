@@ -157,6 +157,81 @@ const I = {
     n.connect(b).connect(g).connect(out); n.start(0); n.stop(END);
   },
 
+  // ---------- tuned voices: the bass, chord and lead pads ----------
+  // Stacked oscillators for each note of `notes` (semitones above f), through
+  // an optional formant bank, a filter whose cutoff moves on a schedule, and
+  // an amp that holds, then fades. Every frequency follows f, so a pad
+  // re-rendered at another pitch is the same sound, exactly in tune.
+  //   waves: [type, cents, level, ratio = 1, own decay] (type 'fm': a sine whose
+  //          pitch is wobbled by another sine, `fm` = [ratio, index, decay])
+  //   lp/bp: [start Hz, [time, target Hz, tau], …]
+  synth(ctx, out, p) {
+    const { f, notes = [0], waves = [['sawtooth', 0, 1]], lp, bp, q = 0.7, formants, fm = [1, 2, 0.1],
+      a = 0.004, hold = 0, d = 0.3, lvl = 0.8, scoop = 0, scoopT = 0.05, vib = 0, vibRate = 5.5, vibDelay = 0.1,
+      trem = 0, tremRate = 5, drive = 0, arp = 0, tick = 0, tickF = 1500, air } = p;
+    let dest = out;
+    if (drive) { const sh = shaper(ctx, 1 + drive * 3), g = ctx.createGain(); g.gain.value = 1 / (1 + drive * 0.5); sh.connect(g).connect(out); dest = sh; }
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0, 0); amp.gain.linearRampToValueAtTime(lvl, a);
+    amp.gain.setValueAtTime(lvl, a + hold); amp.gain.setTargetAtTime(0, a + hold, d);
+    let tail = amp;
+    if (trem) {
+      const tg = ctx.createGain(); tg.gain.value = 1 - trem / 2;
+      const lfo = osc(ctx, 'sine', tremRate), depth = ctx.createGain(); depth.gain.value = trem / 2;
+      lfo.connect(depth).connect(tg.gain); lfo.start(0); lfo.stop(END);
+      tail = amp.connect(tg);
+    }
+    tail.connect(dest);
+    const sweep = (type, plan) => {
+      const b = filt(ctx, type, plan[0], q);
+      b.frequency.setValueAtTime(plan[0], 0);
+      for (const [t, to, tau] of plan.slice(1)) b.frequency.setTargetAtTime(to, t, tau);
+      return b;
+    };
+    let head = amp;
+    if (lp) { const b = sweep('lowpass', lp); b.connect(head); head = b; }
+    if (bp) { const b = sweep('bandpass', bp); b.connect(head); head = b; }
+    if (formants) {
+      // a formant bank: one input feeding every band, summed into the filter
+      const split = ctx.createGain(), sum = ctx.createGain(); sum.connect(head);
+      for (const [ff, fq, fl] of formants) { const b = filt(ctx, 'bandpass', ff, fq), g = ctx.createGain(); g.gain.value = fl; split.connect(b).connect(g).connect(sum); }
+      head = split;
+    }
+    // a slow vibrato, shared by every oscillator
+    let vibOut = null;
+    if (vib) {
+      const lfo = osc(ctx, 'sine', vibRate); vibOut = ctx.createGain();
+      vibOut.gain.setValueAtTime(0, 0); vibOut.gain.setValueAtTime(0, vibDelay); vibOut.gain.linearRampToValueAtTime(vib, vibDelay + 0.15);
+      lfo.connect(vibOut); lfo.start(0); lfo.stop(END);
+    }
+    notes.forEach((n, k) => {
+      const start = k * arp, fn = f * Math.pow(2, n / 12);
+      for (const [type, cents, level, ratio = 1, own] of waves) {
+        const o = osc(ctx, type === 'fm' ? 'sine' : type, fn * ratio);
+        o.detune.setValueAtTime(cents + scoop, start);
+        if (scoop) o.detune.linearRampToValueAtTime(cents, start + scoopT);
+        if (vibOut) vibOut.connect(o.detune);
+        if (type === 'fm') {
+          const [mr, idx, md] = fm, m = osc(ctx, 'sine', fn * mr), mg = ctx.createGain();
+          mg.gain.setValueAtTime(fn * idx, start); mg.gain.setTargetAtTime(fn * idx * 0.08, start + 0.002, md);
+          m.connect(mg).connect(o.frequency); m.start(start); m.stop(END);
+        }
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, 0); g.gain.setValueAtTime(level / notes.length ** 0.5, start);
+        if (own) g.gain.setTargetAtTime(0, start + 0.002, own);
+        o.connect(g).connect(head); o.start(start); o.stop(END);
+      }
+    });
+    if (tick) hiss(ctx, out, { type: 'bandpass', f: tickF, q: 1, d: 0.012, lvl: tick });
+    if (air) hiss(ctx, out, { type: 'bandpass', f: f * air[0], q: 2, d: d * 0.6 + hold, lvl: air[1], attack: 0.03 });   // breath
+  },
+  // a "hey!": a buzzy voice through the formants of an open vowel, falling
+  hey(ctx, out) {
+    I.synth(ctx, out, { f: 196, waves: [['sawtooth', 0, 1], ['sawtooth', 9, 0.8]], scoop: 120, scoopT: 0.12, a: 0.008, hold: 0.09, d: 0.06, lvl: 0.9,
+      formants: [[650, 5, 1], [1700, 7, 0.6], [2600, 8, 0.35]], lp: [4500] });
+    hiss(ctx, out, { type: 'bandpass', f: 1800, q: 0.8, d: 0.03, lvl: 0.35 });
+  },
+
   // ---------- soda sounds ----------
   crack(ctx, out) {                          // a can opening: tick, then pssht
     click(ctx, out, 0.9, 2500);
@@ -205,7 +280,14 @@ const I = {
 };
 
 // ---------- the flavours ----------
-// pad: [name, instrument, params, gm note, peak, seconds]
+// pad: [name, instrument, params, peak, seconds, tone]
+// Every kit has the same three tuned pads in the same places, so fingers
+// know where they are whatever the flavor: the bass next to the kick (C2),
+// and the chord (rooted on C3) and the lead (C4) in the top-right corner.
+// They play one note at a time, and change pitch in exact semitones.
+const C2 = 65.406, C3 = 130.813, C4 = 261.626;
+const BASS = { tone: 'bass', lufs: -9 }, CHORD = { tone: 'chord', lufs: -13 }, LEAD = { tone: 'lead', lufs: -14 };
+export const TONAL = [1, 14, 15];
 // GM drum notes, so exported MIDI lands on the right drums in Logic.
 const GM = { kick: 36, kick2: 35, snare: 38, clap: 39, chh: 42, ohh: 46, rim: 37, perc: 56, tomL: 45, tomM: 47, tomH: 50, perc2: 63, crash: 49, perc3: 70, fx1: 76, fx2: 77 };
 const SLOTS = ['kick', 'kick2', 'snare', 'clap', 'chh', 'ohh', 'rim', 'perc', 'tomL', 'tomM', 'tomH', 'perc2', 'crash', 'perc3', 'fx1', 'fx2'];
@@ -215,7 +297,7 @@ export const KITS = {
     name: 'Cola', style: '808-style', hue: 18, color: ['#3a160c', '#8b3a1c', '#d9893f'],
     pads: [
       ['Boom', 'kick', { f0: 130, f1: 47, pd: 0.05, d: 0.55, clk: 0.15 }, 0.95, 2],
-      ['Sub', 'sub', { f: 44, d: 0.8 }, 0.9, 2.6],
+      ['Sub', 'sub', { f: C2, glide: 1.12, pd: 0.03, d: 0.55, drive: 0.5 }, 0.9, 1.8, BASS],
       ['Snap', 'snare', { t1: 180, t2: 330, td: 0.05, nd: 0.08, band: 6000, mix: 0.55 }, 0.8, 0.5],
       ['Clap', 'clap', { band: 1100, d: 0.18 }, 0.8, 0.6],
       ['Tick', 'hat', { d: 0.03 }, 0.55, 0.3],
@@ -228,15 +310,15 @@ export const KITS = {
       ['Conga', 'conga', { f: 330 }, 0.7, 0.6],
       ['Crash', 'cym', { d: 0.8 }, 0.55, 3],
       ['Maraca', 'shaker', { d: 0.03, band: 9000, attack: 0.004 }, 0.5, 0.3],
-      ['Clave', 'clave', {}, 0.6, 0.3],
-      ['Zap', 'zap', { from: 1800, to: 120 }, 0.6, 0.6],
+      ['Synth', 'synth', { f: C3, notes: [0, 3, 7], waves: [['sawtooth', -7, 0.7], ['sawtooth', 0, 0.7], ['sawtooth', 7, 0.7]], lp: [6000, [0.005, 900, 0.07]], q: 2, a: 0.005, d: 0.22 }, 0.8, 1.2, CHORD],
+      ['Whistle', 'synth', { f: C4, waves: [['square', 0, 1]], lp: [3200], a: 0.012, hold: 0.1, d: 0.12, vib: 18, vibRate: 6, vibDelay: 0.06 }, 0.7, 0.9, LEAD],
     ],
   },
   lime: {
     name: 'Lime', style: '909-style', hue: 95, color: ['#123010', '#3f7a1d', '#b8e05a'],
     pads: [
       ['Punch', 'kick', { f0: 280, f1: 54, pd: 0.022, d: 0.28, clk: 0.6, knock: 0.25, drive: 0.4 }, 0.95, 1.2],
-      ['Stomp', 'kick', { f0: 320, f1: 50, pd: 0.018, d: 0.2, clk: 0.8, knock: 0.4, drive: 1 }, 0.95, 1],
+      ['Acid', 'synth', { f: C2, waves: [['sawtooth', 0, 1], ['square', 0, 0.3]], lp: [2600, [0.003, 180, 0.09]], q: 11, a: 0.003, hold: 0.05, d: 0.14, drive: 0.6 }, 0.9, 1, BASS],
       ['Snare', 'snare', { t1: 190, t2: 280, td: 0.05, nd: 0.14, band: 4500, mix: 0.7 }, 0.85, 0.7],
       ['Clap', 'clap', { band: 1300, d: 0.25, bursts: 4, gap: 0.009 }, 0.8, 0.8],
       ['Tss', 'hat', { d: 0.035, band: 10500, high: 8000, hiss: 0.6 }, 0.55, 0.3],
@@ -249,8 +331,8 @@ export const KITS = {
       ['Shaker', 'shaker', { d: 0.05 }, 0.5, 0.4],
       ['Crash', 'cym', { d: 1.0, band: 8500 }, 0.55, 3.2],
       ['Tamb', 'tamb', {}, 0.5, 0.6],
-      ['Rumble', 'kick', { f0: 70, f1: 40, pd: 0.2, d: 0.6, clk: 0, drive: 1.5 }, 0.7, 2],
-      ['Laser', 'zap', { from: 3200, to: 200, pd: 0.03, type: 'sawtooth' }, 0.5, 0.5],
+      ['Rave', 'synth', { f: C3, notes: [0, 3, 7, 10], waves: [['sawtooth', -8, 0.6], ['sawtooth', 8, 0.6], ['square', 0, 0.3, 2]], bp: [2200, [0.004, 800, 0.12]], q: 0.9, a: 0.003, d: 0.2 }, 0.8, 1.1, CHORD],
+      ['Blip', 'synth', { f: C4, waves: [['fm', 0, 1]], fm: [3.5, 3, 0.05], a: 0.002, d: 0.12 }, 0.7, 0.7, LEAD],
     ],
   },
   cherry: {
@@ -259,7 +341,7 @@ export const KITS = {
     gate: { pads: [2, 3, 8, 9, 10], mix: 0.7, close: 0.26 },
     pads: [
       ['Kick', 'kick', { f0: 190, f1: 60, pd: 0.025, d: 0.15, clk: 0.55, knock: 0.55 }, 0.95, 0.8],
-      ['Thud', 'kick', { f0: 150, f1: 66, pd: 0.03, d: 0.12, clk: 0.3, knock: 0.35 }, 0.9, 0.7],
+      ['FM Bass', 'synth', { f: C2, waves: [['fm', 0, 1], ['sine', 0, 0.5]], fm: [1, 6, 0.06], a: 0.002, hold: 0.04, d: 0.18, tick: 0.3, tickF: 2500 }, 0.9, 1, BASS],
       ['Gated', 'gated', {}, 0.85, 0.6],
       ['Clap', 'clap', { band: 1500, d: 0.14, bursts: 4 }, 0.8, 0.6],
       ['Chick', 'hat', { d: 0.022, band: 10500, high: 8000, ratio: 1.3, hiss: 0.3 }, 0.55, 0.3],
@@ -272,15 +354,15 @@ export const KITS = {
       ['Cabasa', 'shaker', { d: 0.07, band: 6000 }, 0.5, 0.4],
       ['Crash', 'cym', { d: 0.9, band: 7000 }, 0.55, 3],
       ['Tamb', 'tamb', { d: 0.1 }, 0.5, 0.5],
-      ['Conga', 'conga', { f: 280, d: 0.15 }, 0.7, 0.6],
-      ['Stab', 'stab', { f: 262 }, 0.7, 0.8],
+      ['Poly', 'synth', { f: C3, notes: [0, 3, 7, 10], waves: [['square', -11, 0.5], ['square', 11, 0.5], ['sawtooth', 0, 0.35]], lp: [4500, [0.005, 1500, 0.1]], q: 1.4, vib: 7, vibRate: 0.8, vibDelay: 0, a: 0.004, d: 0.28 }, 0.8, 1.3, CHORD],
+      ['Brass', 'synth', { f: C4, waves: [['sawtooth', -6, 0.7], ['sawtooth', 6, 0.7]], lp: [700, [0.005, 4200, 0.03], [0.09, 2000, 0.1]], q: 1.2, scoop: -35, scoopT: 0.06, a: 0.02, hold: 0.14, d: 0.12 }, 0.75, 1, LEAD],
     ],
   },
   grape: {
     name: 'Grape', style: 'lo-fi', hue: 275, color: ['#1d0d33', '#4e2a7a', '#b993ea'], dust: { lp: 5200, bits: 10, drive: 0.5, crackle: 0.04 },
     pads: [
       ['Bump', 'kick', { f0: 120, f1: 50, pd: 0.03, d: 0.25, clk: 0.15, knock: 0.2 }, 0.95, 1],
-      ['Thump', 'kick', { f0: 100, f1: 46, pd: 0.04, d: 0.3, clk: 0.05 }, 0.9, 1.2],
+      ['Warmth', 'synth', { f: C2, waves: [['triangle', 0, 1], ['square', 0, 0.25]], lp: [500, [0.004, 260, 0.15]], a: 0.006, hold: 0.05, d: 0.25 }, 0.9, 1.3, BASS],
       ['Dust', 'snare', { t1: 200, t2: 0, td: 0.05, nd: 0.1, band: 2400, nf: 'bandpass', mix: 0.75 }, 0.8, 0.6],
       ['Snap', 'clap', { band: 1800, d: 0.08, bursts: 2 }, 0.7, 0.4],
       ['Tik', 'hat', { d: 0.025, band: 7000, high: 5000, hiss: 0.3 }, 0.45, 0.3],
@@ -293,16 +375,16 @@ export const KITS = {
       ['Shaker', 'shaker', { d: 0.06, band: 5000 }, 0.45, 0.4],
       ['Wash', 'cym', { d: 0.7, band: 6000, high: 4000 }, 0.4, 2.5],
       ['Brush', 'shaker', { d: 0.12, band: 3500, attack: 0.03 }, 0.45, 0.6],
-      ['Bell', 'clink', { f: 1300, d: 0.3 }, 0.45, 1],
-      ['Dream', 'blow', { f: 330, d: 0.4 }, 0.5, 1.4],
+      ['Rhodes', 'synth', { f: C3, notes: [0, 3, 7, 10, 14], waves: [['fm', 0, 1], ['sine', 0, 0.4]], fm: [1, 1.6, 0.2], trem: 0.25, tremRate: 4.5, a: 0.003, d: 0.55 }, 0.75, 2.2, CHORD],
+      ['Bell', 'synth', { f: C4, waves: [['sine', 0, 1], ['sine', 0, 0.3, 5.4, 0.06], ['sine', 0, 0.15, 3, 0.12]], vib: 9, vibRate: 3.5, vibDelay: 0, a: 0.002, d: 0.32 }, 0.65, 1.4, LEAD],
     ],
   },
   rootbeer: {
     // an old 12-bit sampler: a lower sample rate (its grit and alias), saturation, a little vinyl
-    name: 'Root Beer', style: 'boom-bap', hue: 30, color: ['#2a1405', '#6b3a12', '#e0a35a'], dust: { lp: 11000, bits: 12, drive: 1, crackle: 0.03, hold: 2 },
+    name: 'Root Beer', style: 'boom-bap', trim: -2, hue: 30, color: ['#2a1405', '#6b3a12', '#e0a35a'], dust: { lp: 11000, bits: 12, drive: 1, crackle: 0.03, hold: 2 },
     pads: [
       ['Boom', 'kick', { f0: 160, f1: 48, pd: 0.035, d: 0.24, clk: 0.4, knock: 0.8, drive: 1 }, 0.95, 0.9],
-      ['Bap', 'kick', { f0: 130, f1: 55, pd: 0.025, d: 0.16, clk: 0.5, knock: 0.9, drive: 1.2 }, 0.9, 0.7],
+      ['Upright', 'synth', { f: C2, waves: [['sine', 0, 1], ['sawtooth', 0, 0.5]], lp: [900, [0.003, 250, 0.06]], a: 0.003, hold: 0.03, d: 0.22, tick: 0.25, tickF: 1200 }, 0.9, 1, BASS],
       ['Crack', 'snare', { t1: 185, t2: 290, td: 0.08, nd: 0.17, band: 2600, nf: 'bandpass', mix: 0.78, drive: 1.1 }, 0.85, 0.8],
       ['Clap', 'clap', { band: 1300, d: 0.12 }, 0.75, 0.5],
       ['Tss', 'hat', { d: 0.03, band: 9000, hiss: 0.5 }, 0.55, 0.3],
@@ -315,36 +397,36 @@ export const KITS = {
       ['Shaker', 'shaker', { d: 0.05 }, 0.45, 0.4],
       ['Crash', 'cym', { d: 0.8, band: 7000 }, 0.5, 2.8],
       ['Ride', 'cym', { d: 0.45, band: 9500, ratio: 1.6, hiss: 0.2 }, 0.4, 2],
-      ['Snap', 'clap', { band: 2400, d: 0.05, bursts: 1 }, 0.6, 0.3],
-      ['Horn', 'zap', { from: 420, to: 400, pd: 0.3, d: 0.25, type: 'sawtooth' }, 0.4, 0.8],
+      ['Jazz', 'synth', { f: C3, notes: [0, 3, 7, 10], waves: [['sine', 0, 1], ['sine', 0, 0.5, 2], ['sine', 0, 0.25, 3]], bp: [1100], q: 0.6, a: 0.004, hold: 0.16, d: 0.03 }, 0.75, 0.7, CHORD],
+      ['Horn', 'synth', { f: C4, waves: [['sawtooth', 0, 0.8], ['sawtooth', 8, 0.6]], formants: [[700, 4, 1], [1150, 5, 0.7], [2500, 6, 0.3]], lp: [3500], scoop: -60, scoopT: 0.07, a: 0.025, hold: 0.16, d: 0.1, vib: 12, vibDelay: 0.15 }, 0.7, 1, LEAD],
     ],
   },
   orange: {
     name: 'Orange', style: 'trap', hue: 28, color: ['#3a1500', '#b4520c', '#ffb052'],
     pads: [
       ['808', 'sub', { f: 46, glide: 2.2, pd: 0.14, d: 1.2, drive: 1.3 }, 0.95, 3.2],
-      ['808 Hi', 'sub', { f: 69, glide: 1.9, pd: 0.12, d: 0.9, drive: 1.3 }, 0.9, 2.6],
+      ['Glide', 'sub', { f: C2, glide: 1.5, pd: 0.04, d: 0.7, drive: 1 }, 0.9, 2.2, BASS],
       ['Snare', 'snare', { t1: 240, t2: 360, td: 0.03, nd: 0.07, band: 6500, mix: 0.75 }, 0.85, 0.4],
       ['Clap', 'clap', { band: 1400, d: 0.2, bursts: 4, gap: 0.008 }, 0.85, 0.7],
       ['Ts', 'hat', { d: 0.012, band: 12500, high: 9800, ratio: 1.15, hiss: 0.55 }, 0.5, 0.15],
       ['Tsh', 'hat', { d: 0.08, band: 12500, high: 9800, ratio: 1.15, hiss: 0.55 }, 0.45, 0.7],
       ['Rim', 'rim', { f: 2000 }, 0.6, 0.2],
-      ['Pluck', 'clink', { f: 1046, d: 0.08 }, 0.5, 0.4],
+      ['Hey', 'hey', {}, 0.6, 0.5],
       ['Tom L', 'tom', { f: 110, drop: 0.8, d: 0.2 }, 0.75, 0.9],
       ['Tom H', 'tom', { f: 165, drop: 0.8, d: 0.18 }, 0.75, 0.8],
       ['Perc', 'conga', { f: 420, d: 0.07 }, 0.6, 0.4],
       ['Snap', 'clap', { band: 2600, d: 0.04, bursts: 1 }, 0.6, 0.3],
       ['Crash', 'cym', { d: 0.9 }, 0.5, 3],
       ['Kick', 'kick', { f0: 220, f1: 55, pd: 0.02, d: 0.15, clk: 0.6, knock: 0.3, drive: 0.5 }, 0.9, 0.7],
-      ['Riser', 'zap', { from: 200, to: 2400, pd: 0.35, d: 0.4, type: 'sawtooth' }, 0.35, 1.2],
-      ['Laser', 'zap', { from: 3000, to: 150, pd: 0.03, type: 'square' }, 0.45, 0.5],
+      ['Pad', 'synth', { f: C3, notes: [0, 3, 7], waves: [['sawtooth', -9, 0.5], ['sawtooth', 9, 0.5], ['sine', 0, 0.5], ['sine', 0, 0.2, 2.76, 0.15]], lp: [500, [0.01, 2400, 0.25]], q: 1, a: 0.02, hold: 0.15, d: 0.45 }, 0.75, 2, CHORD],
+      ['Pluck', 'synth', { f: C4, waves: [['sawtooth', 0, 1], ['square', -5, 0.4]], lp: [4500, [0.002, 300, 0.05]], q: 2, a: 0.002, d: 0.12 }, 0.7, 0.7, LEAD],
     ],
   },
   cream: {
     name: 'Cream Soda', style: 'soda toy kit', hue: 45, color: ['#3a2a10', '#a07a3a', '#ffe7a8'],
     pads: [
       ['Thunk', 'thunk', {}, 0.95, 0.6],
-      ['Blow', 'blow', { f: 98, d: 0.4 }, 0.85, 1.4],
+      ['Blow', 'synth', { f: C2, waves: [['sine', 0, 1], ['sine', 0, 0.35, 2]], scoop: -40, scoopT: 0.05, a: 0.03, hold: 0.05, d: 0.3, air: [3, 0.25] }, 0.85, 1.4, BASS],
       ['Pssht', 'crack', {}, 0.85, 0.7],
       ['Fizz', 'fizz', { d: 0.06, density: 10 }, 0.75, 0.5],
       ['Tink', 'clink', { f: 2600, d: 0.06 }, 0.5, 0.3],
@@ -357,18 +439,47 @@ export const KITS = {
       ['Ice', 'ice', {}, 0.5, 0.4],
       ['Pour', 'pour', {}, 0.55, 2],
       ['Rattle', 'shaker', { d: 0.06, band: 4000 }, 0.45, 0.4],
-      ['Pop', 'pop', {}, 0.7, 0.4],
-      ['Bloop', 'bloop', {}, 0.7, 0.4],
+      ['Fizz Chord', 'synth', { f: C4, notes: [0, 4, 7, 12], arp: 0.03, waves: [['sine', 0, 1], ['sine', 0, 0.35, 3.9, 0.05]], a: 0.002, d: 0.25 }, 0.8, 1.1, CHORD],
+      ['Bloop', 'synth', { f: C4, waves: [['sine', 0, 1], ['sine', 0, 0.3, 2, 0.02]], scoop: -500, scoopT: 0.025, a: 0.003, d: 0.12 }, 0.7, 0.6, LEAD],
     ],
   },
 };
 export const KIT_ORDER = ['cola', 'lime', 'cherry', 'grape', 'rootbeer', 'orange', 'cream'];
-for (const k of Object.values(KITS)) k.pads = k.pads.map(([name, inst, params, peak, len], i) => ({ name, inst, params, peak, len, gm: GM[SLOTS[i]], slot: SLOTS[i] }));
+for (const k of Object.values(KITS)) k.pads = k.pads.map(([name, inst, params, peak, len, tone], i) => ({ name, inst, params, peak, len, gm: GM[SLOTS[i]], slot: SLOTS[i], ...(tone || {}) }));
 
 // ---------- rendering ----------
 
-// Render one pad into a stereo buffer at sample rate `sr`.
-async function renderPad(kit, pad, sr, idx) {
+// How loud a sound feels at its loudest moment (LUFS over its hottest 400 ms,
+// K-weighted as in the broadcast loudness meters: a bump in the highs, no rumble).
+function biquad(x, [b0, b1, b2, a1, a2]) {
+  const y = new Float32Array(x.length); let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) { const v = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v; }
+  return y;
+}
+function shelfAndHigh(sr) {
+  const w = (f) => 2 * Math.PI * f / sr;
+  // high shelf +4 dB at 1.5 kHz
+  let A = Math.pow(10, 4 / 40), c = Math.cos(w(1500)), al = Math.sin(w(1500)) / 2 * Math.SQRT2, k = 2 * Math.sqrt(A) * al;
+  let a0 = (A + 1) - (A - 1) * c + k;
+  const shelf = [A * ((A + 1) + (A - 1) * c + k) / a0, -2 * A * ((A - 1) + (A + 1) * c) / a0, A * ((A + 1) + (A - 1) * c - k) / a0, 2 * ((A - 1) - (A + 1) * c) / a0, ((A + 1) - (A - 1) * c - k) / a0];
+  // high-pass at 38 Hz
+  c = Math.cos(w(38)); al = Math.sin(w(38)) / (2 * 0.5); a0 = 1 + al;
+  const high = [(1 + c) / 2 / a0, -(1 + c) / a0, (1 + c) / 2 / a0, -2 * c / a0, (1 - al) / a0];
+  return [shelf, high];
+}
+export function loudness(d, sr) {
+  const [shelf, high] = shelfAndHigh(sr), y = biquad(biquad(d, shelf), high), w = Math.round(0.4 * sr);
+  let e = 0, best = 0;
+  for (let i = 0; i < y.length; i++) { e += y[i] * y[i]; if (i >= w) e -= y[i - w] * y[i - w]; if (e > best) best = e; }
+  return -0.691 + 10 * Math.log10(best / w + 1e-12);
+}
+// No drum feels louder than this: Cream Soda's loudest pad, the kit that sits just right.
+const CEILING = -9;
+
+// Render one pad into a buffer at sample rate `sr`; a tuned pad `st` semitones
+// up or down is played by its oscillators at that pitch (not sped up).
+async function renderPad(kit, pad, sr, idx, st = 0) {
+  if (st) pad = { ...pad, params: { ...pad.params, f: pad.params.f * Math.pow(2, st / 12) } };
   const n = Math.ceil(pad.len * sr), ctx = new OfflineAudioContext(1, n, sr);
   let dest = ctx.destination;
   // the dusty flavours go through a little tape-and-sampler colour
@@ -398,7 +509,16 @@ async function renderPad(kit, pad, sr, idx) {
   if (hold > 1) for (let i = 0; i < d.length; i++) if (i % hold) d[i] = d[i - (i % hold)];
   // even out: every pad peaks at its set level, and fades cleanly to its end
   let peak = 0; for (const x of d) peak = Math.max(peak, Math.abs(x));
-  const g = peak > 0 ? pad.peak / peak : 0, fade = Math.min(d.length, Math.round(sr * 0.02));
+  let g = peak > 0 ? pad.peak / peak : 0;
+  // then by feel: a tuned pad lands on its set loudness at every pitch; a drum
+  // is turned down if it feels louder than the ceiling (subs and driven kicks)
+  if (g) {
+    const now = loudness(d, sr) + 20 * Math.log10(g);
+    const want = pad.lufs != null ? pad.lufs : Math.min(now, CEILING);
+    g *= Math.pow(10, (want - now + (kit.trim || 0)) / 20);
+    if (peak * g > 0.98) g = 0.98 / peak;
+  }
+  const fade = Math.min(d.length, Math.round(sr * 0.02));
   for (let i = 0; i < d.length; i++) d[i] *= g * (i > d.length - fade ? (d.length - i) / fade : 1);
   return buf;
 }
@@ -409,4 +529,17 @@ export function renderKit(id, sr) {
   const key = `${id}@${sr}`;
   if (!cache.has(key)) cache.set(key, Promise.all(KITS[id].pads.map((p, i) => renderPad(KITS[id], p, sr, i))));
   return cache.get(key);
+}
+// A tuned pad at another pitch (whole semitones), rendered once and kept.
+// toneNow gives it at once if it is ready (else null, and it gets made).
+const tones = new Map(), ready = new Map();
+export function renderTone(id, i, st, sr) {
+  const key = `${id}@${sr}#${i}:${st}`;
+  if (!tones.has(key)) tones.set(key, (st ? renderPad(KITS[id], KITS[id].pads[i], sr, i, st) : renderKit(id, sr).then((b) => b[i])).then((b) => { ready.set(key, b); return b; }));
+  return tones.get(key);
+}
+export function toneNow(id, i, st, sr) {
+  const b = ready.get(`${id}@${sr}#${i}:${st}`);
+  if (!b) renderTone(id, i, st, sr);
+  return b || null;
 }

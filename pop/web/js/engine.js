@@ -3,18 +3,18 @@
 // performance tricks: hold a pad to repeat, stutter and jumble. The same
 // graph renders offline for export, so a saved loop sounds like the app.
 
-import { renderKit } from './kits.js';
+import { renderKit, renderTone, toneNow, TONAL } from './kits.js';
 
 export const STEPS = 16;
 export const PATTERNS = 8;
 export const LFO_RATES = [['1/4', 1], ['1/2', 2], ['1 bar', 4], ['2 bars', 8], ['4 bars', 16]];   // beats per cycle
 export const LFO_TARGETS = ['filter', 'volume', 'pitch'];
 // a little stereo spread, by pad slot: hats and cymbals right, percussion around
-const PANS = [0, 0, 0.04, -0.04, 0.22, 0.22, -0.12, -0.25, 0.3, 0, -0.3, 0.28, -0.2, 0.32, -0.15, 0.15];
+const PANS = [0, 0, 0.04, -0.04, 0.22, 0.22, -0.12, -0.25, 0.3, 0, -0.3, 0.28, -0.2, 0.32, -0.1, 0.1];
 const CHH = 4, OHH = 5;
 // how much of each pad reaches the reverb: snares, claps and toms most,
 // kicks and the sub hardly at all, so it sounds like a room, not a wash
-const SENDS = [0.06, 0.03, 0.9, 1, 0.35, 0.45, 0.7, 0.6, 0.75, 0.75, 0.75, 0.6, 0.4, 0.4, 0.7, 0.7];
+const SENDS = [0.06, 0.03, 0.9, 1, 0.35, 0.45, 0.7, 0.6, 0.75, 0.75, 0.75, 0.6, 0.4, 0.4, 0.45, 0.5];
 // a small, bright drum room: 1.1 s of decaying noise, darker as it fades
 function room(ctx) {
   const sr = ctx.sampleRate, n = Math.floor(sr * 1.1), b = ctx.createBuffer(2, n, sr);
@@ -78,6 +78,30 @@ export const hasMotion = (song, pi) => { const m = (song.motion || [])[pi]; retu
 const stepDur = (bpm) => 60 / bpm / 4;
 const swingAt = (song, s) => (s % 2 ? song.swing * stepDur(song.bpm) * 0.66 : 0);
 const mod16 = (n) => ((n % STEPS) + STEPS) % STEPS;
+
+// ---------- the tuned pads (bass, chord, lead) ----------
+// They change pitch by being re-rendered at the new note (exact, and the
+// sound keeps its length), not by being sped up like the drums. The steps
+// the pitch buttons offer are made as soon as a kit loads.
+export const INTERVALS = [-12, -7, -5, -4, -3, 0, 3, 4, 5, 7, 12];
+const isTonal = (i) => TONAL.includes(i);
+// the buffer for pad i played with settings tw, and what pitch is left for speed to do
+export function voiceFor(kit, bufs, i, tw, sr) {
+  if (!isTonal(i)) return [bufs[i], tw];
+  const st = Math.round(tw.pitch || 0);
+  const b = st ? toneNow(kit, i, st, sr) : bufs[i];
+  return b ? [b, { ...tw, pitch: (tw.pitch || 0) - st }] : [bufs[i], tw];
+}
+// every pitch a song asks of its tuned pads, made ready (for exports)
+export async function warmTones(song, sr, extra = INTERVALS) {
+  const want = new Set();
+  for (const i of TONAL) {
+    for (const st of extra) want.add(`${i}:${st}`);
+    want.add(`${i}:${Math.round(tweakOf(song, i).pitch)}`);
+    for (const m of song.motion || []) { const l = m && m.pads[i] && m.pads[i].pitch; if (l) for (const v of l) if (v != null) want.add(`${i}:${Math.round(v)}`); }
+  }
+  await Promise.all([...want].map((k) => { const [i, st] = k.split(':').map(Number); return renderTone(song.kit, i, st, sr); }));
+}
 
 // ---------- the sound path (works the same live and offline) ----------
 
@@ -221,6 +245,17 @@ export class Graph {
       const o = this.openHat.g.gain; o.cancelScheduledValues(t); o.setValueAtTime(o.value, t); o.setTargetAtTime(0, t, 0.008);
     }
     if (i === OHH) this.openHat = { g, until: t + end };
+    // the tuned pads play one note at a time: a new one cuts the last one's tail
+    if (isTonal(i)) {
+      this.voices = this.voices || {};
+      const last = this.voices[i];
+      if (last && last.until > t) {
+        const p = last.g.gain;
+        if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else p.cancelScheduledValues(t);
+        p.setTargetAtTime(0, t, 0.006);
+      }
+      this.voices[i] = { g, until: t + end };
+    }
   }
 }
 
@@ -248,6 +283,8 @@ export class PopEngine {
   async setKit(id) {
     this.song.kit = id;
     this.bufs = await renderKit(id, this.ctx.sampleRate);
+    // the tuned pads' other pitches, made in the background
+    warmTones(this.song, this.ctx.sampleRate).catch(() => {});
   }
   setSong(song) { this.song = song; this.updateFx(); }
   updateFx() { this.lastFx = ''; this.graph.setFx(this.song.fx, this.song.bpm); }
@@ -344,7 +381,8 @@ export class PopEngine {
   }
   hit(i, t = this.ctx.currentTime, quiet = false, tw = tweakOf(this.song, i)) {
     if (!this.bufs) return;
-    this.graph.play(i, this.bufs[i], t, tw);
+    const [buf, left] = voiceFor(this.song.kit, this.bufs, i, tw, this.ctx.sampleRate);
+    this.graph.play(i, buf, t, left);
     if (this.onHit) { const d = Math.max(0, (t - this.ctx.currentTime) * 1000); setTimeout(() => this.onHit(i, quiet), d); }
   }
   write(i, n) {
@@ -386,6 +424,7 @@ export async function renderSong(song, { loops = 1, solo = null, sr = 44100, tai
   const sd = stepDur(song.bpm), total = bars.length * loops * STEPS * sd;
   const ctx = new OfflineAudioContext(2, Math.ceil((total + tail) * sr), sr);
   const graph = await Graph.create(ctx), bufs = await renderKit(song.kit, sr);
+  await warmTones(song, sr, []);
   graph.setFx(song.fx, song.bpm, 0);
   graph.restartLfo(0);
   let last = '';
@@ -398,7 +437,8 @@ export async function renderSong(song, { loops = 1, solo = null, sr = 44100, tai
       for (let i = 0; i < 16; i++) {
         if (!((pat[i] >> s) & 1) || (solo != null && solo !== i)) continue;
         const tw = padAt(song, pi, i, s), k = Math.max(1, Math.min(4, Math.round(tw.rep || 1))), at = Math.max(0, t + (tw.nudge || 0) * sd);
-        for (let j = 0; j < k; j++) graph.play(i, bufs[i], at + (j * sd) / k, j ? { ...tw, vol: tw.vol * Math.pow(0.85, j) } : tw);
+        const [buf, left] = voiceFor(song.kit, bufs, i, tw, sr);
+        for (let j = 0; j < k; j++) graph.play(i, buf, at + (j * sd) / k, j ? { ...left, vol: left.vol * Math.pow(0.85, j) } : left);
       }
     }
   }

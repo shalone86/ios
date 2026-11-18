@@ -103,6 +103,13 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .step.lock::after { content: ''; position: absolute; right: 16%; top: 16%; width: 18%; height: 18%; border-radius: 50%; background: var(--ink); box-shadow: 0 0 6px var(--c2); }
 .step.sel { box-shadow: 0 0 0 3px var(--c2), 0 0 16px var(--c2); }
 #panel.locked { border-color: var(--c2); box-shadow: 0 0 0 1px var(--c2) inset; }
+.sl.pitch { grid-column: 1 / -1; margin: 1px 0 3px; }
+#fx-panel > *, #pad-panel > * { min-width: 0; }
+.stepper { display: grid; grid-template-columns: 52px 1fr 52px; gap: 6px; align-items: stretch; }
+.stepper button { min-height: 30px; padding: 0; border-radius: 12px; background: rgba(255,255,255,.08); color: var(--ink); font-size: 20px; font-weight: 600; }
+.stepper #pitch-val { display: flex; align-items: baseline; justify-content: center; gap: 8px; font-size: 15px; line-height: 1.15; padding: 2px 6px; white-space: nowrap; }
+.stepper #pitch-val small { font-size: 12px; font-weight: 400; color: var(--dim); }
+.stepper #pitch-val.fine small { color: var(--c2); }
 .sl { display: grid; grid-template-columns: 50px 1fr; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--dim); }
 .lfo { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 27px; background: none; margin: 0; touch-action: none; }

@@ -19,7 +19,7 @@ const channelsOf = (buf) => [Float32Array.from(buf.getChannelData(0)), Float32Ar
 const cut = (chs, seconds, tail) => chs.map((c) => c.slice(0, Math.min(c.length, Math.round((seconds + tail) * SR))));
 
 export async function loopWav(song, { loops = 2, tail = 0 } = {}) {
-  const { buffer, seconds } = await renderSong(song, { loops, sr: SR });
+  const { buffer, seconds } = await renderSong(song, { loops, sr: SR, tail: Math.max(2, tail) });
   // a loop that repeats cleanly: the ring-out from the end is folded back onto the start
   const chs = channelsOf(buffer), n = Math.round(seconds * SR);
   if (!tail) for (const c of chs) { for (let i = n; i < c.length; i++) c[i - n] += c[i]; }
@@ -51,40 +51,58 @@ export async function stemsZip(song, { loops = 1 } = {}, onStatus = () => {}) {
   return encodeZip(files.map((f) => ({ name: `${baseName(song)}/${f.name}`, bytes: f.bytes })));
 }
 
-// A standard MIDI file: one track on the drum channel, 96 ticks a beat.
+// A standard MIDI file, 96 ticks a beat: the drums on the drum channel (GM
+// notes, so they land on the right drums in Logic), and the bass, chords and
+// lead each on a track of their own, with their real notes.
 export function patternMidi(song, { loops = 1 } = {}) {
   const PPQ = 96, tps = PPQ / 4, bars = song.chain.length > 1 ? song.chain : [song.cur];
-  const ev = [];
-  const swingTicks = Math.round(song.swing * tps * 0.66);
+  const pads = KITS[song.kit].pads, swingTicks = Math.round(song.swing * tps * 0.66);
+  const midiOf = (f) => Math.round(69 + 12 * Math.log2(f / 440));
+  const lanes = { drums: { name: `Pop Pads ${KITS[song.kit].name}`, ch: 9, ev: [] } };
+  const CH = { bass: 0, chord: 1, lead: 2 };
   for (let b = 0; b < bars.length * loops; b++) {
     const pi = bars[b % bars.length], pat = song.patterns[pi];
     for (let s = 0; s < STEPS; s++) {
       const at = (b * STEPS + s) * tps + (s % 2 ? swingTicks : 0);
       for (let i = 0; i < 16; i++) if ((pat[i] >> s) & 1) {
         // nudges and repeats come along, so the MIDI plays like the app
-        const note = KITS[song.kit].pads[i].gm, tw = padSettings(song, pi, i, s);
+        const pad = pads[i], tw = padSettings(song, pi, i, s);
+        let lane = lanes.drums, notes = [pad.gm], len = (k) => Math.max(2, Math.round((tps / k) * 0.9));
+        if (pad.tone) {
+          lane = lanes[pad.tone] = lanes[pad.tone] || { name: pad.name, ch: CH[pad.tone], ev: [] };
+          const root = midiOf(pad.params.f) + Math.round(tw.pitch || 0);
+          notes = (pad.params.notes || [0]).map((n) => root + n).filter((n) => n >= 0 && n < 128);
+          len = () => Math.max(2, Math.round(tps * Math.max(0.25, tw.len || 1)) - 1);
+        }
         const k = Math.max(1, Math.min(4, Math.round(tw.rep || 1))), t0 = Math.max(0, at + Math.round((tw.nudge || 0) * tps));
         for (let j = 0; j < k; j++) {
           const t = t0 + Math.round((j * tps) / k);
-          ev.push([t, 0x99, note, j ? 80 : 100], [t + Math.max(2, Math.round((tps / k) * 0.9)), 0x89, note, 0]);
+          for (const note of notes) lane.ev.push([t, 0x90 | lane.ch, note, j ? 80 : 100], [t + len(k), 0x80 | lane.ch, note, 0]);
         }
       }
     }
   }
-  ev.sort((a, b) => a[0] - b[0] || (a[1] === 0x89 ? -1 : 1));
-  const bytes = [];
-  const vlq = (v) => { const out = [v & 0x7f]; while ((v >>= 7)) out.unshift((v & 0x7f) | 0x80); bytes.push(...out); };
-  const tempo = Math.round(60000000 / song.bpm);
-  const name = new TextEncoder().encode(`Pop Pads ${KITS[song.kit].name}`);
-  vlq(0); bytes.push(0xff, 0x03, name.length, ...name);
-  vlq(0); bytes.push(0xff, 0x51, 0x03, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255);
-  vlq(0); bytes.push(0xff, 0x58, 0x04, 4, 2, 24, 8);
-  let last = 0;
-  for (const [t, st, a, b] of ev) { vlq(t - last); last = t; bytes.push(st, a, b); }
-  vlq(Math.max(0, bars.length * loops * STEPS * tps - last)); bytes.push(0xff, 0x2f, 0x00);
-  const head = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, (PPQ >> 8) & 255, PPQ & 255];
-  const len = bytes.length;
-  return new Uint8Array([...head, 0x4d, 0x54, 0x72, 0x6b, (len >>> 24) & 255, (len >> 16) & 255, (len >> 8) & 255, len & 255, ...bytes]);
+  const end = bars.length * loops * STEPS * tps;
+  const chunk = (bytes) => [0x4d, 0x54, 0x72, 0x6b, (bytes.length >>> 24) & 255, (bytes.length >> 16) & 255, (bytes.length >> 8) & 255, bytes.length & 255, ...bytes];
+  const trackBytes = (lane, first) => {
+    const ev = lane.ev.sort((a, b) => a[0] - b[0] || ((a[1] & 0xf0) === 0x80 ? -1 : 1));
+    const bytes = [];
+    const vlq = (v) => { const out = [v & 0x7f]; while ((v >>= 7)) out.unshift((v & 0x7f) | 0x80); bytes.push(...out); };
+    const name = new TextEncoder().encode(lane.name);
+    vlq(0); bytes.push(0xff, 0x03, name.length, ...name);
+    if (first) {
+      const tempo = Math.round(60000000 / song.bpm);
+      vlq(0); bytes.push(0xff, 0x51, 0x03, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255);
+      vlq(0); bytes.push(0xff, 0x58, 0x04, 4, 2, 24, 8);
+    }
+    let last = 0;
+    for (const [t, st, a, b] of ev) { vlq(t - last); last = t; bytes.push(st, a, b); }
+    vlq(Math.max(0, end - last)); bytes.push(0xff, 0x2f, 0x00);
+    return chunk(bytes);
+  };
+  const list = [lanes.drums, ...['bass', 'chord', 'lead'].filter((k) => lanes[k]).map((k) => lanes[k])];
+  const head = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, list.length, (PPQ >> 8) & 255, PPQ & 255];
+  return new Uint8Array([...head, ...list.flatMap((l, k) => trackBytes(l, k === 0))]);
 }
 
 // Hand a file to the person: the Android app saves it to Music or Download,
@@ -124,9 +142,11 @@ const bid = () => Math.random().toString(36).slice(2, 10);
 // (filter, drive, crush and the reverb's tail) baked in. `tw`: the settings
 // for this version of the drum (its own, or a step's).
 async function padSample(song, i, tw, sr) {
-  const { Graph } = await import('./engine.js');
-  const { renderKit } = await import('./kits.js');
-  const buf = (await renderKit(song.kit, sr))[i];
+  const { Graph, voiceFor } = await import('./engine.js');
+  const { renderKit, renderTone, TONAL } = await import('./kits.js');
+  const bufs = await renderKit(song.kit, sr);
+  if (TONAL.includes(i)) await renderTone(song.kit, i, Math.round(tw.pitch || 0), sr);
+  let buf; [buf, tw] = voiceFor(song.kit, bufs, i, tw, sr);
   const rate = Math.pow(2, tw.pitch / 12), verb = (song.fx.verb || 0) > 0.02 ? 1.1 : 0;
   const len = buf.duration / rate * Math.max(0.04, tw.len) + 0.03 + verb;
   const ctx = new OfflineAudioContext(2, Math.ceil(len * sr), sr);
@@ -165,52 +185,73 @@ const SPARE = [4, 9, 14, 19, 24, 20, 21, 22, 23];
 
 export async function bobaSong(song) {
   const { padAt, tweakOf } = await import('./engine.js');
+  const { TONAL } = await import('./kits.js');
   const chain = song.chain.length > 1 ? song.chain.slice() : [song.cur];
   // one Boba section (loop) per pattern, in the order they first appear; the
   // chain becomes Boba's song, so any length comes across
   const order = [...new Set(chain)];
   const used = [...Array(16).keys()].filter((i) => order.some((pi) => song.patterns[pi][i]));
-  // every version of each drum: its own settings, and each different set a step gives it
+  const drumsUsed = used.filter((i) => !TONAL.includes(i)), tonalUsed = used.filter((i) => TONAL.includes(i));
+  const hits = (i) => { const out = []; for (const pi of order) for (let st = 0; st < STEPS; st++) if ((song.patterns[pi][i] >> st) & 1) out.push(padAt(song, pi, i, st)); return out; };
+  // every version of each sound: its own settings, and each different set a step gives it
   const look = (tw) => JSON.stringify(['pitch', 'len', 'filt', 'vol', 'crush'].map((k) => +(tw[k] || 0).toFixed(3)));
-  const versions = [];                // { i, key, tw, slot }
+  const versions = [];                // { i, tw, slot, lane }
   const slotOf = new Map();           // `${i}|${key}` -> Boba slot
+  // the drums: Boba's bubbles in the same 4×4 layout, extra versions on the spare bubbles
   let spare = 0;
-  for (const i of used) {
-    const own = tweakOf(song, i), key = look(own), slot = Math.floor(i / 4) * B_COLS + (i % 4);
-    versions.push({ i, tw: own, slot }); slotOf.set(`${i}|${key}`, slot);
+  for (const i of drumsUsed) {
+    const own = tweakOf(song, i), slot = Math.floor(i / 4) * B_COLS + (i % 4);
+    versions.push({ i, tw: own, slot, lane: 'drums' }); slotOf.set(`${i}|${look(own)}`, slot);
   }
-  for (const pi of order) for (let st = 0; st < STEPS; st++) for (const i of used) {
+  for (const pi of order) for (let st = 0; st < STEPS; st++) for (const i of drumsUsed) {
     if (!((song.patterns[pi][i] >> st) & 1)) continue;
     const tw = padAt(song, pi, i, st), key = look(tw);
     if (slotOf.has(`${i}|${key}`) || spare >= SPARE.length) continue;
     const slot = SPARE[spare++];
-    versions.push({ i, tw, slot }); slotOf.set(`${i}|${key}`, slot);
+    versions.push({ i, tw, slot, lane: 'drums' }); slotOf.set(`${i}|${key}`, slot);
   }
-  const samples = {}, kit = {};
-  const drums = [];
+  // the bass, chord and lead: each its own Boba track, one bubble per note it
+  // plays, low to high from the bottom-left, so the tune reads up the grid
+  for (const i of tonalUsed) {
+    const seen = new Map();
+    for (const tw of hits(i)) { const key = look(tw); if (!seen.has(key)) seen.set(key, tw); }
+    [...seen.entries()].sort((x, y) => (x[1].pitch || 0) - (y[1].pitch || 0)).slice(0, 25)
+      .forEach(([key, tw], k) => { versions.push({ i, tw, slot: k, lane: i }); slotOf.set(`${i}|${key}`, k); });
+  }
+  const samples = {}, kits = { drums: {} };
+  const sounds = [];
   for (const v of versions) {
     const d = await padSample(song, v.i, v.tw, 44100);
-    if (v.slot !== Math.floor(v.i / 4) * B_COLS + (v.i % 4)) d.name += ' ✦';
-    drums.push(d);
+    if (v.lane === 'drums' && v.slot !== Math.floor(v.i / 4) * B_COLS + (v.i % 4)) d.name += ' ✦';
+    if (v.lane !== 'drums') { const p = Math.round(v.tw.pitch || 0); d.name += p ? ` ${p > 0 ? '+' : ''}${p}` : ''; }
+    sounds.push(d);
   }
-  packForBoba(drums).forEach((packed, k) => { const id = 's' + bid(); samples[id] = packed; kit[versions[k].slot] = id; });
+  // everything raised together, so drums, bass and chords keep their balance
+  packForBoba(sounds).forEach((packed, k) => { const id = 's' + bid(); samples[id] = packed; (kits[versions[k].lane] = kits[versions[k].lane] || {})[versions[k].slot] = id; });
   const track = (role, name, inst, extra = {}) => ({ id: bid(), role, name, inst, vol: 0.8, pan: 0, oct: 0, rev: 0.1, dly: 0, chord: 'off', ...extra });
-  const pop = track('melody', 'Pop Pads', 'sampler', { vol: 0.9, rev: 0, smp: { mode: 'kit', key: null, kit } });
-  const others = [track('bass', 'Bass', 'bassGuitar', { rev: 0 }), track('pads', 'Pads', 'epiano', { vol: 0.7, rev: 0.3, chord: 'triad', pan: -0.1 }), track('melody', 'Melody', 'piano', { vol: 0.75, rev: 0.25, dly: 0.15, pan: 0.1 })];
-  const tracks = [pop, ...others];
+  const ROLE = { bass: 'bass', chord: 'pads', lead: 'melody' };
+  const lanes = [];                   // [lane, track]
+  if (drumsUsed.length || !tonalUsed.length) lanes.push(['drums', track('melody', 'Pop Pads', 'sampler', { vol: 0.9, rev: 0, smp: { mode: 'kit', key: null, kit: kits.drums } })]);
+  for (const i of tonalUsed) { const pad = KITS[song.kit].pads[i]; lanes.push([i, track(ROLE[pad.tone], `Pop ${pad.name}`, 'sampler', { vol: 0.9, rev: 0, pan: 0, smp: { mode: 'kit', key: null, kit: kits[i] || {} } })]); }
+  // Boba's own players, for whatever Pop Pads did not bring
+  const brought = new Set(tonalUsed.map((i) => ROLE[KITS[song.kit].pads[i].tone]));
+  const others = [track('bass', 'Bass', 'bassGuitar', { rev: 0 }), track('pads', 'Pads', 'epiano', { vol: 0.7, rev: 0.3, chord: 'triad', pan: -0.1 }), track('melody', 'Melody', 'piano', { vol: 0.75, rev: 0.25, dly: 0.15, pan: 0.1 })]
+    .filter((t) => !brought.has(t.role));
+  const tracks = [...lanes.map(([, t]) => t), ...others];
   const sections = order.map((pi) => {
-    const ev = [];
+    const ev = Object.fromEntries(tracks.map((t) => [t.id, []]));
     for (let st = 0; st < STEPS; st++) for (const i of used) {
       if (!((song.patterns[pi][i] >> st) & 1)) continue;
-      const tw = padAt(song, pi, i, st), slot = slotOf.get(`${i}|${look(tw)}`) ?? (Math.floor(i / 4) * B_COLS + (i % 4));
+      const lane = TONAL.includes(i) ? i : 'drums', t = lanes.find(([l]) => l === lane)[1];
+      const tw = padAt(song, pi, i, st), slot = slotOf.get(`${i}|${look(tw)}`) ?? (lane === 'drums' ? Math.floor(i / 4) * B_COLS + (i % 4) : 0);
       const k = Math.max(1, Math.min(4, Math.round(tw.rep || 1)));
       for (let j = 0; j < k; j++) {
-        const t = Math.max(0, Math.min(B_BAR - 1, st * B_STEP + Math.round((tw.nudge || 0) * B_STEP + (j * B_STEP) / k)));
-        ev.push({ t, d: Math.max(4, Math.round(B_STEP / k)), r: Math.floor(slot / B_COLS), c: slot % B_COLS, v: j ? 0.7 : 0.85 });
+        const at = Math.max(0, Math.min(B_BAR - 1, st * B_STEP + Math.round((tw.nudge || 0) * B_STEP + (j * B_STEP) / k)));
+        ev[t.id].push({ t: at, d: Math.max(4, Math.round(B_STEP / k)), r: Math.floor(slot / B_COLS), c: slot % B_COLS, v: j ? 0.7 : 0.85 });
       }
     }
-    ev.sort((a, b) => a.t - b.t);
-    return { bars: 1, ev: Object.fromEntries(tracks.map((t) => [t.id, t === pop ? ev : []])), fx: [], mute: {} };
+    for (const list of Object.values(ev)) list.sort((a, b) => a.t - b.t);
+    return { bars: 1, ev, fx: [], mute: {} };
   });
   // the chain, as Boba's song: repeats of the same pattern in a row become one block
   const songBlocks = [];
