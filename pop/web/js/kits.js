@@ -476,9 +476,29 @@ export function loudness(d, sr) {
 // No drum feels louder than this: Cream Soda's loudest pad, the kit that sits just right.
 const CEILING = -9;
 
+// The loudness above ignores rumble on purpose, so it can't see what a sub or
+// a long kick does to a woofer. This one hears only below 120 Hz (unweighted,
+// hottest 400 ms, dB of full scale), and no pad's low end goes above LOW_CEILING.
+const LOW_CEILING = -14;
+function lowpass120(x, sr) {
+  const w = 2 * Math.PI * 120 / sr, c = Math.cos(w), al = Math.sin(w) / (2 * Math.SQRT1_2), a0 = 1 + al;
+  return biquad(x, [(1 - c) / 2 / a0, (1 - c) / a0, (1 - c) / 2 / a0, -2 * c / a0, (1 - al) / a0]);
+}
+export function lowEnd(d, sr) {
+  const y = lowpass120(lowpass120(d, sr), sr), w = Math.round(0.4 * sr);
+  let e = 0, best = 0;
+  for (let i = 0; i < y.length; i++) { e += y[i] * y[i]; if (i >= w) e -= y[i - w] * y[i - w]; if (e > best) best = e; }
+  return 10 * Math.log10(best / w + 1e-12);
+}
+// a tuned pad takes the low-end cut its root note needed at every pitch, so a
+// bass line keeps an even level from note to note
+const rootCut = new Map();
+
 // Render one pad into a buffer at sample rate `sr`; a tuned pad `st` semitones
 // up or down is played by its oscillators at that pitch (not sped up).
 async function renderPad(kit, pad, sr, idx, st = 0) {
+  const cutKey = `${kit.name}@${sr}#${idx}`;
+  if (st && pad.lufs != null && !rootCut.has(cutKey)) await renderPad(kit, pad, sr, idx, 0);
   if (st) pad = { ...pad, params: { ...pad.params, f: pad.params.f * Math.pow(2, st / 12) } };
   const n = Math.ceil(pad.len * sr), ctx = new OfflineAudioContext(1, n, sr);
   let dest = ctx.destination;
@@ -516,6 +536,14 @@ async function renderPad(kit, pad, sr, idx, st = 0) {
     const now = loudness(d, sr) + 20 * Math.log10(g);
     const want = pad.lufs != null ? pad.lufs : Math.min(now, CEILING);
     g *= Math.pow(10, (want - now + (kit.trim || 0)) / 20);
+    // and then the low end: nothing rattles the speakers more than the ceiling allows
+    let cut;
+    if (pad.lufs != null && st) cut = rootCut.get(cutKey);
+    else {
+      cut = Math.min(0, LOW_CEILING - (lowEnd(d, sr) + 20 * Math.log10(g)));
+      if (pad.lufs != null) rootCut.set(cutKey, cut);
+    }
+    g *= Math.pow(10, cut / 20);
     if (peak * g > 0.98) g = 0.98 / peak;
   }
   const fade = Math.min(d.length, Math.round(sr * 0.02));
