@@ -504,13 +504,21 @@ $('bpm').onclick = () => openSheet(`<h3>Tempo</h3>
   };
 });
 
-let loops = 2;
+let loops = 2, justOne = false;
+// what the saves below are made of: the whole chain, or (picked here, so the
+// chain is kept) only the pattern you are on
+const saving = () => (justOne && song.chain.length > 1 ? { ...song, chain: [song.cur] } : song);
 $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
-  <p style="margin:0 0 10px;color:var(--dim);font-size:14px">${song.chain.length > 1 ? `The chain: ${song.chain.map((c) => c + 1).join(' → ')}` : `Pattern ${song.cur + 1}`}, played <span class="row" style="display:inline-flex">${[1, 2, 4].map((n) => `<button class="chip small ${n === loops ? 'on' : ''}" data-loops="${n}">${n}×</button>`).join('')}</span></p>
+  ${song.chain.length > 1
+    ? `<div class="row" style="margin:0 0 6px"><button class="chip small ${justOne ? '' : 'on'}" data-what="chain">the whole chain: ${song.chain.map((c) => c + 1).join(' → ')}</button><button class="chip small ${justOne ? 'on' : ''}" data-what="one">pattern ${song.cur + 1} only</button></div>
+      <p style="margin:0 0 6px;color:var(--dim);font-size:13px">Every save below uses this: the whole chain for a song, or just the pattern you're on.</p>`
+    : `<p style="margin:0 0 6px;color:var(--dim);font-size:13px">Saves pattern ${song.cur + 1}. For a whole song, chain your patterns: then you can save the chain, or still just one pattern.</p>`}
+  <p style="margin:0 0 10px;color:var(--dim);font-size:14px">Played <span class="row" style="display:inline-flex">${[1, 2, 4].map((n) => `<button class="chip small ${n === loops ? 'on' : ''}" data-loops="${n}">${n}×</button>`).join('')}</span></p>
   <button class="big" data-save="song">🎶<span>Song<small>a WAV from the first beat to the last ring-out, to play or share</small></span></button>
   <button class="big" data-save="wav">🎵<span>Loop<small>a WAV that loops cleanly in any app</small></span></button>
   <button class="big" data-save="midi">🎹<span>Pattern for Logic<small>MIDI: drums on the GM drum notes, bass, chords and lead on their own tracks</small></span></button>
-  <button class="big" data-save="stems">🎚️<span>Every sound<small>a zip with each drum as its own WAV, plus the mix</small></span></button>
+  <button class="big" data-save="stems-song">🎚️<span>Song stems<small>a zip for Logic: each sound as its own WAV, plus the mix, lined up from bar 1 and ending with the ring-out</small></span></button>
+  <button class="big" data-save="stems">🎚️<span>Loop stems<small>the same, with every WAV looping cleanly</small></span></button>
   <button class="big" data-boba="1">🧋<span>Send to Boba Beats<small>${window.PopNative ? 'saves a Boba song: open it there from its song menu → Import song file' : 'opens Boba with these drums and this beat, ready to add bass and chords'}</small></span></button>
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
@@ -521,17 +529,19 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   ${offer() ? '<h4>On your phone</h4><button class="big" data-install="1">📲<span>Put it on your home screen<small>opens like an app, works with no signal</small></span></button>' : ''}`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
+  const W = e.target.closest('[data-what]');
+  if (W) { justOne = W.dataset.what === 'one'; s.querySelectorAll('[data-what]').forEach((x) => x.classList.toggle('on', x === W)); return; }
   if (e.target.closest('[data-how]')) { closeSheet(); showTour(); return; }
   const I = e.target.closest('[data-install]');
   if (I) { const how = await install(); if (how) I.querySelector('small').textContent = how; else closeSheet(); return; }
   if (e.target.closest('[data-fresh]')) { startFresh(); return; }
   if (e.target.closest('[data-boba]')) {
     const st = s.querySelector('#s-status');
-    const bars = song.chain.length > 1 ? song.chain : [song.cur];
+    const what = saving(), bars = what.chain.length > 1 ? what.chain : [what.cur];
     if (!bars.some((b) => song.patterns[b].some(Boolean))) { st.textContent = 'There is nothing in the pattern yet.'; return; }
     try {
       st.textContent = 'Packing the drums…';
-      const file = await bobaSong(song);
+      const file = await bobaSong(what);
       if (window.PopNative) {
         const msg = await deliver(new TextEncoder().encode(JSON.stringify(file)), `${baseName(song)}.bobabeats.json`, 'application/json');
         st.textContent = `✓ ${msg}. In Boba Beats: song menu → Import song file.`;
@@ -551,11 +561,12 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   if (!song.patterns.some((p) => p.some(Boolean))) { st.textContent = 'There is nothing in the pattern yet.'; return; }
   try {
     st.textContent = 'Making it…';
-    let msg;
-    if (b.dataset.save === 'song') msg = await deliver((await loopWav(song, { loops, tail: 2.5 })).bytes, `${name}-song.wav`, 'audio/wav');
-    if (b.dataset.save === 'wav') msg = await deliver((await loopWav(song, { loops })).bytes, `${name}.wav`, 'audio/wav');
-    if (b.dataset.save === 'midi') msg = await deliver(patternMidi(song, { loops }), `${name}.mid`, 'audio/midi');
-    if (b.dataset.save === 'stems') msg = await deliver(await stemsZip(song, { loops: 1 }, (m) => { st.textContent = m; }), `${name}-stems.zip`, 'application/zip');
+    let msg; const what = saving(), file = justOne && song.chain.length > 1 ? `${name}-pattern-${song.cur + 1}` : name;
+    if (b.dataset.save === 'song') msg = await deliver((await loopWav(what, { loops, tail: 2.5 })).bytes, `${file}-song.wav`, 'audio/wav');
+    if (b.dataset.save === 'wav') msg = await deliver((await loopWav(what, { loops })).bytes, `${file}.wav`, 'audio/wav');
+    if (b.dataset.save === 'midi') msg = await deliver(patternMidi(what, { loops }), `${file}.mid`, 'audio/midi');
+    if (b.dataset.save === 'stems') msg = await deliver(await stemsZip(what, { loops }, (m) => { st.textContent = m; }), `${file}-loop-stems.zip`, 'application/zip');
+    if (b.dataset.save === 'stems-song') msg = await deliver(await stemsZip(what, { loops, tail: 2.5 }, (m) => { st.textContent = m; }), `${file}-song-stems.zip`, 'application/zip');
     st.textContent = msg ? `✓ ${msg}` : '';
   } catch (err) { st.textContent = `Could not save: ${err.message}`; }
 });

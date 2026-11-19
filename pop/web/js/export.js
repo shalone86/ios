@@ -28,12 +28,15 @@ export async function loopWav(song, { loops = 2, tail = 0 } = {}) {
   return { bytes: encodeWav(toInt(out, 24), SR, 24), stats };
 }
 
-export async function stemsZip(song, { loops = 1 } = {}, onStatus = () => {}) {
+// Stems: the mix, plus each sound on its own, all the same length and lined
+// up from the first beat. As a loop (tail = 0) each one repeats cleanly, its
+// ring-out folded onto the start; as a song (tail > 0) it ends by ringing out.
+export async function stemsZip(song, { loops = 1, tail = 0 } = {}, onStatus = () => {}) {
   // the mix first, to learn how much gain the master adds; each stem gets the same
   onStatus('Mixing…');
-  const mix = await renderSong(song, { loops, sr: SR });
+  const mix = await renderSong(song, { loops, sr: SR, tail: Math.max(2, tail) });
   const n = Math.round(mix.seconds * SR);
-  const wrap = (chs) => { for (const c of chs) for (let i = n; i < c.length; i++) c[i - n] += c[i]; return cut(chs, mix.seconds, 0); };
+  const wrap = (chs) => { if (!tail) for (const c of chs) for (let i = n; i < c.length; i++) c[i - n] += c[i]; return cut(chs, mix.seconds, tail); };
   const mixChs = wrap(channelsOf(mix.buffer));
   const { gainDb } = finalize(mixChs, SR, { target: TARGET, ceilingDb: -1 });
   const g = Math.pow(10, gainDb / 20);
@@ -42,7 +45,7 @@ export async function stemsZip(song, { loops = 1 } = {}, onStatus = () => {}) {
   const used = [...Array(16).keys()].filter((i) => bars.some((b) => song.patterns[b][i]));
   for (const i of used) {
     onStatus(`${KITS[song.kit].pads[i].name}…`);
-    const { buffer } = await renderSong(song, { loops, solo: i, sr: SR });
+    const { buffer } = await renderSong(song, { loops, solo: i, sr: SR, tail: Math.max(2, tail) });
     const chs = wrap(channelsOf(buffer));
     let pk = 0; for (const c of chs) for (let k = 0; k < c.length; k++) { c[k] *= g; pk = Math.max(pk, Math.abs(c[k])); }
     if (pk > 0.98) for (const c of chs) for (let k = 0; k < c.length; k++) c[k] *= 0.98 / pk;

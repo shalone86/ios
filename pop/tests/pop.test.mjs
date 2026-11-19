@@ -326,6 +326,20 @@ check(mid.slice(0, 4).toString() === 'MThd' && mid.slice(14, 18).toString() === 
 const zip = await save('stems');
 const list = String(execFileSync('unzip', ['-Z1', zip])).trim().split('\n');
 check(list.some((n) => /mix\.wav$/.test(n)) && list.length >= 5, `stems: ${list.length} files (${list.map((n) => n.split('/').pop()).join(', ')})`);
+// stems: every file the same length; as a song they end with the ring-out; "pattern only" keeps the chain
+const lengths = (z) => {
+  const dir = fs.mkdtempSync(path.join(OUT, 'st-')); execFileSync('unzip', ['-q', z, '-d', dir]);
+  const files = String(execFileSync('sh', ['-c', `find "${dir}" -name '*.wav'`])).trim().split('\n');
+  return [...new Set(files.map((f) => parseFloat(String(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]))).toFixed(2)))];
+};
+const loopLens = lengths(zip), songZip = await save('stems-song'), songLens = lengths(songZip);
+await page.click('[data-what="one"]');
+const oneZip = await save('stems'), oneLens = lengths(oneZip), chainAfter = await page.evaluate(() => window.popPads.song.chain.join());
+await page.click('[data-what="chain"]');
+const bar92 = 4 * 60 / 92;
+check(loopLens.length === 1 && Math.abs(loopLens[0] - 6 * bar92) < 0.02 && songLens.length === 1 && Math.abs(songLens[0] - (6 * bar92 + 2.5)) < 0.02
+  && oneLens.length === 1 && Math.abs(oneLens[0] - 2 * bar92) < 0.02 && /pattern-\d+-loop-stems/.test(oneZip) && chainAfter === '0,1,0',
+  `stems line up: loop stems ${loopLens[0]} s (the chain twice), song stems ${songLens[0]} s (plus the ring-out), "pattern only" ${oneLens[0]} s, and the chain is kept`);
 await page.click('#scrim', { position: { x: 20, y: 20 } });
 
 // the beat is still there after a reload
