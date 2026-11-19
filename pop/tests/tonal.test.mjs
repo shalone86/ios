@@ -41,7 +41,7 @@ const r = await page.evaluate(async () => {
     const k = KITS[id], bufs = await renderKit(id, sr);
     out.kits.push(`${id}:${TONAL.map((i) => k.pads[i].tone).join('/')}`);
     for (let i = 0; i < 16; i++) if (!k.pads[i].tone) out.loud.push([id, k.pads[i].name, loudness(bufs[i].getChannelData(0), sr)]);
-    for (let i = 0; i < 16; i++) out.low.push([id, k.pads[i].name, lowEnd(bufs[i].getChannelData(0), sr)]);
+    for (let i = 0; i < 16; i++) out.low.push([id, k.pads[i].name, lowEnd(bufs[i].getChannelData(0), sr), lowEnd(bufs[i].getChannelData(0), sr, 1.2)]);
     // the bass, an octave and a fifth up: the right notes, about the same length
     const b0 = bufs[1], b7 = await renderTone(id, 1, 7, sr), b12 = await renderTone(id, 1, 12, sr);
     out.pitch.push({ id, f: f0(b0, 40, 110), f7: f0(b7, 60, 170), f12: f0(b12, 80, 220), len: [b0.duration, b12.duration] });
@@ -53,6 +53,8 @@ const hot = r.loud.filter(([, , l]) => l > -8.9);
 check(!hot.length, `no drum is louder than Cream Soda's loudest (−9 LUFS): loudest ${r.loud.sort((a, b) => b[2] - a[2]).slice(0, 3).map(([k, n, l]) => `${k} ${n} ${l.toFixed(1)}`).join(', ')}`);
 const boomy = r.low.filter(([, , l]) => l > -13.9);
 check(!boomy.length, `no pad's low end (below 120 Hz) goes over −14 dB, so subs don't rattle studio speakers: hottest ${r.low.sort((a, b) => b[2] - a[2]).slice(0, 3).map(([k, n, l]) => `${k} ${n} ${l.toFixed(1)}`).join(', ')}`);
+const rumbly = r.low.filter(([, , , l]) => l > -20.9);
+check(!rumbly.length, `no 808 tail rumbles on: the low end over 1.2 s stays under −21 dB (${rumbly.map(([k, n, , l]) => `${k} ${n} ${l.toFixed(1)}`).join(', ') || 'all clear'})`);
 const cents = (a, b) => 1200 * Math.log2(a / b);
 const tuned = r.pitch.every((p) => Math.abs(cents(p.f, 65.406)) < 40 && Math.abs(cents(p.f7, 65.406 * 1.4983)) < 40 && Math.abs(cents(p.f12, 130.81)) < 40 && Math.abs(p.len[0] - p.len[1]) < 0.01);
 check(tuned, `the basses are on C2 and pitch exactly, keeping their length: ${r.pitch.map((p) => `${p.id} ${p.f.toFixed(0)}/${p.f7.toFixed(0)}/${p.f12.toFixed(0)} Hz`).join(', ')}`);
