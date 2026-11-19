@@ -281,7 +281,7 @@ if (await say('tune', 'A bass line', 'a pitch on each step', 'high')) {
   await finishLine();
 }
 await press('[data-mode="play"]'); await wait(400);
-if (await say('copy', 'Eight patterns', 'tap an empty one: start fresh or copy', 'low')) {
+if (await say('copy', 'Eight patterns', 'tap an empty one: start fresh or copy', 'high')) {
   // an empty pattern asks: start it empty, or as a copy of this one
   await wait(600); await press('[data-pat="1"]'); await wait(1100);
   await press('[data-p="copy"]'); await wait(1000);
@@ -310,7 +310,7 @@ if (await say('motion', 'Record knob moves', 'hold a knob while recording', 'hig
   await finishLine();
 }
 await press('#play'); await wait(300);
-if (await say('export', 'Save it', 'the whole song · a loop · MIDI · every sound · Boba', '')) {
+if (await say('export', 'Save it', 'the whole song · a loop · MIDI · every sound · Boba', 'high')) {
   await wait(500); await press('#menu'); await wait(Math.max(1200, clips.export.seconds * 1000 - 1500));
   await closeMenu();
   await finishLine();
