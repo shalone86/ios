@@ -1,4 +1,4 @@
-// Serves Deep Drift at shalonely.com/night. Deploy: node build.mjs && npx wrangler deploy
+// Serves Deep Drift at shalonely.com/drift (and redirects its old address, /night). Deploy: node build.mjs && npx wrangler deploy
 {
   "name": "deep-drift",
   "main": "dist/worker.js",
@@ -6,6 +6,8 @@
   // the tutorial video goes up as a static asset
   "assets": { "directory": "./dist/assets", "binding": "ASSETS", "run_worker_first": true },
   "routes": [
+    { "pattern": "shalonely.com/drift", "zone_name": "shalonely.com" },
+    { "pattern": "shalonely.com/drift/*", "zone_name": "shalonely.com" },
     { "pattern": "shalonely.com/night", "zone_name": "shalonely.com" },
     { "pattern": "shalonely.com/night/*", "zone_name": "shalonely.com" }
   ]
