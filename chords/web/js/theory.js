@@ -14,7 +14,15 @@ export const SHAPES = {
   sus2: { iv: [0, 2, 7], name: 'sus2' },
   sus4: { iv: [0, 5, 7], name: 'sus4' },
   add9: { iv: [0, 4, 7, 14], name: 'add9' },
+  six: { iv: [0, 4, 7, 9], name: '6' },
+  min6: { iv: [0, 3, 7, 9], name: 'm6' },
+  min9: { iv: [0, 3, 7, 10, 14], name: 'm9' },
+  dim: { iv: [0, 3, 6], name: 'dim' },
+  aug: { iv: [0, 4, 8], name: 'aug' },
 };
+// the shapes offered when changing a chord, in a friendly order
+export const SHAPE_ORDER = ['maj', 'min', 'dom7', 'maj7', 'min7', 'six', 'min6', 'add9', 'min9', 'sus2', 'sus4', 'dim', 'aug'];
+export const SHAPE_NAMES = { maj: 'major', min: 'minor', dom7: '7', maj7: 'maj7', min7: 'm7', six: '6', min6: 'm6', add9: 'add9', min9: 'm9', sus2: 'sus2', sus4: 'sus4', dim: 'dim', aug: 'aug' };
 
 // The twelve bubbles: three rows of four. The top row is home (the chords
 // most songs use), the middle row more from the key, the bottom row colors
@@ -32,11 +40,15 @@ export const LAYOUTS = {
   ],
 };
 
-// the twelve chords of a key: { label, numeral, root (pitch class), shape }
-export function chordsOf(key, mode) {
-  return LAYOUTS[mode].map(([numeral, off, shape]) => {
+// the twelve chords of a key: { label, numeral, root (pitch class), shape }.
+// custom: chords changed by hand, by bubble: { i: [semitones above the key, shape] },
+// kept relative to the key so they move with it.
+export function chordsOf(key, mode, custom = {}) {
+  return LAYOUTS[mode].map(([numeral, off, shape], i) => {
+    const mine = custom[i];
+    if (mine) { off = mine[0]; shape = mine[1]; numeral = '✎'; }
     const root = (key + off) % 12;
-    return { label: KEY_NAMES[root] + SHAPES[shape].name, numeral, root, shape };
+    return { label: KEY_NAMES[root] + SHAPES[shape].name, numeral, root, shape, off, custom: !!mine };
   });
 }
 

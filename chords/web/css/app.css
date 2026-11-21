@@ -140,3 +140,9 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 #start #apk[hidden] { display: none; }
 .logo { display: flex; justify-content: center; }
 .logo .chord { --b: 96px; }
+
+/* changing chords: the mugs wiggle gently, waiting to be picked */
+body.editing .chord { animation: wiggle 1.4s ease-in-out infinite; }
+body.editing .chord:nth-child(2n) { animation-delay: -.7s; }
+@keyframes wiggle { 0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+#hint .chip { margin-left: 6px; vertical-align: middle; }

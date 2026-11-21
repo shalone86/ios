@@ -3,7 +3,44 @@
 // same sound, for listening back and exporting.
 
 import { playChord, playString, playBass, DRUMS, makeMix } from './sound.js';
-import { chordNotes, bassNote } from './theory.js';
+import { chordNotes, bassNote, stringNotes, chordsOf, SHAPES } from './theory.js';
+
+// How a mug plays its chord while it is held. 'chord' is the chord itself;
+// the rest play it for you, in time: arpeggios, a strumming pattern, a fast
+// tremolo roll, or short block stabs.
+export const STYLES = [
+  { id: 'chord', name: 'Chord', short: '', hint: 'the chord itself, as the sound plays it' },
+  { id: 'up', name: 'Arpeggio up', short: '↑', hint: 'the notes one at a time, rising' },
+  { id: 'down', name: 'Arpeggio down', short: '↓', hint: 'the notes one at a time, falling' },
+  { id: 'updown', name: 'Arpeggio up & down', short: '↕', hint: 'rising, then falling, and round again' },
+  { id: 'random', name: 'Arpeggio random', short: '✶', hint: 'the notes of the chord in a wandering order' },
+  { id: 'strum', name: 'Guitar strum', short: '≋', hint: 'down, down-up, up-down-up, like strumming a guitar' },
+  { id: 'tremolo', name: 'Tremolo', short: '∿', hint: 'a fast shimmering roll, like a mandolin' },
+  { id: 'stab', name: 'Stabs', short: '▮', hint: 'short block chords on every beat' },
+];
+// the notes an arpeggio walks: the chord over two octaves
+const arpNotes = (ch) => { const n = chordNotes(ch); return [...n, ...n.map((m) => m + 12), n[0] + 24]; };
+// a strumming pattern over a bar of 16ths: D = down (low to high), U = up (high to low, lighter)
+const STRUM = { 0: 'D', 4: 'D', 6: 'U', 10: 'U', 12: 'D', 14: 'U' };
+// one step k of an auto-style (pos: where it falls in the bar), as notes to play: [delay, midi, vel, len]
+function autoStep(style, ch, k, pos, prev) {
+  const A = arpNotes(ch), n = A.length;
+  switch (style) {
+    case 'up': return [[0, A[k % n], 0.8]];
+    case 'down': return [[0, A[n - 1 - (k % n)], 0.8]];
+    case 'updown': { const c = 2 * n - 2, i = k % c; return [[0, A[i < n ? i : c - i], 0.8]]; }
+    case 'random': { let i; do { i = Math.floor(Math.random() * n); } while (n > 1 && A[i] === prev); return [[0, A[i], 0.8]]; }
+    case 'tremolo': { const c = chordNotes(ch); return [[0, c[k % c.length] + 12, k % c.length ? 0.55 : 0.7]]; }
+    case 'stab': return pos % 4 === 0 ? chordNotes(ch).map((m) => [0, m + 12, pos === 0 ? 0.75 : 0.6, 0.11]) : [];
+    case 'strum': {
+      const d = STRUM[pos], S = stringNotes(ch).slice(0, 6);
+      if (d === 'D') return S.map((m, j) => [j * 0.009, m, 0.75]);
+      if (d === 'U') return S.slice(2).reverse().map((m, j) => [j * 0.008, m, 0.45]);
+      return [];
+    }
+    default: return [];
+  }
+}
 
 // The backing beats, like an Omnichord's rhythm section: soft drums, and a
 // bass that follows whichever chord is on. steps per bar; bass: step → 'r'
@@ -49,7 +86,7 @@ export class Cozy {
   }
   constructor(ctx) {
     this.ctx = ctx; this.mix = makeMix(ctx);
-    this.voice = 'omni'; this.beat = 'none'; this.bpm = 84;
+    this.voice = 'omni'; this.beat = 'none'; this.bpm = 84; this.style = 'chord'; this.auto = null;
     this.chord = null; this.held = null; this.idx = -1;
     this.playing = false; this.rec = null; this.clock = null;
     this.onStep = null; this.onCount = null;
@@ -64,13 +101,23 @@ export class Cozy {
     if (this.held) this.held.release(t);
     this.chord = ch; this.idx = i;
     const notes = chordNotes(ch);
-    this.held = playChord(this.ctx, this.mix.voices, t, this.voice, notes);
+    const info = { k: 'c', i, ch: { root: ch.root, shape: ch.shape, label: ch.label }, n: notes, v: this.voice };
+    if (this.style !== 'chord') {
+      // an auto-style plays the chord for you; the take still knows which chord is on (for the bass)
+      this.held = null;
+      this.log({ ...info, q: 1 }, t);
+      this.startAuto(i, ch, t);
+    } else {
+      this.stopAuto();
+      this.held = playChord(this.ctx, this.mix.voices, t, this.voice, notes);
+      this.log(info, t);
+    }
     // with no beat running, the bass plays with the chord (when dubbing over a
     // take with a beat, its own bass follows the chords once they are merged)
     if ((!this.playing || this.beat === 'none') && !(this.rec && this.rec.dub && this.rec.dub.beat !== 'none')) playBass(this.ctx, this.mix.bass, t, bassNote(ch), 1.2);
-    this.log({ k: 'c', i, ch: { root: ch.root, shape: ch.shape, label: ch.label }, n: notes, v: this.voice }, t);
   }
   release() {
+    this.stopAuto();
     if (!this.held) return;
     const t = this.now();
     this.held.release(t);
@@ -82,6 +129,38 @@ export class Cozy {
     const t = this.now();
     playString(this.ctx, this.mix.voices, t, this.voice, midi, vel);
     this.log({ k: 's', m: midi, vel: +vel.toFixed(2), v: this.voice }, t);
+  }
+
+  // ----- auto-styles: a little clock of its own, in time with the tempo -----
+  // The first note sounds at once; the rest fall on the 16th-note grid (the
+  // beat's, if it is running). Every note goes into the take as a string.
+  startAuto(i, ch, t) {
+    const sd = stepDur(this.bpm), fine = this.style === 'tremolo' ? 2 : 1;
+    const keep = this.auto && this.auto.style === this.style;   // a new chord carries on the pattern
+    const k = keep ? this.auto.k : 0;
+    let nextGrid = t + sd / fine;
+    if (this.playing && this.t0 != null) nextGrid = this.t0 + Math.ceil((t - this.t0 + 0.001) / (sd / fine)) * (sd / fine);
+    this.auto = { i, ch, style: this.style, k, at: t, fine, next: t, after: nextGrid, prev: null };
+    if (!this.autoClock) this.autoClock = setInterval(() => this.autoPump(), 15);
+    this.autoPump();
+  }
+  stopAuto() { this.auto = null; if (this.autoClock) { clearInterval(this.autoClock); this.autoClock = null; } }
+  autoPump() {
+    const a = this.auto; if (!a) return;
+    const sd = stepDur(this.bpm) / a.fine, until = this.ctx.currentTime + 0.1, steps = beatOf(this.beat).steps || 16;
+    while (a.next < until) {
+      const t = a.next;
+      // where this step falls in the bar: on the beat's grid when it runs, else counted from the press
+      const pos = this.playing && this.t0 != null ? ((Math.round((t - this.t0) / (sd * a.fine)) % steps) + steps) % steps : a.k % 16;
+      for (const [dt, m, vel, len] of autoStep(a.style, a.ch, a.k, pos, a.prev)) {
+        playString(this.ctx, this.mix.voices, t + dt, this.voice, m, vel, len || 0);
+        this.log({ k: 's', m, vel, v: this.voice, ...(len ? { len } : {}) }, t + dt);
+        a.prev = m;
+      }
+      a.k++;
+      a.next = a.k === 1 || a.next < a.after ? a.after : a.next + sd;
+      if (a.next <= t) a.next = t + sd;
+    }
   }
 
   // ----- the beat: a clock that schedules a little ahead -----
@@ -160,10 +239,10 @@ export function performance(take) {
     if (e.k === 'c') {
       const last = out.chords[out.chords.length - 1];
       if (last && last.end > e.t) last.end = e.t;
-      out.chords.push({ t: e.t, end: take.dur, notes: e.n, label: e.ch.label, v: e.v, ch: e.ch });
+      out.chords.push({ t: e.t, end: take.dur, notes: e.n, label: e.ch.label, v: e.v, ch: e.ch, ...(e.q ? { q: true } : {}) });
       if (beat.id === 'none') out.bass.push({ t: e.t, m: bassNote(e.ch), len: 1.2 });
     } else if (e.k === 'u') { const last = out.chords[out.chords.length - 1]; if (last && last.end > e.t) last.end = e.t; }
-    else if (e.k === 's') out.strings.push({ t: e.t, m: e.m, vel: e.vel || 1, v: e.v });
+    else if (e.k === 's') out.strings.push({ t: e.t, m: e.m, vel: e.vel || 1, v: e.v, ...(e.len ? { len: e.len } : {}) });
   }
   if (beat.id !== 'none') {
     const steps = beat.steps, keys = Object.keys(beat.bass).map(Number);
@@ -191,11 +270,45 @@ export async function renderTake(take, { sr = 44100, tail = 3, only = null } = {
   const mix = makeMix(ctx), P = performance(take);
   const on = (name) => !only || only === name;
   if (on('chords')) for (const c of P.chords) {
+    if (c.q) continue;                       // an auto-style's chord: its notes are in the strings
     const h = playChord(ctx, mix.voices, c.t, c.v, c.notes);
     h.release(Math.min(c.end, take.dur + 0.4));
   }
-  if (on('strings')) for (const s of P.strings) playString(ctx, mix.voices, s.t, s.v, s.m, s.vel);
+  if (on('strings')) for (const s of P.strings) playString(ctx, mix.voices, s.t, s.v, s.m, s.vel, s.len || 0);
   if (on('bass')) for (const b of P.bass) playBass(ctx, mix.bass, b.t, b.m, b.len);
   if (on('drums')) for (const d of P.drums) DRUMS[d.kind](ctx, mix.drums, d.t, d.vel);
   return { buffer: await ctx.startRendering(), seconds: take.dur };
+}
+
+// ---------- a take in a new key (or scale, or with changed chords) ----------
+// Every chord follows its mug: the take keeps which mug was played when, and
+// each mug's chord is now whatever that mug holds. Each single note (strums,
+// arpeggios) keeps its place in its chord (the third, an octave up, …), so a
+// melody of chord tones moves with the harmony.
+export function retune(take, key, mode, custom = {}) {
+  const now = chordsOf(key, mode, custom), ev = [...take.ev].sort((a, b) => a.t - b.t);
+  let from = null, to = null;
+  const out = ev.map((e) => {
+    if (e.k === 'c') {
+      from = e.ch; to = e.i >= 0 && now[e.i] ? now[e.i] : from;
+      const ch = { root: to.root, shape: to.shape, label: to.label };
+      return { ...e, ch, n: chordNotes(ch) };
+    }
+    if (e.k === 's' && from && to) return { ...e, m: moveNote(e.m, from, to) };
+    return e;
+  });
+  return { ...take, key, mode, ev: out };
+}
+function moveNote(m, from, to) {
+  const a = SHAPES[from.shape].iv, b = SHAPES[to.shape].iv;
+  // the root moves to the nearest place (never more than a tritone)
+  let shift = ((to.root - from.root) % 12 + 12) % 12; if (shift > 6) shift -= 12;
+  for (let j = 0; j < a.length; j++) {
+    const off = m - from.root - a[j];
+    if (((off % 12) + 12) % 12 !== 0) continue;
+    // chord tone j of the old chord → tone j of the new one (a 7th in a triad becomes its octave root)
+    const tone = j < b.length ? b[j] : 12 + b[j % b.length];
+    return from.root + off + shift + tone;
+  }
+  return m + shift;   // not a chord tone: moves with the root
 }

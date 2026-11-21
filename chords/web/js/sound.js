@@ -116,9 +116,11 @@ export function playChord(ctx, out, t, voice, notes, vel = 1) {
   const hs = notes.map((m, k) => (held ? hold : pluck)(ctx, out, t + k * gap, m, v, style));
   return { held, release(at) { if (held) for (const h of hs) h.release(at); } };
 }
-// one string of the strip
-export function playString(ctx, out, t, voice, midi, vel = 1) {
-  return pluck(ctx, out, t, midi, vel * 1.4, STRING_STYLE[voice]);   // a string sounds alone, so a little louder than one note of a chord
+// one string of the strip (len: cut it short after that many seconds, for stabs)
+export function playString(ctx, out, t, voice, midi, vel = 1, len = 0) {
+  const p = pluck(ctx, out, t, midi, vel * 1.4, STRING_STYLE[voice]);   // a string sounds alone, so a little louder than one note of a chord
+  if (len) p.g.gain.setTargetAtTime(0, t + len, 0.025);
+  return p;
 }
 
 // ---------- the bass: round and short, a soft pluck ----------

@@ -37,7 +37,7 @@ export async function stemsZip(take, onStatus = () => {}) {
   const { gainDb } = finalize(mixChs, SR, { target: TARGET, ceilingDb: -1 });
   const g = Math.pow(10, gainDb / 20), files = [{ name: 'mix.wav', bytes: encodeWav(toInt(mixChs, 24), SR, 24) }];
   const P = performance(take);
-  const parts = [['chords', P.chords], ['strings', P.strings], ['bass', P.bass], ['drums', P.drums]].filter(([, l]) => l.length);
+  const parts = [['chords', P.chords.filter((c) => !c.q)], ['strings', P.strings], ['bass', P.bass], ['drums', P.drums]].filter(([, l]) => l.length);
   for (const [k, [part]] of parts.entries()) {
     onStatus(`${part}…`);
     const { buffer } = await renderTake(take, { sr: SR, tail: 3, only: part });
@@ -56,8 +56,8 @@ export function takeMidi(take) {
   const PPQ = 96, tick = (s) => Math.max(0, Math.round(s * take.bpm / 60 * PPQ)), P = performance(take);
   const end = tick(take.dur);
   const lanes = [
-    { name: 'Cozy Chords', ch: 0, ev: P.chords.flatMap((c) => c.notes.flatMap((m) => [[tick(c.t), 0x90, m, 90], [Math.max(tick(c.t) + 2, tick(c.end)), 0x80, m, 0]])) },
-    { name: 'Strings', ch: 1, ev: P.strings.flatMap((s) => [[tick(s.t), 0x91, s.m, Math.round(70 + 40 * Math.min(1, s.vel) - 10)], [tick(s.t) + PPQ / 2, 0x81, s.m, 0]]) },
+    { name: 'Cozy Chords', ch: 0, ev: P.chords.filter((c) => !c.q).flatMap((c) => c.notes.flatMap((m) => [[tick(c.t), 0x90, m, 90], [Math.max(tick(c.t) + 2, tick(c.end)), 0x80, m, 0]])) },
+    { name: 'Strings', ch: 1, ev: P.strings.flatMap((s) => [[tick(s.t), 0x91, s.m, Math.round(70 + 40 * Math.min(1, s.vel) - 10)], [tick(s.t) + (s.len ? Math.max(2, tick(s.len)) : PPQ / 2), 0x81, s.m, 0]]) },
     { name: 'Bass', ch: 2, ev: P.bass.flatMap((b) => [[tick(b.t), 0x92, b.m, 95], [Math.max(tick(b.t) + 2, tick(b.t + b.len)), 0x82, b.m, 0]]) },
     { name: `Drums (${beatOf(take.beat).name})`, ch: 9, ev: P.drums.flatMap((d) => [[tick(d.t), 0x99, GM[d.kind], Math.round(100 * d.vel)], [tick(d.t) + PPQ / 8, 0x89, GM[d.kind], 0]]) },
   ].filter((l) => l.ev.length);
@@ -130,6 +130,8 @@ export async function bobaSong(take) {
   const P = performance(take), ticks = (s) => Math.round(s * take.bpm / 60 * B_PPQ);
   const lanes = [];   // { role, name, sounds: [{ key, name, data }], hits: [{ t, d, key, v }] }
   // the chords: one bubble per chord, as long as it was usually held
+  // (an auto-style's chords are left out: their notes come across as strings)
+  P.chords = P.chords.filter((c) => !c.q);
   if (P.chords.length) {
     const keys = [...new Set(P.chords.map((c) => `${c.label}|${c.v}`))].slice(0, 25);
     const sounds = [];

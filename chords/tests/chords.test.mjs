@@ -71,28 +71,35 @@ await page.waitForTimeout(4 * 60 / 150 * 1000 + 300);
 { const b = await box('.chord[data-i="0"]'); await touch('.chord[data-i="0"]', 'pointerdown', b.x + b.w / 2, b.y + b.h / 2); await page.waitForTimeout(200); await touch('.chord[data-i="0"]', 'pointerup', b.x + b.w / 2, b.y + b.h / 2); }
 await page.waitForTimeout(600);
 await page.click('#rec');
-const free = await page.evaluate(() => ({ take: window.cozy.take, playing: window.cozy.eng.playing }));
-check(counted.join() === '1,2,3,4,0' && free.take && free.take.beat === 'none' && free.take.ev.some((e) => e.k === 'c' && e.ch.label === 'C') && !free.playing,
-  `with no beat, the count-in goes 1, 2, 3, 4 and the take is kept (${counted.join(' ')}; ${free.take && free.take.bars} bar)`);
+const free = await page.evaluate(() => ({ take: window.cozy.take }));
+check(counted.join() === '1,2,3,4,0' && free.take && free.take.beat === 'none' && free.take.ev.some((e) => e.k === 'c' && e.ch.label === 'C'),
+  `with no beat, the count-in goes 1, 2, 3, 4 and the take is kept (${counted.join(' ')}; ${free.take && free.take.bars} bars)`);
 
-// ▶ plays the take back as a seamless loop, made ahead of time so it starts at once
-await page.waitForFunction(() => window.cozy.loopLength() > 0, null, { timeout: 10000 });
-const loopLen = await page.evaluate(() => ({ n: window.cozy.loopLength(), want: Math.round(window.cozy.take.dur * window.cozy.eng.ctx.sampleRate) }));
-await page.evaluate(() => window.cozy.select(5));
-const t0 = Date.now();
-await page.click('#play');
-await page.waitForFunction(() => /your take/.test(document.getElementById('hint').textContent));
-const startMs = Date.now() - t0;
-check(loopLen.n === loopLen.want && startMs < 400, `the take loops seamlessly (a loop of exactly ${loopLen.n} samples, its ring-out folded onto its start) and ▶ starts at once (${startMs} ms)`);
-await page.waitForTimeout(700);
-const back = await page.evaluate(() => ({ hint: document.getElementById('hint').textContent, btn: document.getElementById('play').textContent, lit: document.querySelector('.chord.cur b').textContent }));
+// right after recording, the take loops straight away (made as a seamless loop, exactly its length)
+await page.waitForFunction(() => /looping/.test(document.getElementById('hint').textContent), null, { timeout: 5000 });
+const loopLen = await page.evaluate(() => ({ n: window.cozy.loopLength(), want: Math.round(window.cozy.take.dur * window.cozy.eng.ctx.sampleRate), btn: document.getElementById('play').textContent }));
+await page.waitForTimeout(500);
+const lit = await page.evaluate(() => document.querySelector('.chord.cur b').textContent);
+check(loopLen.n === loopLen.want && loopLen.btn === '■' && lit === 'C', `after recording, the take loops at once, seamlessly (${loopLen.n} samples, exactly its length), its chords lighting up (${lit})`);
 await page.click('#play');
 const after = await page.evaluate(() => ({ btn: document.getElementById('play').textContent, hint: document.getElementById('hint').textContent }));
-check(/your take/.test(back.hint) && back.btn === '■' && back.lit === 'C' && after.btn === '▶' && /▶ to hear it/.test(after.hint), `▶ plays the take back, its chords lighting up (${back.lit}); ■ stops it`);
+const t0 = Date.now(); await page.click('#play');
+await page.waitForFunction(() => /looping/.test(document.getElementById('hint').textContent));
+const startMs = Date.now() - t0;
+await page.click('#play');
+check(after.btn === '▶' && /▶ to hear it/.test(after.hint) && startMs < 400, `■ stops it; ▶ starts it again at once (${startMs} ms)`);
+
+// a new key: you hear its scale, and the whole take moves into it (each mug's chord, now in D minor)
+await page.click('#key'); await page.click('[data-key="2"]'); await page.click('[data-mode="minor"]'); await page.click('#scrim', { position: { x: 20, y: 20 } });
+const moved = await page.evaluate(() => { const t = window.cozy.take, c = t.ev.find((e) => e.k === 'c'); return { key: t.key, mode: t.mode, label: c.ch.label, n: c.n.join() }; });
+check(moved.key === 2 && moved.mode === 'minor' && moved.label === 'Dm' && moved.n === '62,65,69', `changing the key moves the take: its C is now ${moved.label} (${moved.n}) in D minor`);
+await page.click('#key'); await page.click('[data-key="0"]'); await page.click('[data-mode="major"]'); await page.click('#scrim', { position: { x: 20, y: 20 } });
 
 // record a take with the beat: a bar of clicks, then two chords
 await page.evaluate(() => { const c = window.cozy; c.S.beat = 'cozy'; c.S.bpm = 150; c.eng.beat = 'cozy'; c.eng.bpm = 150; });
 await page.click('#rec');
+const asked = await page.evaluate(() => [...document.querySelectorAll('#sheet [data-r]')].map((b) => b.dataset.r).join());
+await page.click('[data-r="over"]');
 const bar = 4 * 60 / 150;
 await page.waitForTimeout(bar * 1000 + 250);
 const tap = async (i) => { const b = await box(`.chord[data-i="${i}"]`); await touch(`.chord[data-i="${i}"]`, 'pointerdown', b.x + b.w / 2, b.y + b.h / 2); await page.waitForTimeout(250); await touch(`.chord[data-i="${i}"]`, 'pointerup', b.x + b.w / 2, b.y + b.h / 2); };
@@ -101,12 +108,14 @@ await tap(0); await page.waitForTimeout(bar * 1000 - 250); await tap(1);
 await page.waitForFunction(() => !window.cozy.eng.rec, null, { timeout: (bar * 4 + 2) * 1000 });
 let take = await page.evaluate(() => window.cozy.take);
 const chordsIn = take ? take.ev.filter((e) => e.k === 'c' && !e.carried).map((e) => e.ch.label) : [];
+check(asked === 'dub,over', `with a take already there, ● asks: dub on top, or record over (${asked})`);
 check(!!take && take.bars === 4 && Math.abs(take.dur - 4 * bar) < 0.01 && chordsIn.join() === 'C,F' && take.beat === 'cozy', `a 4-bar take records and stops by itself: ${take && take.bars} bars, ${take && take.dur} s, chords ${chordsIn.join(' → ')}, with the beat`);
-await page.click('#play');   // stop the beat
+await page.click('#play');   // stop the loop that started by itself
 
 // dub on top: the take plays, strings added over it, chords kept; same length
-await page.evaluate(() => { window.cozy.S.dub = true; window.cozy.S.beat = 'none'; window.cozy.eng.beat = 'none'; });
+await page.evaluate(() => { window.cozy.S.beat = 'none'; window.cozy.eng.beat = 'none'; });
 await page.click('#rec');
+await page.click('[data-r="dub"]');
 await page.waitForFunction(() => { const e = window.cozy.eng; return e.rec && e.ctx.currentTime > e.rec.start + 0.2; }, null, { timeout: 15000 });
 const dubInfo = await page.evaluate(() => ({ bpm: window.cozy.eng.bpm, beat: window.cozy.eng.beat, bars: window.cozy.eng.rec && window.cozy.eng.rec.bars }));
 const sb = await box('#strip');
@@ -116,9 +125,48 @@ const dubbed = await page.evaluate(() => window.cozy.take);
 const kinds = (t) => t.ev.reduce((o, e) => ((o[e.k] = (o[e.k] || 0) + 1), o), {});
 check(dubInfo.beat === 'cozy' && dubInfo.bpm === 150 && dubInfo.bars === 4 && dubbed.bars === 4 && dubbed.beat === 'cozy' && kinds(dubbed).s === (kinds(take).s || 0) + 4 && kinds(dubbed).c === kinds(take).c,
   `dubbing plays the take (its beat and tempo) and adds what you play: ${kinds(dubbed).c} chords kept, ${kinds(dubbed).s} strings added, still ${dubbed.bars} bars`);
-await page.evaluate(() => { window.cozy.S.dub = false; });
 take = dubbed;
-await page.click('#play');   // stop the beat
+await page.click('#play');   // stop the loop
+
+// auto-styles: hold a mug and it plays the chord for you, in time
+const styles = await page.evaluate(async () => {
+  const e = window.cozy.eng, out = {}, C = { root: 0, shape: 'maj', label: 'C' };
+  for (const st of ['up', 'down', 'updown', 'random', 'strum', 'tremolo', 'stab']) {
+    e.style = st; e.bpm = 150; e.stop();
+    e.rec = { start: e.ctx.currentTime, end: 1e9, bars: 99, ev: [] };
+    e.press(0, C);
+    await new Promise((r) => setTimeout(r, 820));
+    e.release();
+    const stopAt = e.ctx.currentTime - e.rec.start;
+    await new Promise((r) => setTimeout(r, 300));
+    const ev = e.rec.ev; e.rec = null;
+    const s = ev.filter((x) => x.k === 's');
+    out[st] = { quiet: ev.some((x) => x.k === 'c' && x.q), notes: s.map((x) => x.m), times: s.map((x) => x.t), late: s.filter((x) => x.t > stopAt + 0.12).length, lens: s.filter((x) => x.len).length };
+  }
+  e.style = 'chord'; e.bpm = 150;
+  return out;
+});
+const asc = (l) => l.every((m, k) => !k || m > l[k - 1]), desc = (l) => l.every((m, k) => !k || m < l[k - 1]);
+check(Object.values(styles).every((x) => x.quiet && x.late === 0) && asc(styles.up.notes.slice(0, 7)) && desc(styles.down.notes.slice(0, 7)) && styles.up.notes.length >= 7 && styles.up.notes.length <= 10
+  && styles.updown.notes[7] < styles.updown.notes[6] && styles.tremolo.notes.length >= 2 * styles.up.notes.length - 3 && styles.stab.lens >= 3 && styles.stab.notes.length % 3 === 0 && styles.strum.notes.length >= 10,
+  `hold a mug and it plays for you, in time, stopping when let go: arpeggio up ${styles.up.notes.slice(0, 7).join(' ')}, down ${styles.down.notes.slice(0, 7).join(' ')}, up-down, random, strum (${styles.strum.notes.length} strings), tremolo (${styles.tremolo.notes.length} notes), stabs (${styles.stab.notes.length / 3} block chords)`);
+
+// Advanced: change a mug's chord; the take follows (Am → D7 on the fourth mug)
+const keptTake = await page.evaluate(() => JSON.parse(JSON.stringify(window.cozy.take)));
+await page.evaluate(() => { const t = window.cozy.take; t.ev.push({ t: 2, k: 'c', i: 3, ch: { root: 9, shape: 'min', label: 'Am' }, n: [57, 60, 64], v: 'omni' }); window.cozy.take = t; });
+await page.click('#menu'); await page.click('[data-do="edit"]');
+const am2 = await box('.chord[data-i="3"]');
+await touch('.chord[data-i="3"]', 'pointerdown', am2.x + am2.w / 2, am2.y + am2.h / 2);
+await page.click('[data-root="2"]'); await page.click('[data-shape="dom7"]');
+await page.click('#scrim', { position: { x: 20, y: 20 } });
+const edited = await page.evaluate(() => ({ label: document.querySelector('.chord[data-i="3"] b').textContent, mark: document.querySelector('.chord[data-i="3"] small').textContent, taken: window.cozy.take.ev.find((e) => e.k === 'c' && e.i === 3).ch.label, wiggle: document.body.classList.contains('editing') }));
+await page.click('#edit-done');
+await page.click('#menu'); await page.click('[data-do="unedit"]');
+const reset = await page.evaluate(() => ({ label: document.querySelector('.chord[data-i="3"] b').textContent, taken: window.cozy.take.ev.find((e) => e.k === 'c' && e.i === 3).ch.label }));
+check(edited.label === 'D7' && edited.mark === '✎' && edited.taken === 'D7' && edited.wiggle && reset.label === 'Am' && reset.taken === 'Am',
+  `Change chords: the fourth mug becomes ${edited.label} ✎ and the take follows (${edited.taken}); "back to the key's chords" restores ${reset.label}`);
+
+await page.evaluate((t) => { window.cozy.take = t; }, keptTake);
 
 // every save, from the menu
 await page.click('#menu');

@@ -2,9 +2,9 @@
 // beat with a bass that follows the chords, a take you can record, and
 // saves for sharing, for Logic, and for Boba Beats.
 
-import { Cozy, BEATS, beatOf, renderTake } from './engine.js';
-import { VOICES } from './sound.js';
-import { KEY_NAMES, chordsOf, stringNotes } from './theory.js';
+import { Cozy, BEATS, STYLES, beatOf, renderTake, retune } from './engine.js';
+import { VOICES, playString, playChord } from './sound.js';
+import { KEY_NAMES, SHAPE_ORDER, SHAPE_NAMES, chordsOf, chordNotes, stringNotes } from './theory.js';
 import { offer, install, goOffline } from './install.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,7 +14,10 @@ const toast = (msg) => { const el = $('toast'); el.textContent = msg; el.classLi
 // ---------- what is kept on this device ----------
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
 const keep = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } };
-const S = { key: 0, mode: 'major', voice: 'omni', beat: 'none', bpm: 84, bars: 4, dub: false, ...load('cozy.settings', {}) };
+const S = { key: 0, mode: 'major', voice: 'omni', style: 'chord', beat: 'none', bpm: 84, bars: 4, custom: { major: {}, minor: {} }, ...load('cozy.settings', {}) };
+// chords changed by hand, for the scale in use
+const mine = () => (S.custom && S.custom[S.mode]) || {};
+let editing = false;   // "Change chords": tapping a mug opens its chord instead of playing it
 let take = load('cozy.take', null);
 const save = () => keep('cozy.settings', S);
 
@@ -28,12 +31,13 @@ const FACE = `<svg viewBox="0 0 64 24"><g fill="none" stroke="rgba(40,10,20,.72)
 // a cocoa mug: steam, two marshmallows, the cup with its face and its chord
 const STEAM = '<svg class="steam" viewBox="0 0 40 24"><path d="M10 22 q-5 -6 0 -11 t0 -10"/><path d="M28 22 q-5 -6 0 -11 t0 -10"/></svg>';
 const mug = (label, numeral) => `${STEAM}<span class="cup">${FACE}<b>${label}</b><small>${numeral}</small></span><span class="float"><i class="m m1"></i><i class="m m2"></i></span>`;
-let chords = chordsOf(S.key, S.mode), cur = -1;
+let chords = chordsOf(S.key, S.mode, mine()), cur = -1;
 function drawChords() {
-  chords = chordsOf(S.key, S.mode);
+  chords = chordsOf(S.key, S.mode, mine());
   $('chords').innerHTML = chords.map((c, i) => `<button class="chord r${Math.floor(i / 4)} ${i === cur ? 'cur' : ''}" data-i="${i}" aria-label="${c.label} (${c.numeral})">${mug(c.label, c.numeral.replace(/maj7|7|sus\d/, ''))}</button>`).join('');
   $('key').textContent = `${KEY_NAMES[S.key]} ${S.mode}`;
-  $('voice').textContent = VOICES.find((v) => v.id === S.voice).name;
+  const st = STYLES.find((x) => x.id === S.style) || STYLES[0];
+  $('voice').textContent = VOICES.find((v) => v.id === S.voice).name + (st.short ? ` ${st.short}` : '');
   $('beat').textContent = beatOf(S.beat).name; $('beat').classList.toggle('on', S.beat !== 'none');
   $('bpm').textContent = `${S.bpm} bpm`;
   drawStrings();
@@ -64,7 +68,7 @@ const downs = new Map();   // pointer -> bubble index
 async function start() {
   if (eng) return;
   eng = await Cozy.create();
-  Object.assign(eng, { voice: S.voice, beat: S.beat, bpm: S.bpm });
+  Object.assign(eng, { voice: S.voice, beat: S.beat, bpm: S.bpm, style: S.style });
   eng.onCount = (n) => { const h = $('hint'); if (n) { h.textContent = n; h.classList.add('count'); } else { showHint(); } };
   eng.onStep = (s, steps, bar) => {
     if (s !== 0) return;
@@ -78,6 +82,7 @@ $('chords').addEventListener('pointerdown', async (e) => {
   const b = e.target.closest('.chord'); if (!b) return;
   e.preventDefault();
   await start();
+  if (editing) { editChord(+b.dataset.i); return; }
   const i = +b.dataset.i;
   try { b.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
   downs.set(e.pointerId, i);
@@ -151,7 +156,9 @@ addEventListener('keyup', (e) => {
 function showHint() {
   drawRecChip();
   const h = $('hint'); h.classList.remove('count');
-  h.textContent = eng && eng.rec ? 'recording · tap ● to stop' : take ? `your take: ${take.bars} bars · ▶ to hear it${S.dub ? ' · ● dubs on top' : ''} · ☰ to save it` : 'tap a chord · swipe the strings to strum it';
+  document.body.classList.toggle('editing', editing);
+  if (editing) { h.innerHTML = 'tap a mug to change its chord · <button class="chip small" id="edit-done">done</button>'; $('edit-done').onclick = () => { editing = false; showHint(); }; return; }
+  h.textContent = eng && eng.rec ? 'recording · tap ● to stop' : take ? `your take: ${take.bars} bars · ▶ to hear it · ☰ to save it` : 'tap a chord · swipe the strings to strum it';
 }
 function setPlaying(on) { $('play').classList.toggle('on', on); $('play').textContent = on ? '■' : '▶'; }
 // ▶: stops whatever is playing; otherwise plays your take back if you have
@@ -218,8 +225,18 @@ function stopTake() {
 $('rec').onclick = async () => {
   await start();
   if (eng.rec) { finishTake(); return; }
+  if (!take) { record(false); return; }
+  // a take is already there: add to it, or start again?
+  openSheet(`<h3>You have a ${take.bars}-bar take</h3>
+    <button class="big" data-r="dub">◎<span>Dub on top<small>it plays while you add to it: chords first, then strum on top</small></span></button>
+    <button class="big" data-r="over">●<span>Record over<small>a fresh ${S.bars}-bar take, replacing this one</small></span></button>`, (r) => r.onclick = (e) => {
+    const b = e.target.closest('[data-r]'); if (!b) return;
+    closeSheet(); record(b.dataset.r === 'dub');
+  });
+};
+async function record(dubIt) {
   stopTake();
-  const dub = S.dub && take ? take : null;
+  const dub = dubIt && take ? take : null;
   if (dub) {
     // dubbing: the take plays (its tempo, its beat) while you add to it
     if (!loopCache.buf) $('hint').textContent = 'getting your take ready…';
@@ -234,7 +251,7 @@ $('rec').onclick = async () => {
   }
   setPlaying(true);
   $('rec').classList.add('on');
-};
+}
 let dubbing = null;
 function finishTake() {
   const wasDub = !!(eng.rec && eng.rec.dub);
@@ -243,11 +260,12 @@ function finishTake() {
   if (dubbing) { try { dubbing.stop(); } catch (e) { /* ended */ } dubbing = null; }
   if (wasDub) { eng.beat = S.beat; eng.bpm = S.bpm; }
   if (S.beat === 'none' || wasDub) { eng.stop(); setPlaying(false); }
-  if (t && wasDub) { take = t; keep('cozy.take', take); toast('added on top · ▶ to hear it'); }
-  else if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take kept: ${t.bars} bars · ▶ to hear it`); }
+  if (t && wasDub) { take = t; keep('cozy.take', take); toast('added on top'); }
+  else if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take kept: ${t.bars} bars`); }
   else toast('nothing played, so nothing was kept');
-  warmLoop();
   showHint();
+  // straight into hearing it back, looping (the beat stops: the loop has its own)
+  if (t) { if (eng.playing) eng.stop(); playTake(); } else warmLoop();
 }
 
 // ---------- menus (Boba Beats' sheets) ----------
@@ -287,15 +305,57 @@ $('key').onclick = () => openSheet(`<h3>Key</h3>
   const m = e.target.closest('[data-mode]'), k = e.target.closest('[data-key]');
   if (m) S.mode = m.dataset.mode; else if (k) S.key = +k.dataset.key; else return;
   save(); cur = -1; drawChords();
+  hearScale();
+  // the whole take moves into the new key (or scale)
+  if (take) { take = retune(take, S.key, S.mode, mine()); keep('cozy.take', take); if (playingTake) { stopTake(); playTake(); } else warmLoop(); }
   r.querySelectorAll('[data-mode]').forEach((x) => x.classList.toggle('on', x.dataset.mode === S.mode));
   r.querySelectorAll('[data-key]').forEach((x) => x.classList.toggle('on', +x.dataset.key === S.key));
 });
-$('voice').onclick = () => openSheet(`<h3>Sound</h3>${VOICES.map((v) => `<button class="big ${v.id === S.voice ? 'on' : ''}" data-v="${v.id}"><span>${v.name}<small>${v.hint}</small></span></button>`).join('')}`, (r) => r.onclick = async (e) => {
-  const b = e.target.closest('[data-v]'); if (!b) return;
-  S.voice = b.dataset.v; save(); await start(); eng.voice = S.voice; drawChords();
-  r.querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b));
-  eng.press(cur >= 0 ? cur : 0, curChord()); setTimeout(() => eng.release(), 700);
+// hear a key: its scale up, then its home chord
+async function hearScale() {
+  await start(); eng.wake();
+  const steps = S.mode === 'minor' ? [0, 2, 3, 5, 7, 8, 10, 12] : [0, 2, 4, 5, 7, 9, 11, 12];
+  const base = 60 + ((S.key + 6) % 12) - 6, t = eng.ctx.currentTime + 0.03;
+  steps.forEach((st, k) => playString(eng.ctx, eng.mix.voices, t + k * 0.13, S.voice, base + st, 0.7));
+  playChord(eng.ctx, eng.mix.voices, t + steps.length * 0.13 + 0.05, S.voice, chordNotes(chords[0])).release(t + steps.length * 0.13 + 1.2);
+}
+$('voice').onclick = () => openSheet(`<h3>Sound</h3>${VOICES.map((v) => `<button class="big ${v.id === S.voice ? 'on' : ''}" data-v="${v.id}"><span>${v.name}<small>${v.hint}</small></span></button>`).join('')}
+  <h4>How a mug plays its chord</h4>
+  <div class="row">${STYLES.map((x) => `<button class="chip ${x.id === S.style ? 'on' : ''}" data-st="${x.id}">${x.short ? x.short + ' ' : ''}${x.name}</button>`).join('')}</div>
+  <p class="note" id="st-hint" style="margin-top:8px">${(STYLES.find((x) => x.id === S.style) || STYLES[0]).hint}. Hold a mug and it keeps playing, in time with the tempo.</p>`, (r) => r.onclick = async (e) => {
+  const b = e.target.closest('[data-v]'), y = e.target.closest('[data-st]');
+  if (!b && !y) return;
+  await start();
+  if (b) { S.voice = b.dataset.v; eng.voice = S.voice; r.querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b)); }
+  if (y) { S.style = y.dataset.st; eng.style = S.style; r.querySelectorAll('[data-st]').forEach((x) => x.classList.toggle('on', x === y)); r.querySelector('#st-hint').textContent = `${STYLES.find((x) => x.id === S.style).hint}. Hold a mug and it keeps playing, in time with the tempo.`; }
+  save(); drawChords();
+  // a taste of it
+  eng.press(cur >= 0 ? cur : 0, curChord()); setTimeout(() => eng.release(), S.style === 'chord' ? 700 : 1400);
 });
+// ---------- changing a mug's chord (Advanced) ----------
+function editChord(i) {
+  const c = chords[i], base = chordsOf(S.key, S.mode)[i];
+  openSheet(`<h3>Mug ${i + 1}: ${c.label}</h3>
+    <h4>Root</h4><div class="keys">${KEY_NAMES.map((n, k) => `<button class="chip ${k === c.root ? 'on' : ''}" data-root="${k}">${n}</button>`).join('')}</div>
+    <h4>Kind</h4><div class="row">${SHAPE_ORDER.map((sh) => `<button class="chip ${sh === c.shape ? 'on' : ''}" data-shape="${sh}">${SHAPE_NAMES[sh]}</button>`).join('')}</div>
+    <button class="big" data-reset="1" style="margin-top:14px" ${c.custom ? '' : 'disabled'}>↺<span>Back to the key's chord<small>${base.label} (${base.numeral})</small></span></button>`, (r) => r.onclick = (e) => {
+    const R = e.target.closest('[data-root]'), H = e.target.closest('[data-shape]'), X = e.target.closest('[data-reset]');
+    const now = chords[i];
+    S.custom = S.custom || { major: {}, minor: {} }; S.custom[S.mode] = S.custom[S.mode] || {};
+    if (R) S.custom[S.mode][i] = [((+R.dataset.root - S.key) % 12 + 12) % 12, now.shape];
+    else if (H) S.custom[S.mode][i] = [now.off, H.dataset.shape];
+    else if (X && !X.disabled) delete S.custom[S.mode][i];
+    else return;
+    save(); drawChords(); select(i);
+    if (take) { take = retune(take, S.key, S.mode, mine()); keep('cozy.take', take); warmLoop(); }
+    const c2 = chords[i];
+    r.querySelector('h3').textContent = `Mug ${i + 1}: ${c2.label}`;
+    r.querySelectorAll('[data-root]').forEach((x) => x.classList.toggle('on', +x.dataset.root === c2.root));
+    r.querySelectorAll('[data-shape]').forEach((x) => x.classList.toggle('on', x.dataset.shape === c2.shape));
+    r.querySelector('[data-reset]').disabled = !c2.custom;
+    const t = eng.ctx.currentTime + 0.02; playChord(eng.ctx, eng.mix.voices, t, S.voice, chordNotes(c2)).release(t + 0.8);
+  });
+}
 function openBeats() {
   openSheet(`<h3>Beat</h3><p class="note">Soft drums, and a bass that follows your chords. Picking one starts it; ■ stops it.</p>${BEATS.map((b) => `<button class="big ${b.id === S.beat ? 'on' : ''}" data-b="${b.id}"><span>${b.name}<small>${b.hint}</small></span></button>`).join('')}`, (r) => r.onclick = async (e) => {
     const b = e.target.closest('[data-b]'); if (!b) return;
@@ -307,18 +367,12 @@ function openBeats() {
 }
 $('beat').onclick = openBeats;
 // Recording: how long a take is, and whether ● starts a new one or dubs on top
-function drawRecChip() { $('reclen').textContent = S.dub && take ? `dub · ${take.bars} bars` : `${S.bars} bars`; $('reclen').classList.toggle('on', !!(S.dub && take)); }
-$('reclen').onclick = () => openSheet(`<h3>Recording</h3>
-  <h4>Length</h4>
+function drawRecChip() { $('reclen').textContent = `${S.bars} bars`; }
+$('reclen').onclick = () => openSheet(`<h3>Take length</h3>
   <div class="row">${[4, 8, 16].map((n) => `<button class="chip ${n === S.bars ? 'on' : ''}" data-bars="${n}">${n} bars</button>`).join('')}</div>
-  <p class="note" style="margin-top:8px">A take stops by itself at the end, ready to loop.</p>
-  <h4>When you press ●</h4>
-  <button class="big ${S.dub ? '' : 'on'}" data-dub="0">●<span>Record over<small>a fresh take, replacing the last one</small></span></button>
-  <button class="big ${S.dub ? 'on' : ''}" data-dub="1" ${take ? '' : 'disabled'}>◎<span>Dub on top<small>${take ? `your ${take.bars}-bar take plays, and whatever you play is added to it: chords first, then strum on top` : 'record a take first'}</small></span></button>`, (r) => r.onclick = (e) => {
-  const L = e.target.closest('[data-bars]'), D = e.target.closest('[data-dub]');
-  if (L) { S.bars = +L.dataset.bars; r.querySelectorAll('[data-bars]').forEach((x) => x.classList.toggle('on', x === L)); }
-  else if (D && !D.disabled) { S.dub = D.dataset.dub === '1'; r.querySelectorAll('[data-dub]').forEach((x) => x.classList.toggle('on', x === D)); }
-  else return;
+  <p class="note" style="margin-top:8px">A take stops by itself at the end and starts looping, so you hear it straight back. With a take already there, ● asks whether to dub on top or record over.</p>`, (r) => r.onclick = (e) => {
+  const L = e.target.closest('[data-bars]'); if (!L) return;
+  S.bars = +L.dataset.bars; r.querySelectorAll('[data-bars]').forEach((x) => x.classList.toggle('on', x === L));
   save(); drawRecChip(); showHint();
 });
 let taps = [];
@@ -347,11 +401,16 @@ $('menu').onclick = () => {
   <button class="big" data-save="stems" ${has ? '' : 'disabled'}>🎚️<span>Stems<small>a zip: chords, strings, bass and drums as their own WAVs, plus the mix, lined up from bar 1</small></span></button>
   <button class="big" data-boba="1" ${has ? '' : 'disabled'}>🧋<span>Send to Boba Beats<small>opens Boba with your chords, strings, bass and beat as sampler tracks</small></span></button>
   <p id="s-status" class="note" style="min-height:1.3em"></p>
+  <h4>Advanced</h4>
+  <button class="big" data-do="edit">✎<span>Change chords<small>pick any chord for any mug (your take follows)</small></span></button>
+  ${Object.keys(mine()).length ? `<button class="big" data-do="unedit">↺<span>Back to the key's chords<small>undo every change in ${S.mode}</small></span></button>` : ''}
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
   ${offer() ? '<h4>On your phone</h4><button class="big" data-install="1">📲<span>Put it on your home screen<small>opens like an app, works with no signal</small></span></button>' : ''}`, (r) => r.onclick = async (e) => {
     const st = r.querySelector('#s-status');
     const I = e.target.closest('[data-install]');
     if (I) { const how = await install(); if (how) I.querySelector('small').textContent = how; else closeSheet(); return; }
+    if (e.target.closest('[data-do="edit"]')) { closeSheet(); editing = true; showHint(); toast('tap a mug to change its chord'); return; }
+    if (e.target.closest('[data-do="unedit"]')) { S.custom[S.mode] = {}; save(); drawChords(); if (take) { take = retune(take, S.key, S.mode, {}); keep('cozy.take', take); warmLoop(); } closeSheet(); toast(`back to the chords of ${KEY_NAMES[S.key]} ${S.mode}`); return; }
     const L = e.target.closest('[data-do="listen"]');
     if (L && take) {
       await start(); stopListening();
