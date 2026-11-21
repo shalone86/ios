@@ -75,9 +75,15 @@ const free = await page.evaluate(() => ({ take: window.cozy.take, playing: windo
 check(counted.join() === '1,2,3,4,0' && free.take && free.take.beat === 'none' && free.take.ev.some((e) => e.k === 'c' && e.ch.label === 'C') && !free.playing,
   `with no beat, the count-in goes 1, 2, 3, 4 and the take is kept (${counted.join(' ')}; ${free.take && free.take.bars} bar)`);
 
-// ▶ plays the take back (mugs lighting up), ■ stops it
+// ▶ plays the take back as a seamless loop, made ahead of time so it starts at once
+await page.waitForFunction(() => window.cozy.loopLength() > 0, null, { timeout: 10000 });
+const loopLen = await page.evaluate(() => ({ n: window.cozy.loopLength(), want: Math.round(window.cozy.take.dur * window.cozy.eng.ctx.sampleRate) }));
 await page.evaluate(() => window.cozy.select(5));
+const t0 = Date.now();
 await page.click('#play');
+await page.waitForFunction(() => /your take/.test(document.getElementById('hint').textContent));
+const startMs = Date.now() - t0;
+check(loopLen.n === loopLen.want && startMs < 400, `the take loops seamlessly (a loop of exactly ${loopLen.n} samples, its ring-out folded onto its start) and ▶ starts at once (${startMs} ms)`);
 await page.waitForTimeout(700);
 const back = await page.evaluate(() => ({ hint: document.getElementById('hint').textContent, btn: document.getElementById('play').textContent, lit: document.querySelector('.chord.cur b').textContent }));
 await page.click('#play');

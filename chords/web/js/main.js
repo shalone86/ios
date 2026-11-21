@@ -27,7 +27,7 @@ const FACE = `<svg viewBox="0 0 64 24"><g fill="none" stroke="rgba(40,10,20,.72)
   <ellipse cx="6" cy="14" rx="5" ry="3" fill="rgba(255,110,140,.4)"/><ellipse cx="58" cy="14" rx="5" ry="3" fill="rgba(255,110,140,.4)"/></svg>`;
 // a cocoa mug: steam, two marshmallows, the cup with its face and its chord
 const STEAM = '<svg class="steam" viewBox="0 0 40 24"><path d="M10 22 q-5 -6 0 -11 t0 -10"/><path d="M28 22 q-5 -6 0 -11 t0 -10"/></svg>';
-const mug = (label, numeral) => `${STEAM}<span class="cup">${FACE}<b>${label}</b><small>${numeral}</small></span><i class="m m1"></i><i class="m m2"></i>`;
+const mug = (label, numeral) => `${STEAM}<span class="cup">${FACE}<b>${label}</b><small>${numeral}</small></span><span class="float"><i class="m m1"></i><i class="m m2"></i></span>`;
 let chords = chordsOf(S.key, S.mode), cur = -1;
 function drawChords() {
   chords = chordsOf(S.key, S.mode);
@@ -72,6 +72,7 @@ async function start() {
     if (eng.rec && bar >= 1 && bar <= eng.rec.bars) { const h = $('hint'); h.classList.remove('count'); h.textContent = `${eng.rec.dub ? 'dubbing' : 'recording'} · bar ${bar} of ${eng.rec.bars}`; }
   };
   eng.onRecEnd = () => { if (eng.rec) finishTake(); };
+  warmLoop();
 }
 $('chords').addEventListener('pointerdown', async (e) => {
   const b = e.target.closest('.chord'); if (!b) return;
@@ -164,22 +165,54 @@ $('play').onclick = async () => {
   eng.play(); setPlaying(true);
 };
 // your take, played back as it will be saved, the mugs lighting up as it goes
+// The take as a seamless loop: rendered once (and again only when the take
+// changes), its ring-out folded back onto its start, exactly its own length.
+// Made ahead of time, so ▶ and dubbing start at once.
+let loopCache = { key: '', buf: null, job: null };
+function loopOf(t) {
+  const key = JSON.stringify(t) + '@' + eng.ctx.sampleRate;
+  if (loopCache.key === key) return loopCache.job;
+  const job = renderTake(t, { sr: eng.ctx.sampleRate, tail: 3 }).then(({ buffer }) => {
+    const sr = buffer.sampleRate, n = Math.round(t.dur * sr), out = eng.ctx.createBuffer(2, n, sr);
+    for (let c = 0; c < 2; c++) {
+      const src = buffer.getChannelData(c), d = out.getChannelData(c);
+      d.set(src.subarray(0, n));
+      for (let i = n; i < src.length; i++) d[i % n] += src[i];
+    }
+    if (loopCache.key === key) loopCache.buf = out;
+    return out;
+  });
+  loopCache = { key, buf: null, job };
+  return job;
+}
+const warmLoop = () => { if (eng && take) loopOf(take).catch(() => {}); };
+// the chord on at a moment of the take (for lighting up the mugs)
+const chordAt = (t, pos) => { let i = -1; for (const e of t.ev) { if (e.t > pos + 0.02) break; if (e.k === 'c') i = e.i; } return i; };
+
 let playingTake = null;
 async function playTake() {
-  setPlaying(true); $('hint').textContent = 'getting your take ready…';
-  const { buffer } = await renderTake(take, { sr: eng.ctx.sampleRate });
+  setPlaying(true);
+  if (!loopCache.buf) $('hint').textContent = 'getting your take ready…';
+  const buf = await loopOf(take);
   eng.wake();
-  const src = eng.ctx.createBufferSource(); src.buffer = buffer; src.connect(eng.ctx.destination);
-  const at = eng.ctx.currentTime + 0.05; src.start(at);
-  const timers = take.ev.filter((e) => e.k === 'c').map((e) => setTimeout(() => { if (take.key === S.key && take.mode === S.mode && e.i >= 0) select(e.i); }, (e.t + 0.05) * 1000));
-  playingTake = { src, timers };
-  $('hint').textContent = '▶ your take · tap ■ to stop';
-  src.onended = () => { if (playingTake && playingTake.src === src) stopTake(); };
+  const src = eng.ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(eng.ctx.destination);
+  const at = eng.ctx.currentTime + 0.03; src.start(at);
+  const evs = [...take.ev].sort((a, b) => a.t - b.t), same = take.key === S.key && take.mode === S.mode;
+  let lit = -2;
+  const follow = () => {
+    if (!playingTake || playingTake.src !== src) return;
+    const pos = ((eng.ctx.currentTime - at) % take.dur + take.dur) % take.dur, i = chordAt({ ev: evs }, pos);
+    if (same && i !== lit && i >= 0) { lit = i; select(i); }
+    requestAnimationFrame(follow);
+  };
+  playingTake = { src };
+  requestAnimationFrame(follow);
+  $('hint').textContent = '▶ your take, looping · tap ■ to stop';
 }
 function stopTake() {
   if (!playingTake) return;
   const p = playingTake; playingTake = null;
-  p.timers.forEach(clearTimeout); try { p.src.stop(); } catch (e) { /* ended */ }
+  try { p.src.stop(); } catch (e) { /* ended */ }
   setPlaying(false); showHint();
 }
 $('rec').onclick = async () => {
@@ -189,10 +222,10 @@ $('rec').onclick = async () => {
   const dub = S.dub && take ? take : null;
   if (dub) {
     // dubbing: the take plays (its tempo, its beat) while you add to it
-    $('hint').textContent = 'getting your take ready…';
-    const { buffer } = await renderTake(take, { sr: eng.ctx.sampleRate, tail: 2 });
+    if (!loopCache.buf) $('hint').textContent = 'getting your take ready…';
+    const buffer = await loopOf(take);
     const at = eng.record({ dub });
-    const src = eng.ctx.createBufferSource(); src.buffer = buffer; src.connect(eng.ctx.destination); src.start(at);
+    const src = eng.ctx.createBufferSource(); src.buffer = buffer; src.loop = true; src.connect(eng.ctx.destination); src.start(at);
     dubbing = src;
     toast('a bar to get ready, then play on top');
   } else {
@@ -213,6 +246,7 @@ function finishTake() {
   if (t && wasDub) { take = t; keep('cozy.take', take); toast('added on top · ▶ to hear it'); }
   else if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take kept: ${t.bars} bars · ▶ to hear it`); }
   else toast('nothing played, so nothing was kept');
+  warmLoop();
   showHint();
 }
 
@@ -361,7 +395,11 @@ $('menu').onclick = () => {
   let flakes = [];
   const size = () => {
     c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
-    flakes = Array.from({ length: Math.round(Math.min(70, innerWidth / 8)) }, () => ({ x: Math.random(), y: Math.random(), r: 0.8 + Math.random() * 2.2, v: 0.00012 + Math.random() * 0.00018, p: Math.random() * 6.28, w: 0.004 + Math.random() * 0.01 }));
+    // bigger flakes are nearer: they fall a little faster and sway wider
+    flakes = Array.from({ length: Math.round(Math.min(80, innerWidth / 7)) }, () => {
+      const near = Math.random();
+      return { x: Math.random(), y: Math.random(), r: 0.7 + near * 2.4, v: 0.000018 + near * 0.00003, p: Math.random() * 6.28, w: 0.012 + near * 0.03, sway: 5000 + Math.random() * 5000, a: 0.3 + near * 0.35 };
+    });
   };
   size(); addEventListener('resize', size);
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -374,11 +412,17 @@ $('menu').onclick = () => {
     const glow = g.createRadialGradient(c.width / 2, c.height * 1.08, 0, c.width / 2, c.height * 1.08, c.height * 0.75);
     glow.addColorStop(0, `rgba(255, 150, 80, ${f})`); glow.addColorStop(1, 'rgba(255, 150, 80, 0)');
     g.fillStyle = glow; g.fillRect(0, 0, c.width, c.height);
-    // snow: small, slow, drifting, fading as it nears the warm floor
+    // snow: a gentle winter snowfall, slow, swaying, drifting with a light
+    // breeze that changes now and then, fading as it nears the warm floor
+    const breeze = 0.000004 * Math.sin(t / 23000) + 0.000002 * Math.sin(t / 9000 + 2);
     for (const s of flakes) {
-      if (!still) { s.y += s.v * dt; if (s.y > 1.02) { s.y = -0.02; s.x = Math.random(); } }
-      const x = (s.x + Math.sin(t / 2600 + s.p) * s.w) * c.width, y = s.y * c.height, fade = Math.max(0, Math.min(1, (1 - s.y) * 2.2));
-      g.fillStyle = `rgba(255, 250, 245, ${0.5 * fade})`;
+      if (!still) {
+        s.y += s.v * dt; s.x += breeze * dt * (0.5 + s.r / 3);
+        if (s.y > 1.02) { s.y = -0.02; s.x = Math.random(); }
+        if (s.x > 1.05) s.x -= 1.1; else if (s.x < -0.05) s.x += 1.1;
+      }
+      const x = (s.x + Math.sin(t / s.sway + s.p) * s.w) * c.width, y = s.y * c.height, fade = Math.max(0, Math.min(1, (1 - s.y) * 2.2));
+      g.fillStyle = `rgba(255, 250, 245, ${s.a * fade})`;
       g.beginPath(); g.arc(x, y, s.r * devicePixelRatio, 0, 6.29); g.fill();
     }
     if (!document.hidden) requestAnimationFrame(draw);
@@ -409,4 +453,4 @@ if (offer()) {
 }
 $('go').onclick = async () => { $('start').classList.add('gone'); await start(); fit(); };
 drawChords(); showHint();
-window.cozy = { get eng() { return eng; }, S, get take() { return take; }, set take(t) { take = t; keep('cozy.take', t); }, select };
+window.cozy = { get eng() { return eng; }, S, loopLength: () => (loopCache.buf ? loopCache.buf.length : 0), get take() { return take; }, set take(t) { take = t; keep('cozy.take', t); }, select };
