@@ -2,7 +2,7 @@
 // beat with a bass that follows the chords, a take you can record, and
 // saves for sharing, for Logic, and for Boba Beats.
 
-import { Cozy, BEATS, STYLES, beatOf, retune, restyle } from './engine.js';
+import { Cozy, BEATS, GROOVES, STYLES, beatOf, retune, restyle, addGroove } from './engine.js';
 import { VOICES, playString, playChord } from './sound.js';
 import { KEY_NAMES, SHAPE_ORDER, SHAPE_NAMES, chordsOf, chordNotes, stringNotes } from './theory.js';
 import { offer, install, goOffline } from './install.js';
@@ -360,7 +360,16 @@ function editChord(i) {
   });
 }
 function openBeats() {
-  openSheet(`<h3>Beat</h3><p class="note">Soft drums, and a bass that follows your chords. Picking one starts it; ■ stops it.</p>${BEATS.map((b) => `<button class="big ${b.id === S.beat ? 'on' : ''}" data-b="${b.id}"><span>${b.name}<small>${b.hint}</small></span></button>`).join('')}`, (r) => r.onclick = async (e) => {
+  const grooves = [...GROOVES.values()];
+  openSheet(`<h3>Beat</h3><p class="note">Soft drums, and a bass that follows your chords. Picking one starts it; ■ stops it.</p>${BEATS.map((b) => `<button class="big ${b.id === S.beat ? 'on' : ''}" data-b="${b.id}"><span>${b.name}<small>${b.hint}</small></span></button>`).join('')}
+  <h4>Grooves from Pop Pads</h4>
+  ${grooves.length ? grooves.map((b) => `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:6px"><button class="big ${b.id === S.beat ? 'on' : ''}" data-b="${b.id}" style="flex:1"><span>${b.name}<small>${b.hint}</small></span></button><button class="chip icon" data-del="${b.id}" aria-label="Remove ${b.name}" style="margin-bottom:8px">✕</button></div>`).join('') : '<p class="note">In Pop Pads, make a beat, then ☰ → Send to Cozy Chords: it shows up here, with that kit\'s bass playing under your chords.</p>'}`, (r) => r.onclick = async (e) => {
+    const x = e.target.closest('[data-del]');
+    if (x) {
+      const id = x.dataset.del; GROOVES.delete(id); forgetGroove(id);
+      if (S.beat === id) { S.beat = 'none'; save(); if (eng) { eng.beat = 'none'; if (eng.playing && !eng.rec) { eng.stop(); setPlaying(false); } } }
+      drawChords(); closeSheet(); openBeats(); toast('groove removed'); return;
+    }
     const b = e.target.closest('[data-b]'); if (!b) return;
     S.beat = b.dataset.b; save(); await start(); eng.beat = S.beat; drawChords();
     r.querySelectorAll('[data-b]').forEach((x) => x.classList.toggle('on', x === b));
@@ -369,6 +378,41 @@ function openBeats() {
   });
 }
 $('beat').onclick = openBeats;
+// ---------- grooves from Pop Pads: kept on this device (IndexedDB: they hold sounds) ----------
+const grooveDb = () => new Promise((resolve, reject) => {
+  const req = indexedDB.open('cozy', 1);
+  req.onupgradeneeded = () => req.result.createObjectStore('grooves');
+  req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+});
+async function keepGroove(id, g) { const db = await grooveDb(); await new Promise((res, rej) => { const tx = db.transaction('grooves', 'readwrite'); tx.objectStore('grooves').put(g, id); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+async function forgetGroove(id) { try { const db = await grooveDb(); db.transaction('grooves', 'readwrite').objectStore('grooves').delete(id); } catch (e) { /* fine */ } }
+async function loadGrooves() {
+  try {
+    const db = await grooveDb();
+    await new Promise((res) => { const req = db.transaction('grooves').objectStore('grooves').openCursor(); req.onsuccess = () => { const c = req.result; if (!c) { res(); return; } try { addGroove(c.key, c.value); } catch (e) { /* a broken one is skipped */ } c.continue(); }; req.onerror = () => res(); });
+  } catch (e) { /* no storage: no grooves */ }
+}
+// a groove handed over by Pop Pads (it opened this page with ?from=pop)
+async function grooveFromPop() {
+  if (new URLSearchParams(location.search).get('from') !== 'pop') return null;
+  try { history.replaceState(null, '', location.pathname); } catch (e) { /* fine */ }
+  const g = await new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('bubble-handoff', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('songs');
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => { const st = req.result.transaction('songs', 'readwrite').objectStore('songs'), get = st.get('groove'); get.onsuccess = () => { st.delete('groove'); resolve(get.result && get.result.file); }; get.onerror = () => resolve(null); };
+    } catch (e) { resolve(null); }
+  });
+  if (!g) return null;
+  // a different name for each one of the same kit
+  const same = [...GROOVES.values()].filter((b) => b.name.startsWith(g.name)).length;
+  if (same) g.name += ` ${same + 1}`;
+  const id = 'pop:' + Math.random().toString(36).slice(2, 10);
+  addGroove(id, g); await keepGroove(id, g).catch(() => {});
+  S.beat = id; S.bpm = g.bpm || S.bpm; save();
+  return g;
+}
 // Recording: how long a take is, and whether ● starts a new one or dubs on top
 function drawRecChip() { $('reclen').textContent = `${S.bars} bars`; }
 $('reclen').onclick = () => openSheet(`<h3>Take length</h3>
@@ -508,4 +552,10 @@ if (offer()) {
 }
 $('go').onclick = async () => { $('start').classList.add('gone'); await start(); fit(); };
 drawChords(); showHint();
+// grooves first (a take or the settings may use one), then any just sent from Pop Pads
+loadGrooves().then(grooveFromPop).then((g) => {
+  if (!GROOVES.has(S.beat) && S.beat.startsWith('pop:')) { S.beat = 'none'; save(); }
+  drawChords();
+  if (g) toast(`${g.name} is your beat now: pick it in Beat to start it`);
+});
 window.cozy = { get eng() { return eng; }, S, get take() { return take; }, set take(t) { take = t; keep('cozy.take', t); }, select, get cur() { return cur; } };

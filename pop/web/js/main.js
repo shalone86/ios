@@ -5,7 +5,7 @@
 import { INTERVALS, PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, laneOf, motionOf, hasMotion, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
 import { KITS, KIT_ORDER } from './kits.js';
 import { offer, install, goOffline } from './install.js';
-import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff } from './export.js';
+import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff, cozyGroove } from './export.js';
 
 // the other bubble apps (in the Android app these open in the browser)
 const APPS = [['Boba Beats', 'https://shalonely.com/boba/', '🧋', 'make whole songs out of bubbles'], ['Deep Drift', 'https://shalonely.com/drift/', '🪼', 'a sleepy sea that sings you to sleep'], ['Cozy Chords', 'https://shalonely.com/chords/', '🎐', 'tap a chord, strum the strings']];
@@ -520,6 +520,7 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <button class="big" data-save="stems-song">🎚️<span>Song stems<small>a zip for Logic: each sound as its own WAV, plus the mix, lined up from bar 1 and ending with the ring-out</small></span></button>
   <button class="big" data-save="stems">🎚️<span>Loop stems<small>the same, with every WAV looping cleanly</small></span></button>
   <button class="big" data-boba="1">🧋<span>Send to Boba Beats<small>${window.PopNative ? 'saves a Boba song: open it there from its song menu → Import song file' : 'opens Boba with these drums and this beat, ready to add bass and chords'}</small></span></button>
+  ${window.PopNative ? '' : '<button class="big" data-cozy="1">☕<span>Send to Cozy Chords<small>use this groove there: the drums as they sound here, and this kit\'s bass playing the bass line under your chords</small></span></button>'}
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
   <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">▶ How it works</button></div>
@@ -551,6 +552,19 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
         if (eng && eng.playing) $('play').click();
         location.href = new URL('../boba/?from=pop', location.href).href.replace(/\/pop\/\.\.\//, '/');
       }
+    } catch (err) { st.textContent = `Could not send it: ${err.message}`; }
+    return;
+  }
+  if (e.target.closest('[data-cozy]')) {
+    const st = s.querySelector('#s-status');
+    const what = saving(), bars = what.chain.length > 1 ? what.chain : [what.cur];
+    if (!bars.some((b) => song.patterns[b].some(Boolean))) { st.textContent = 'There is nothing in the pattern yet.'; return; }
+    try {
+      st.textContent = 'Packing the groove…';
+      await handOff(await cozyGroove(what), 'groove');
+      st.textContent = '✓ Opening Cozy Chords…';
+      if (eng && eng.playing) $('play').click();
+      location.href = new URL('../chords/?from=pop', location.href).href.replace(/\/pop\/\.\.\//, '/');
     } catch (err) { st.textContent = `Could not send it: ${err.message}`; }
     return;
   }

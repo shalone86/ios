@@ -273,16 +273,64 @@ export async function bobaSong(song) {
 
 // The website: Pop Pads and Boba Beats share this site's storage, so the song
 // waits in IndexedDB and Boba picks it up when it opens with ?from=pop.
-export function handOff(file) {
+export function handOff(file, key = 'pop') {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('bubble-handoff', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('songs');
     req.onerror = () => reject(req.error);
     req.onsuccess = () => {
       const tx = req.result.transaction('songs', 'readwrite');
-      tx.objectStore('songs').put({ file, at: Date.now() }, 'pop');
+      tx.objectStore('songs').put({ file, at: Date.now() }, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     };
   });
+}
+
+// ---------- handing the groove to Cozy Chords ----------
+// The drums of the pattern (or chain), each sounding exactly as it does here
+// (every version a step gives it, as its own one-shot), with where each hit
+// falls; and this kit's bass pad, made at every note Cozy may ask of it, so
+// the bass keeps the pattern's rhythm (and its steps' pitches, as intervals)
+// while following Cozy's chords. The chord and lead pads stay behind: Cozy
+// brings its own harmony.
+const BASS_PAD = 1;
+export async function cozyGroove(song) {
+  const { padAt, tweakOf } = await import('./engine.js');
+  const { TONAL } = await import('./kits.js');
+  const bars = song.chain.length > 1 ? song.chain.slice() : [song.cur];
+  const on = (pi, i, st) => (song.patterns[pi][i] >> st) & 1;
+  const look = (tw) => JSON.stringify(['pitch', 'len', 'filt', 'vol', 'crush'].map((k) => +(tw[k] || 0).toFixed(3)));
+  const drumPads = [...Array(16).keys()].filter((i) => !TONAL.includes(i));
+  const versions = [], idOf = new Map(), hits = [], bassHits = [];
+  const own = tweakOf(song, BASS_PAD);
+  bars.forEach((pi, b) => {
+    for (let st = 0; st < STEPS; st++) {
+      for (const i of drumPads) if (on(pi, i, st)) {
+        const tw = padAt(song, pi, i, st), key = `${i}|${look(tw)}`;
+        if (!idOf.has(key)) { idOf.set(key, versions.length); versions.push({ i, tw }); }
+        hits.push({ b, s: st, d: idOf.get(key), nudge: +(tw.nudge || 0).toFixed(3), rep: Math.max(1, Math.min(4, Math.round(tw.rep || 1))) });
+      }
+      if (on(pi, BASS_PAD, st)) {
+        const tw = padAt(song, pi, BASS_PAD, st);
+        bassHits.push({ b, s: st, st: Math.round((tw.pitch || 0) - (own.pitch || 0)), len: +(tw.len || 1).toFixed(3), vel: +Math.min(2, (tw.vol || 0.85) / (own.vol || 0.85)).toFixed(3), nudge: +(tw.nudge || 0).toFixed(3), rep: Math.max(1, Math.min(4, Math.round(tw.rep || 1))) });
+      }
+    }
+  });
+  const sounds = [];
+  for (const v of versions) { const d = await padSample(song, v.i, { ...v.tw, nudge: 0, rep: 1 }, 44100); d.gm = KITS[song.kit].pads[v.i].gm; sounds.push(d); }
+  // the bass at each note Cozy may ask: every chord root from E2 to D#3, plus each interval the pattern uses
+  const steps = [...new Set([0, ...bassHits.map((h) => h.st)])], notes = new Set();
+  for (const st of steps) for (let r = 40; r <= 51; r++) notes.add(r + st);
+  const bassNotes = [...notes].filter((m) => m >= 24 && m <= 72).sort((a, b) => a - b), bassSounds = [];
+  for (const m of bassNotes) bassSounds.push(await padSample(song, BASS_PAD, { ...own, pitch: m - 36, nudge: 0, rep: 1 }, 44100));
+  // everything levelled together, so drums and bass keep their balance
+  const packed = packForBoba([...sounds, ...bassSounds]);
+  return {
+    v: 1, from: 'pop', name: `${KITS[song.kit].name} groove`, kit: song.kit, bars: bars.length, steps: STEPS,
+    swing: song.swing || 0, bpm: song.bpm,
+    drums: packed.slice(0, sounds.length).map((x, k) => ({ ...x, gm: sounds[k].gm })),
+    hits,
+    bass: { pad: KITS[song.kit].pads[BASS_PAD].name, notes: Object.fromEntries(bassNotes.map((m, k) => [m, packed[sounds.length + k]])), hits: bassHits },
+  };
 }

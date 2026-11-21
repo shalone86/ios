@@ -58,23 +58,86 @@ export const BEATS = [
   { id: 'ballad', name: 'Ballad', hint: 'slow and wide', steps: 16, swing: 0,
     kick: [0], snare: [8], hat: [0, 4, 8, 12], shaker: [], bass: { 0: 'r', 12: '5' } },
 ];
-export const beatOf = (id) => BEATS.find((b) => b.id === id) || BEATS[0];
+// ---------- grooves brought over from Pop Pads ----------
+// A groove is a beat like the others: its drums are Pop Pads' own sounds (as
+// one-shots), its hits where they fell in the pattern, and its bass line is
+// the kit's bass pad, at every note it may need, following the chords.
+export const GROOVES = new Map();       // 'pop:<id>' -> beat
+const GROOVE_DRUMS = 0.55, GROOVE_BASS = 0.6;
+function toBuffer(x) {
+  const bin = atob(x.pcm), n = bin.length >> 1, d = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v >= 32768) v -= 65536; d[i] = v / 32768; }
+  const b = new AudioBuffer({ length: Math.max(1, n), sampleRate: x.sr, numberOfChannels: 1 }); b.copyToChannel(d, 0);
+  return b;
+}
+export function addGroove(id, g) {
+  const cyc = g.bars * 16, at = (list) => { const m = Array.from({ length: cyc }, () => []); for (const h of list) m[h.b * 16 + h.s].push(h); return m; };
+  const notes = Object.keys(g.bass.notes).map(Number).sort((a, b) => a - b);
+  const beat = {
+    id, name: g.name, hint: `from Pop Pads · ${g.bars} bar${g.bars > 1 ? 's' : ''}, its ${g.bass.pad} on bass`, steps: 16, swing: g.swing || 0,
+    groove: { cyc, drums: g.drums.map(toBuffer), gm: g.drums.map((d) => d.gm), names: g.drums.map((d) => d.name), hits: at(g.hits), bassHits: at(g.bass.hits), noBass: !g.bass.hits.length,
+      bassBufs: new Map(notes.map((m) => [m, toBuffer(g.bass.notes[m])])), notes },
+  };
+  GROOVES.set(id, beat);
+  return beat;
+}
+export const beatOf = (id) => BEATS.find((b) => b.id === id) || GROOVES.get(id) || BEATS[0];
 const stepDur = (bpm) => 60 / bpm / 4;
 
-// one step of a beat: drums, and the bass on the chord that is on
-function beatStep(ctx, mix, beat, s, t, bpm, chord) {
-  const v = (list) => list && list.includes(s);
-  if (v(beat.kick)) DRUMS.kick(ctx, mix.drums, t);
-  if (v(beat.snare)) DRUMS.snare(ctx, mix.drums, t);
-  if (v(beat.rim)) DRUMS.rim(ctx, mix.drums, t);
-  if (v(beat.hat)) DRUMS.hat(ctx, mix.drums, t, s % 4 === 0 ? 1 : 0.7);
-  if (v(beat.shaker)) DRUMS.shaker(ctx, mix.drums, t, s % 2 ? 0.6 : 1);
+// What one step n of a beat plays, given the chord that is on:
+//   drums: [{ dt, kind, vel, d? }]   bass: [{ dt, m, len, vel, g? }]   (dt: seconds after the step)
+// The live beat, the looping take and the saved files all use this, so they agree.
+function stepSounds(beat, n, bpm, chord) {
+  const sd = stepDur(bpm), out = { drums: [], bass: [] };
+  if (beat.groove) {
+    const G = beat.groove, gs = ((n % G.cyc) + G.cyc) % G.cyc;
+    for (const h of G.hits[gs]) for (let j = 0; j < h.rep; j++) out.drums.push({ dt: (h.nudge || 0) * sd + (j * sd) / h.rep, kind: 'g', d: h.d, vel: Math.pow(0.85, j) });
+    if (chord) {
+      const list = G.noBass ? ((gs % 8 === 0) ? [{ st: 0, len: 1, vel: 1, rep: 1, nudge: 0 }] : []) : G.bassHits[gs];
+      for (const h of list) {
+        // until the next bass hit (or the next bar, if it is the only one)
+        let gap = 1; while (gap < G.cyc && !(G.noBass ? (gs + gap) % 8 === 0 : G.bassHits[(gs + gap) % G.cyc].length)) gap++;
+        for (let j = 0; j < (h.rep || 1); j++) out.bass.push({ dt: (h.nudge || 0) * sd + (j * sd) / (h.rep || 1), m: bassNote(chord) + h.st, len: Math.max(0.1, (gap * sd) / (h.rep || 1) * 0.95), vel: (h.vel || 1) * Math.pow(0.85, j), g: true });
+      }
+    }
+    return out;
+  }
+  const s = n % beat.steps, v = (list) => list && list.includes(s);
+  for (const kind of ['kick', 'snare', 'rim', 'hat', 'shaker']) if (v(beat[kind])) out.drums.push({ dt: 0, kind, vel: kind === 'hat' ? (s % 4 === 0 ? 1 : 0.7) : kind === 'shaker' ? (s % 2 ? 0.6 : 1) : 1 });
   const b = beat.bass[s];
   if (b && chord) {
     // the note lasts until the next bass step
     const keys = Object.keys(beat.bass).map(Number), next = keys.find((k) => k > s) ?? beat.steps + keys[0];
-    playBass(ctx, mix.bass, t, bassNote(chord, b), Math.max(0.12, (next - s) * stepDur(bpm) * 0.9));
+    out.bass.push({ dt: 0, m: bassNote(chord, b), len: Math.max(0.12, (next - s) * sd * 0.9) });
   }
+  return out;
+}
+// play a sample (a groove's drum or bass note), cut after len seconds if given
+function playSample(ctx, out, buf, t, vel, len = 0) {
+  const src = ctx.createBufferSource(), g = ctx.createGain();
+  src.buffer = buf; g.gain.setValueAtTime(vel, t);
+  if (len) g.gain.setTargetAtTime(0, t + len, 0.02);
+  src.connect(g).connect(out); src.start(t); src.stop(t + Math.min(buf.duration, len ? len + 0.12 : buf.duration) + 0.01);
+}
+// a drum hit or a bass note from stepSounds, on its way to the speakers
+export function playDrum(ctx, out, x, t, beat) {
+  if (x.kind === 'g') { if (beat.groove) playSample(ctx, out, beat.groove.drums[x.d], t, GROOVE_DRUMS * x.vel); }
+  else DRUMS[x.kind](ctx, out, t, x.vel);
+}
+export function playBassNote(ctx, out, x, t, beat) {
+  if (x.g && beat.groove) {
+    const G = beat.groove, m = G.notes.reduce((a, b) => (Math.abs(b - x.m) < Math.abs(a - x.m) ? b : a), G.notes[0]);
+    const buf = G.bassBufs.get(m), src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = buf; src.playbackRate.value = Math.pow(2, (x.m - m) / 12);   // exact, unless a note was missing
+    g.gain.setValueAtTime(GROOVE_BASS * (x.vel || 1), t); g.gain.setTargetAtTime(0, t + x.len, 0.025);
+    src.connect(g).connect(out); src.start(t); src.stop(t + Math.min(buf.duration, x.len + 0.15));
+  } else playBass(ctx, out, t, x.m, x.len, x.vel || 1);
+}
+// one step of a beat, live
+function beatStep(ctx, mix, beat, n, t, bpm, chord) {
+  const S = stepSounds(beat, n, bpm, chord);
+  for (const x of S.drums) playDrum(ctx, mix.drums, x, t + x.dt, beat);
+  for (const x of S.bass) playBassNote(ctx, mix.bass, x, t + x.dt, beat);
 }
 // (a beat with no swing of its own, like "No beat", has none)
 const timeOfStep = (beat, bpm, n) => n * stepDur(bpm) + (n % 2 ? (beat.swing || 0) * stepDur(bpm) * 0.66 : 0);
@@ -224,7 +287,7 @@ export class Cozy {
         // from the end of a recording on, the take's own loop takes over (no double beat)
         const handing = this.rec && t >= this.rec.end - 0.001;
         if (dub || handing) { /* the take itself is playing, beat and all */ }
-        else if (beat.id !== 'none') beatStep(this.ctx, this.mix, beat, s, t, this.bpm, this.chord);
+        else if (beat.id !== 'none') beatStep(this.ctx, this.mix, beat, n, t, this.bpm, this.chord);
         else if (s % 4 === 0 && this.rec) DRUMS.click(this.ctx, this.mix.master, t, s === 0);   // no beat: a quiet click while recording
         if (this.onStep) { const bar = Math.floor(n / steps) + 1; later(() => this.onStep(s, steps, bar)); }
       }
@@ -265,8 +328,9 @@ export class Cozy {
         if (this.onLoopChord && c.i >= 0) { const at = base + c.t; setTimeout(() => { if (this.loop === L) this.onLoopChord(c.i); }, Math.max(0, (at - ctx.currentTime) * 1000)); }
       }
       for (const x of P.strings) if (inW(x)) playString(ctx, L.bus.voices, base + x.t, x.v, x.m, x.vel, x.len || 0);
-      for (const x of P.bass) if (inW(x)) playBass(ctx, L.bus.bass, base + x.t, x.m, x.len);
-      for (const x of P.drums) if (inW(x)) DRUMS[x.kind](ctx, L.bus.drums, base + x.t, x.vel);
+      const beat = beatOf(L.take.beat);
+      for (const x of P.bass) if (inW(x)) playBassNote(ctx, L.bus.bass, x, base + x.t, beat);
+      for (const x of P.drums) if (inW(x)) playDrum(ctx, L.bus.drums, x, base + x.t, beat);
     }
     L.upto = until;
   }
@@ -324,19 +388,14 @@ export function performance(take) {
     else if (e.k === 's') out.strings.push({ t: e.t, m: e.m, vel: e.vel || 1, v: e.v, ...(e.len ? { len: e.len } : {}) });
   }
   if (beat.id !== 'none') {
-    const steps = beat.steps, keys = Object.keys(beat.bass).map(Number);
     for (let n = 0; ; n++) {
       const t = timeOfStep(beat, take.bpm, n);
       if (t >= take.dur - 0.001) break;
-      const s = n % steps, has = (l) => l && l.includes(s);
-      for (const kind of ['kick', 'snare', 'rim', 'hat', 'shaker']) if (has(beat[kind])) out.drums.push({ t, kind, vel: kind === 'hat' ? (s % 4 === 0 ? 1 : 0.7) : kind === 'shaker' ? (s % 2 ? 0.6 : 1) : 1 });
       // the chord on at this step: the last one pressed by then (a hair early still counts)
       let ch = null; for (const e of ev) { if (e.t > t + 0.04) break; if (e.k === 'c') ch = e.ch; }
-      const b = beat.bass[s];
-      if (b && ch) {
-        const next = keys.find((k) => k > s) ?? steps + keys[0];
-        out.bass.push({ t, m: bassNote(ch, b), len: Math.max(0.12, (next - s) * stepDur(take.bpm) * 0.9) });
-      }
+      const S = stepSounds(beat, n, take.bpm, ch);
+      for (const x of S.drums) if (t + x.dt < take.dur) out.drums.push({ ...x, t: Math.max(0, t + x.dt) });
+      for (const x of S.bass) if (t + x.dt < take.dur) out.bass.push({ ...x, t: Math.max(0, t + x.dt) });
     }
   }
   return out;
@@ -353,8 +412,9 @@ export async function renderTake(take, { sr = 44100, tail = 3, only = null } = {
   const on = (name) => !only || only === name;
   if (on('chords')) for (const c of P.chords) if (!c.q) jobs.push([c.t, () => playChord(ctx, mix.voices, c.t, c.v, c.notes).release(Math.min(c.end, take.dur + 0.4))]);
   if (on('strings')) for (const s of P.strings) jobs.push([s.t, () => playString(ctx, mix.voices, s.t, s.v, s.m, s.vel, s.len || 0)]);
-  if (on('bass')) for (const b of P.bass) jobs.push([b.t, () => playBass(ctx, mix.bass, b.t, b.m, b.len)]);
-  if (on('drums')) for (const d of P.drums) jobs.push([d.t, () => DRUMS[d.kind](ctx, mix.drums, d.t, d.vel)]);
+  const beat = beatOf(take.beat);
+  if (on('bass')) for (const b of P.bass) jobs.push([b.t, () => playBassNote(ctx, mix.bass, b, b.t, beat)]);
+  if (on('drums')) for (const d of P.drums) jobs.push([d.t, () => playDrum(ctx, mix.drums, d, d.t, beat)]);
   jobs.sort((x, y) => x[0] - y[0]);
   let k = 0;
   const add = (until) => { while (k < jobs.length && jobs[k][0] < until) jobs[k++][1](); };

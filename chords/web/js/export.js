@@ -1,8 +1,8 @@
 // Saving a take from Cozy Chords: the song as a WAV (with its ring-out, or
 // as a clean loop), MIDI for Logic, stems for a DAW, and a Boba Beats song.
 
-import { renderTake, performance, beatOf } from './engine.js';
-import { playChord, playString, playBass, DRUMS, makeMix } from './sound.js';
+import { renderTake, performance, beatOf, playDrum, playBassNote } from './engine.js';
+import { playChord, playString, makeMix } from './sound.js';
 import { KEY_NAMES } from './theory.js';
 import { finalize } from './codec/master.js';
 import { toInt } from './codec/pcm.js';
@@ -59,7 +59,7 @@ export function takeMidi(take) {
     { name: 'Cozy Chords', ch: 0, ev: P.chords.filter((c) => !c.q).flatMap((c) => c.notes.flatMap((m) => [[tick(c.t), 0x90, m, 90], [Math.max(tick(c.t) + 2, tick(c.end)), 0x80, m, 0]])) },
     { name: 'Strings', ch: 1, ev: P.strings.flatMap((s) => [[tick(s.t), 0x91, s.m, Math.round(70 + 40 * Math.min(1, s.vel) - 10)], [tick(s.t) + (s.len ? Math.max(2, tick(s.len)) : PPQ / 2), 0x81, s.m, 0]]) },
     { name: 'Bass', ch: 2, ev: P.bass.flatMap((b) => [[tick(b.t), 0x92, b.m, 95], [Math.max(tick(b.t) + 2, tick(b.t + b.len)), 0x82, b.m, 0]]) },
-    { name: `Drums (${beatOf(take.beat).name})`, ch: 9, ev: P.drums.flatMap((d) => [[tick(d.t), 0x99, GM[d.kind], Math.round(100 * d.vel)], [tick(d.t) + PPQ / 8, 0x89, GM[d.kind], 0]]) },
+    { name: `Drums (${beatOf(take.beat).name})`, ch: 9, ev: P.drums.flatMap((d) => { const n = d.kind === 'g' ? beatOf(take.beat).groove.gm[d.d] : GM[d.kind]; return [[tick(d.t), 0x99, n, Math.round(100 * Math.min(1, d.vel))], [tick(d.t) + PPQ / 8, 0x89, n, 0]]; }) },
   ].filter((l) => l.ev.length);
   const chunk = (bytes) => [0x4d, 0x54, 0x72, 0x6b, (bytes.length >>> 24) & 255, (bytes.length >> 16) & 255, (bytes.length >> 8) & 255, bytes.length & 255, ...bytes];
   const track = (lane, first) => {
@@ -149,11 +149,15 @@ export async function bobaSong(take) {
     lanes.push({ role, name, sounds, hits: list.filter((x) => ms.includes(x.m)).map((x) => ({ t: x.t, d: x.len || 0.25, key: x.m, v: x.vel })) });
   };
   await notes(P.strings, 'melody', 'Cozy Strings', (ctx, mix, m) => playString(ctx, mix.voices, 0, P.strings.find((s) => s.m === m).v, m));
-  await notes(P.bass, 'bass', 'Cozy Bass', (ctx, mix, m) => playBass(ctx, mix.bass, 0, m, 0.5));
+  const beat = beatOf(take.beat);
+  await notes(P.bass, 'bass', beat.groove ? `Cozy Bass (${beat.name})` : 'Cozy Bass', (ctx, mix, m) => playBassNote(ctx, mix.bass, { m, len: 0.5, vel: 1, g: !!beat.groove }, 0, beat));
   if (P.drums.length) {
-    const kinds = [...new Set(P.drums.map((d) => d.kind))], sounds = [];
-    for (const k of kinds) sounds.push({ key: k, name: k, data: await oneShot((ctx, mix) => DRUMS[k](ctx, mix.drums, 0), 0.8) });
-    lanes.push({ role: 'drums', name: 'Cozy Beat', sounds, hits: P.drums.map((d) => ({ t: d.t, d: 0.1, key: d.kind, v: d.vel })) });
+    // each drum sound once (a groove's drums by their own names), as Boba's bubbles
+    const keyOf = (d) => (d.kind === 'g' ? `g${d.d}` : d.kind), seen = new Map();
+    for (const d of P.drums) if (!seen.has(keyOf(d))) seen.set(keyOf(d), d);
+    const sounds = [];
+    for (const [key, d] of [...seen].slice(0, 25)) sounds.push({ key, name: d.kind === 'g' ? beat.groove.names[d.d] : key, data: await oneShot((ctx, mix) => playDrum(ctx, mix.drums, { ...d, vel: 1 }, 0, beat), 2) });
+    lanes.push({ role: 'drums', name: beat.groove ? beat.name : 'Cozy Beat', sounds, hits: P.drums.filter((d) => sounds.some((x) => x.key === keyOf(d))).map((d) => ({ t: d.t, d: 0.1, key: keyOf(d), v: Math.min(1, d.vel) })) });
   }
   // every sound, levelled together
   const all = lanes.flatMap((l) => l.sounds), packed = pack(all), samples = {};
