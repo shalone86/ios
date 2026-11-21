@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">Deep Drift</string>
-    <string name="channel">Playing</string>
-    <string name="playing">The sea is singing. Sleep well.</string>
-    <string name="stop">Stop</string>
-</resources>

@@ -12,9 +12,12 @@ Build instructions at https://median.co/docs/build-ios-from-source
 
 Licensing information available at https://median.co/license
 
-Boba Beats
+Bubble apps
 ------------
 
-This repository also holds [Boba Beats](bubbloop/), a pentatonic bubble beat
-maker for Android. It is separate from the iOS code above. An installable
-build is at [bubbloop/dist/BobaBeats.apk](bubbloop/dist/BobaBeats.apk).
+This repository also holds four bubble music apps that run in the browser at
+shalonely.com: Boba Beats ([bubbloop/](bubbloop/)), Pop Pads ([pop/](pop/)),
+Deep Drift ([night/](night/)) and Cozy Chords ([chords/](chords/)). They are
+separate from the iOS code above. There are no Android builds any more: each
+app installs to the home screen from the browser. A tidy copy, free to use
+and remix, lives at https://github.com/shalone86/bubble-apps.

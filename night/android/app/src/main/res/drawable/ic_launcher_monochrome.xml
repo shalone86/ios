@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- themed icon and notification icon: the jellyfish as one shape -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FF000000" android:pathData="M34,55A20,19 0,0 1,74 55Q54,62 34,55Z" />
-    <path android:strokeColor="#FF000000" android:strokeWidth="2.6" android:strokeLineCap="round"
-        android:pathData="M45,58q-3,5 0,9t0,9M54,60q3,5 0,9t0,9M63,58q-3,5 0,9t0,9" />
-</vector>
