@@ -383,7 +383,7 @@ export const KITS = {
     // an old 12-bit sampler: a lower sample rate (its grit and alias), saturation, a little vinyl
     name: 'Root Beer', style: 'boom-bap', trim: -2, hue: 30, color: ['#2a1405', '#6b3a12', '#e0a35a'], dust: { lp: 11000, bits: 12, drive: 1, crackle: 0.03, hold: 2 },
     pads: [
-      ['Boom', 'kick', { f0: 160, f1: 48, pd: 0.035, d: 0.24, clk: 0.4, knock: 0.8, drive: 1 }, 0.95, 0.9],
+      ['Boom', 'kick', { f0: 160, f1: 48, pd: 0.035, d: 0.24, clk: 0.4, knock: 0.8, drive: 1 }, 0.95, 0.9, { low: -17 }],
       ['Upright', 'synth', { f: C2, waves: [['sine', 0, 1], ['sawtooth', 0, 0.5]], lp: [900, [0.003, 250, 0.06]], a: 0.003, hold: 0.03, d: 0.22, tick: 0.25, tickF: 1200 }, 0.9, 1, BASS],
       ['Crack', 'snare', { t1: 185, t2: 290, td: 0.08, nd: 0.17, band: 2600, nf: 'bandpass', mix: 0.78, drive: 1.1 }, 0.85, 0.8],
       ['Clap', 'clap', { band: 1300, d: 0.12 }, 0.75, 0.5],
@@ -476,9 +476,31 @@ export function loudness(d, sr) {
 // No drum feels louder than this: Cream Soda's loudest pad, the kit that sits just right.
 const CEILING = -9;
 
+// The loudness above ignores rumble on purpose, so it can't see what a sub or
+// a long kick does to a woofer. This one hears only below 120 Hz (unweighted,
+// hottest 400 ms, dB of full scale), and no pad's low end goes above LOW_CEILING
+// (or its own `low`). A long 808 tail rumbles on after the hit, so the low end
+// over the hottest 1.2 s is held under LOW_SUSTAIN as well.
+const LOW_CEILING = -14, LOW_SUSTAIN = -21;
+function lowpass120(x, sr) {
+  const w = 2 * Math.PI * 120 / sr, c = Math.cos(w), al = Math.sin(w) / (2 * Math.SQRT1_2), a0 = 1 + al;
+  return biquad(x, [(1 - c) / 2 / a0, (1 - c) / a0, (1 - c) / 2 / a0, -2 * c / a0, (1 - al) / a0]);
+}
+export function lowEnd(d, sr, win = 0.4) {
+  const y = lowpass120(lowpass120(d, sr), sr), w = Math.round(win * sr);
+  let e = 0, best = 0;
+  for (let i = 0; i < y.length; i++) { e += y[i] * y[i]; if (i >= w) e -= y[i - w] * y[i - w]; if (e > best) best = e; }
+  return 10 * Math.log10(best / w + 1e-12);
+}
+// a tuned pad takes the low-end cut its root note needed at every pitch, so a
+// bass line keeps an even level from note to note
+const rootCut = new Map();
+
 // Render one pad into a buffer at sample rate `sr`; a tuned pad `st` semitones
 // up or down is played by its oscillators at that pitch (not sped up).
 async function renderPad(kit, pad, sr, idx, st = 0) {
+  const cutKey = `${kit.name}@${sr}#${idx}`;
+  if (st && pad.lufs != null && !rootCut.has(cutKey)) await renderPad(kit, pad, sr, idx, 0);
   if (st) pad = { ...pad, params: { ...pad.params, f: pad.params.f * Math.pow(2, st / 12) } };
   const n = Math.ceil(pad.len * sr), ctx = new OfflineAudioContext(1, n, sr);
   let dest = ctx.destination;
@@ -516,6 +538,15 @@ async function renderPad(kit, pad, sr, idx, st = 0) {
     const now = loudness(d, sr) + 20 * Math.log10(g);
     const want = pad.lufs != null ? pad.lufs : Math.min(now, CEILING);
     g *= Math.pow(10, (want - now + (kit.trim || 0)) / 20);
+    // and then the low end: nothing rattles the speakers more than the ceiling allows
+    let cut;
+    if (pad.lufs != null && st) cut = rootCut.get(cutKey);
+    else {
+      const lvl = 20 * Math.log10(g);
+      cut = Math.min(0, (pad.low ?? LOW_CEILING) - (lowEnd(d, sr) + lvl), LOW_SUSTAIN - (lowEnd(d, sr, 1.2) + lvl));
+      if (pad.lufs != null) rootCut.set(cutKey, cut);
+    }
+    g *= Math.pow(10, cut / 20);
     if (peak * g > 0.98) g = 0.98 / peak;
   }
   const fade = Math.min(d.length, Math.round(sr * 0.02));
