@@ -25,10 +25,13 @@ const FACE = `<svg viewBox="0 0 64 24"><g fill="none" stroke="rgba(40,10,20,.72)
   <path class="smile" d="M27 15 q5 5 10 0"/></g>
   <ellipse class="o" cx="32" cy="17" rx="4" ry="4.6" fill="rgba(40,10,20,.72)"/>
   <ellipse cx="6" cy="14" rx="5" ry="3" fill="rgba(255,110,140,.4)"/><ellipse cx="58" cy="14" rx="5" ry="3" fill="rgba(255,110,140,.4)"/></svg>`;
+// a cocoa mug: steam, two marshmallows, the cup with its face and its chord
+const STEAM = '<svg class="steam" viewBox="0 0 40 24"><path d="M10 22 q-5 -6 0 -11 t0 -10"/><path d="M28 22 q-5 -6 0 -11 t0 -10"/></svg>';
+const mug = (label, numeral) => `${STEAM}<span class="cup">${FACE}<b>${label}</b><small>${numeral}</small></span><i class="m m1"></i><i class="m m2"></i>`;
 let chords = chordsOf(S.key, S.mode), cur = -1;
 function drawChords() {
   chords = chordsOf(S.key, S.mode);
-  $('chords').innerHTML = chords.map((c, i) => `<button class="chord r${Math.floor(i / 4)} ${i === cur ? 'cur' : ''}" data-i="${i}" aria-label="${c.label} (${c.numeral})">${FACE}<b>${c.label}</b><small>${c.numeral.replace(/maj7|7|sus\d/, '')}</small></button>`).join('');
+  $('chords').innerHTML = chords.map((c, i) => `<button class="chord r${Math.floor(i / 4)} ${i === cur ? 'cur' : ''}" data-i="${i}" aria-label="${c.label} (${c.numeral})">${mug(c.label, c.numeral.replace(/maj7|7|sus\d/, ''))}</button>`).join('');
   $('key').textContent = `${KEY_NAMES[S.key]} ${S.mode}`;
   $('voice').textContent = VOICES.find((v) => v.id === S.voice).name;
   $('beat').textContent = beatOf(S.beat).name; $('beat').classList.toggle('on', S.beat !== 'none');
@@ -133,18 +136,42 @@ addEventListener('keyup', (e) => {
 // ---------- the beat and recording ----------
 function showHint() {
   const h = $('hint'); h.classList.remove('count');
-  h.textContent = eng && eng.rec ? 'recording · tap ● to stop' : take ? `a take is saved (${take.bars} bar${take.bars > 1 ? 's' : ''}) · ☰ to listen or save it` : 'tap a chord · swipe the strings to strum it';
+  h.textContent = eng && eng.rec ? 'recording · tap ● to stop' : take ? `your take: ${take.bars} bar${take.bars > 1 ? 's' : ''} · ▶ to hear it · ☰ to save it` : 'tap a chord · swipe the strings to strum it';
 }
 function setPlaying(on) { $('play').classList.toggle('on', on); $('play').textContent = on ? '■' : '▶'; }
+// ▶: stops whatever is playing; otherwise plays your take back if you have
+// one (the beat starts from the Beat menu), or else starts the beat
 $('play').onclick = async () => {
   await start();
+  if (playingTake) { stopTake(); return; }
   if (eng.playing) { if (eng.rec) finishTake(); eng.stop(); setPlaying(false); showHint(); return; }
+  if (take) { playTake(); return; }
   if (S.beat === 'none') { openBeats(); return; }
   eng.play(); setPlaying(true);
 };
+// your take, played back as it will be saved, the mugs lighting up as it goes
+let playingTake = null;
+async function playTake() {
+  setPlaying(true); $('hint').textContent = 'getting your take ready…';
+  const { buffer } = await renderTake(take, { sr: eng.ctx.sampleRate });
+  eng.wake();
+  const src = eng.ctx.createBufferSource(); src.buffer = buffer; src.connect(eng.ctx.destination);
+  const at = eng.ctx.currentTime + 0.05; src.start(at);
+  const timers = take.ev.filter((e) => e.k === 'c').map((e) => setTimeout(() => { if (take.key === S.key && take.mode === S.mode && e.i >= 0) select(e.i); }, (e.t + 0.05) * 1000));
+  playingTake = { src, timers };
+  $('hint').textContent = '▶ your take · tap ■ to stop';
+  src.onended = () => { if (playingTake && playingTake.src === src) stopTake(); };
+}
+function stopTake() {
+  if (!playingTake) return;
+  const p = playingTake; playingTake = null;
+  p.timers.forEach(clearTimeout); try { p.src.stop(); } catch (e) { /* ended */ }
+  setPlaying(false); showHint();
+}
 $('rec').onclick = async () => {
   await start();
   if (eng.rec) { finishTake(); return; }
+  stopTake();
   eng.record(); setPlaying(true);
   $('rec').classList.add('on');
   toast(S.beat === 'none' ? 'four clicks, then play' : 'one bar to get ready, then play');
@@ -154,7 +181,7 @@ function finishTake() {
   const t = eng.stopRec();
   $('rec').classList.remove('on');
   if (S.beat === 'none') { eng.stop(); setPlaying(false); }
-  if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take saved: ${t.bars} bar${t.bars > 1 ? 's' : ''} · ☰ to listen or save`); }
+  if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take kept: ${t.bars} bar${t.bars > 1 ? 's' : ''} · ▶ to hear it`); }
   else toast('nothing played, so nothing was kept');
   showHint();
 }
@@ -206,12 +233,12 @@ $('voice').onclick = () => openSheet(`<h3>Sound</h3>${VOICES.map((v) => `<button
   eng.press(cur >= 0 ? cur : 0, curChord()); setTimeout(() => eng.release(), 700);
 });
 function openBeats() {
-  openSheet(`<h3>Beat</h3><p class="note">Soft drums, and a bass that follows your chords. Press ▶ to start it.</p>${BEATS.map((b) => `<button class="big ${b.id === S.beat ? 'on' : ''}" data-b="${b.id}"><span>${b.name}<small>${b.hint}</small></span></button>`).join('')}`, (r) => r.onclick = async (e) => {
+  openSheet(`<h3>Beat</h3><p class="note">Soft drums, and a bass that follows your chords. Picking one starts it; ■ stops it.</p>${BEATS.map((b) => `<button class="big ${b.id === S.beat ? 'on' : ''}" data-b="${b.id}"><span>${b.name}<small>${b.hint}</small></span></button>`).join('')}`, (r) => r.onclick = async (e) => {
     const b = e.target.closest('[data-b]'); if (!b) return;
     S.beat = b.dataset.b; save(); await start(); eng.beat = S.beat; drawChords();
     r.querySelectorAll('[data-b]').forEach((x) => x.classList.toggle('on', x === b));
     if (S.beat === 'none' && eng.playing && !eng.rec) { eng.stop(); setPlaying(false); }
-    else if (S.beat !== 'none' && !eng.playing) { eng.play(); setPlaying(true); }
+    else if (S.beat !== 'none' && !eng.playing) { stopTake(); eng.play(); setPlaying(true); }
   });
 }
 $('beat').onclick = openBeats;

@@ -1,16 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
   <defs>
-    <radialGradient id="bg" cx="54" cy="96" r="90" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7a4a5a"/><stop offset="0.55" stop-color="#3a2238"/><stop offset="1" stop-color="#221424"/></radialGradient>
-    <radialGradient id="a" cx="0.34" cy="0.28" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="0.14" stop-color="#ffe2bd"/><stop offset="0.45" stop-color="#f6b979"/><stop offset="1" stop-color="#8a4a5a"/></radialGradient>
-    <radialGradient id="b" cx="0.34" cy="0.28" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="0.45" stop-color="#ee9a9a"/><stop offset="1" stop-color="#7a3d5a"/></radialGradient>
-    <radialGradient id="c" cx="0.34" cy="0.28" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="0.45" stop-color="#b6a0e6"/><stop offset="1" stop-color="#5a3d7a"/></radialGradient>
+    <radialGradient id="bg" cx="54" cy="100" r="96" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7a4a5a"/><stop offset="0.55" stop-color="#3a2238"/><stop offset="1" stop-color="#221424"/></radialGradient>
+    <linearGradient id="cup" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b07a50"/><stop offset="0.3" stop-color="#f6b979"/><stop offset="0.45" stop-color="#ffd9ad"/><stop offset="0.62" stop-color="#f6b979"/><stop offset="1" stop-color="#b07a50"/></linearGradient>
+    <radialGradient id="cocoa" cx="0.5" cy="0.4" r="0.6"><stop offset="0" stop-color="#7a4a30"/><stop offset="1" stop-color="#4a2618"/></radialGradient>
+    <linearGradient id="m1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffdf8"/><stop offset="0.55" stop-color="#fff3e6"/><stop offset="1" stop-color="#f0c9a0"/></linearGradient>
+    <linearGradient id="m2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffdf8"/><stop offset="0.55" stop-color="#ffe6ee"/><stop offset="1" stop-color="#efc0b8"/></linearGradient>
   </defs>
   <rect width="108" height="108" fill="url(#bg)"/>
-  <g stroke="rgba(255,246,236,.32)" stroke-width="1.2"><path d="M30 78 V100 M38 78 V100 M46 78 V100 M54 78 V100 M62 78 V100 M70 78 V100 M78 78 V100"/></g>
-  <circle cx="34" cy="62" r="10" fill="url(#b)"/>
-  <circle cx="76" cy="60" r="12" fill="url(#c)"/>
-  <circle cx="54" cy="52" r="20" fill="url(#a)"/>
-  <ellipse cx="47" cy="42" rx="4.5" ry="2.8" fill="rgba(255,255,255,.75)" transform="rotate(-30 47 42)"/>
-  <g fill="none" stroke="rgba(40,10,20,.75)" stroke-width="2.3" stroke-linecap="round"><path d="M44 53 q3.5 3 7 0 M57 53 q3.5 3 7 0 M50.5 59 q3.5 3 7 0"/></g>
-  <ellipse cx="41" cy="58" rx="3" ry="1.8" fill="rgba(255,110,140,.45)"/><ellipse cx="67" cy="58" rx="3" ry="1.8" fill="rgba(255,110,140,.45)"/>
+  <g fill="none" stroke="rgba(255,246,236,.5)" stroke-width="2.6" stroke-linecap="round"><path d="M44 30 q-4 -5 0 -9 t0 -8"/><path d="M58 28 q-4 -5 0 -9 t0 -8"/></g>
+  <path d="M74 50 h4 a12 12 0 0 1 0 24 h-4" fill="none" stroke="#d9965e" stroke-width="7"/>
+  <path d="M30 40 h46 v30 a16 16 0 0 1 -16 16 h-14 a16 16 0 0 1 -16 -16 z" fill="url(#cup)"/>
+  <ellipse cx="53" cy="41" rx="21" ry="4.6" fill="url(#cocoa)"/>
+  <rect x="38" y="32" width="12" height="10" rx="3.4" fill="url(#m1)" transform="rotate(-14 44 37)"/>
+  <rect x="52" y="30" width="12" height="10" rx="3.4" fill="url(#m2)" transform="rotate(10 58 35)"/>
+  <g fill="none" stroke="rgba(40,10,20,.75)" stroke-width="2.3" stroke-linecap="round"><path d="M41 55 q3.5 3 7 0 M58 55 q3.5 3 7 0 M49.5 61 q3.5 3 7 0"/></g>
+  <ellipse cx="38" cy="60" rx="3" ry="1.8" fill="rgba(255,110,140,.45)"/><ellipse cx="68" cy="60" rx="3" ry="1.8" fill="rgba(255,110,140,.45)"/>
 </svg>

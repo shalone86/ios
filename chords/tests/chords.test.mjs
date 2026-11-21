@@ -75,6 +75,15 @@ const free = await page.evaluate(() => ({ take: window.cozy.take, playing: windo
 check(counted.join() === '1,2,3,4,0' && free.take && free.take.beat === 'none' && free.take.ev.some((e) => e.k === 'c' && e.ch.label === 'C') && !free.playing,
   `with no beat, the count-in goes 1, 2, 3, 4 and the take is kept (${counted.join(' ')}; ${free.take && free.take.bars} bar)`);
 
+// ▶ plays the take back (mugs lighting up), ■ stops it
+await page.evaluate(() => window.cozy.select(5));
+await page.click('#play');
+await page.waitForTimeout(700);
+const back = await page.evaluate(() => ({ hint: document.getElementById('hint').textContent, btn: document.getElementById('play').textContent, lit: document.querySelector('.chord.cur b').textContent }));
+await page.click('#play');
+const after = await page.evaluate(() => ({ btn: document.getElementById('play').textContent, hint: document.getElementById('hint').textContent }));
+check(/your take/.test(back.hint) && back.btn === '■' && back.lit === 'C' && after.btn === '▶' && /▶ to hear it/.test(after.hint), `▶ plays the take back, its chords lighting up (${back.lit}); ■ stops it`);
+
 // record a take with the beat: a bar of clicks, then two chords
 await page.evaluate(() => { const c = window.cozy; c.S.beat = 'cozy'; c.S.bpm = 150; c.eng.beat = 'cozy'; c.eng.bpm = 150; });
 await page.click('#rec');
