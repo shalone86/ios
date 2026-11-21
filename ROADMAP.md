@@ -1,12 +1,12 @@
 # Bubble apps roadmap
 
 The bubble music apps on shalonely.com: Boba Beats (`/boba`), Pop Pads (`/pop`),
-Deep Drift (`/drift`), and next, a chord app in the spirit of an Omnichord.
+Deep Drift (`/drift`) and Cozy Chords (`/chords`, an Omnichord-style chord harp).
 
 ## Next
 
-- **Chord app** (Omnichord-style): chord bubbles in a key, a strum strip,
-  exports and Boba hand-over like Pop Pads. Scope agreed before building.
+- **Cozy Chords, later**: a step sequencer for chords, custom chords, effects
+  knobs, an APK if wanted (the web app installs from the browser).
 - **Choir app**: later, as the play mechanics for the Angelio choir game.
 
 ## On the roadmap: playing the apps inside Logic

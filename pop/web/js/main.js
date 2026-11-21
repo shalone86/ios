@@ -8,7 +8,7 @@ import { offer, install, goOffline } from './install.js';
 import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff } from './export.js';
 
 // the other bubble apps (in the Android app these open in the browser)
-const APPS = [['Boba Beats', 'https://shalonely.com/boba/', '🧋', 'make whole songs out of bubbles'], ['Deep Drift', 'https://shalonely.com/drift/', '🪼', 'a sleepy sea that sings you to sleep']];
+const APPS = [['Boba Beats', 'https://shalonely.com/boba/', '🧋', 'make whole songs out of bubbles'], ['Deep Drift', 'https://shalonely.com/drift/', '🪼', 'a sleepy sea that sings you to sleep'], ['Cozy Chords', 'https://shalonely.com/chords/', '🎐', 'tap a chord, strum the strings']];
 
 const $ = (id) => document.getElementById(id);
 const SAVE = 'poppads.song';

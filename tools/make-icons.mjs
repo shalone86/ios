@@ -1,6 +1,7 @@
 // Draws a web app's home-screen icons from its Android launcher icon (the
-// vector drawables), so the installed web app and the APK look the same.
-//   node tools/make-icons.mjs <android res folder> <web icons folder>
+// vector drawables), so the installed web app and the APK look the same;
+// or from an SVG drawn on a 108-unit square (the same canvas Android uses).
+//   node tools/make-icons.mjs <android res folder | icon.svg> <web icons folder>
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -34,10 +35,11 @@ function toSvg(xml) {
   }
   return { defs: defs.join(''), body: parts.join('') };
 }
-const bg = toSvg(fs.readFileSync(path.join(res, 'drawable/ic_launcher_background.xml'), 'utf8'));
-const fg = toSvg(fs.readFileSync(path.join(res, 'drawable/ic_launcher_foreground.xml'), 'utf8'));
+const custom = res.endsWith('.svg') ? fs.readFileSync(res, 'utf8') : null;
+const bg = custom ? { defs: '', body: '' } : toSvg(fs.readFileSync(path.join(res, 'drawable/ic_launcher_background.xml'), 'utf8'));
+const fg = custom ? { defs: '', body: '' } : toSvg(fs.readFileSync(path.join(res, 'drawable/ic_launcher_foreground.xml'), 'utf8'));
 // the full 108-unit canvas (Android crops it to a shape); "any" icons show its middle
-const svg = (view, round) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${view}" width="100%" height="100%"><defs>${bg.defs}${fg.defs}<clipPath id="r"><rect x="0" y="0" width="108" height="108" rx="${round}"/></clipPath></defs><g clip-path="url(#r)">${bg.body}${fg.body}</g></svg>`;
+const svg = (view, round) => custom ? custom.replace(/viewBox="[^"]*"/, `viewBox="${view}" width="100%" height="100%"`) : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${view}" width="100%" height="100%"><defs>${bg.defs}${fg.defs}<clipPath id="r"><rect x="0" y="0" width="108" height="108" rx="${round}"/></clipPath></defs><g clip-path="url(#r)">${bg.body}${fg.body}</g></svg>`;
 const require = createRequire(import.meta.url);
 let pw; for (const id of ['playwright', '/opt/node-tools/node_modules/playwright']) { try { pw = require(id); break; } catch (e) { /* next */ } }
 const browser = await pw.chromium.launch();

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <defs>
+    <radialGradient id="bg" cx="54" cy="96" r="90" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7a4a5a"/><stop offset="0.55" stop-color="#3a2238"/><stop offset="1" stop-color="#221424"/></radialGradient>
+    <radialGradient id="a" cx="0.34" cy="0.28" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="0.14" stop-color="#ffe2bd"/><stop offset="0.45" stop-color="#f6b979"/><stop offset="1" stop-color="#8a4a5a"/></radialGradient>
+    <radialGradient id="b" cx="0.34" cy="0.28" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="0.45" stop-color="#ee9a9a"/><stop offset="1" stop-color="#7a3d5a"/></radialGradient>
+    <radialGradient id="c" cx="0.34" cy="0.28" r="0.75"><stop offset="0" stop-color="#fff"/><stop offset="0.45" stop-color="#b6a0e6"/><stop offset="1" stop-color="#5a3d7a"/></radialGradient>
+  </defs>
+  <rect width="108" height="108" fill="url(#bg)"/>
+  <g stroke="rgba(255,246,236,.32)" stroke-width="1.2"><path d="M30 78 V100 M38 78 V100 M46 78 V100 M54 78 V100 M62 78 V100 M70 78 V100 M78 78 V100"/></g>
+  <circle cx="34" cy="62" r="10" fill="url(#b)"/>
+  <circle cx="76" cy="60" r="12" fill="url(#c)"/>
+  <circle cx="54" cy="52" r="20" fill="url(#a)"/>
+  <ellipse cx="47" cy="42" rx="4.5" ry="2.8" fill="rgba(255,255,255,.75)" transform="rotate(-30 47 42)"/>
+  <g fill="none" stroke="rgba(40,10,20,.75)" stroke-width="2.3" stroke-linecap="round"><path d="M44 53 q3.5 3 7 0 M57 53 q3.5 3 7 0 M50.5 59 q3.5 3 7 0"/></g>
+  <ellipse cx="41" cy="58" rx="3" ry="1.8" fill="rgba(255,110,140,.45)"/><ellipse cx="67" cy="58" rx="3" ry="1.8" fill="rgba(255,110,140,.45)"/>
+</svg>

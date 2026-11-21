@@ -158,7 +158,7 @@ function project() {
     <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="160" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
     <p class="sub">If recorded notes land late, nudge tap timing up; if early, down.</p>
     <h3>Bubble apps</h3>
-    <div class="wrap"><a class="pill" href="https://shalonely.com/pop/">🥤 Pop Pads: drum machine</a><a class="pill" href="https://shalonely.com/drift/">🪼 Deep Drift: sleepy sea</a></div>
+    <div class="wrap"><a class="pill" href="https://shalonely.com/pop/">🥤 Pop Pads: drum machine</a><a class="pill" href="https://shalonely.com/drift/">🪼 Deep Drift: sleepy sea</a><a class="pill" href="https://shalonely.com/chords/">🎐 Cozy Chords: strum chords</a></div>
     <p class="sub">Pop Pads can send its beat here: in Pop Pads, ☰ → Send to Boba Beats.</p>
     <p class="sub center" style="margin-top:14px">Boba Beats · songs stay on this device</p>
   `, (root) => {

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2a1a2c">
+<title>Cozy Chords</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<canvas id="glow"></canvas>
+<div id="app">
+  <header id="top">
+    <h1><span class="dot"></span>Cozy Chords</h1>
+    <button class="chip" id="key">C major</button>
+    <button class="chip" id="voice">Omni</button>
+    <button class="chip icon" id="menu" aria-label="Menu">☰</button>
+  </header>
+
+  <div id="bar">
+    <button class="chip" id="beat">No beat</button>
+    <button class="chip" id="bpm">84 bpm</button>
+    <span class="grow"></span>
+    <button class="round" id="rec" aria-label="Record">●</button>
+    <button class="round" id="play" aria-label="Play the beat">▶</button>
+  </div>
+
+  <div id="stage">
+    <div id="chords" aria-label="Chords"></div>
+    <div id="strip" aria-label="Strum strip: swipe across the strings"><div id="strings"></div><span id="strip-name"></span></div>
+  </div>
+  <p id="hint">tap a chord · swipe the strings to strum it</p>
+</div>
+
+<div id="scrim" hidden></div>
+<div id="sheet" hidden role="dialog"><div class="grab" aria-hidden="true"></div><div id="sheet-body"></div></div>
+<div id="toast"></div>
+
+<div id="start">
+  <div>
+    <div class="logo"><i></i><i></i><i></i></div>
+    <h2>Cozy Chords</h2>
+    <p>a warm little chord harp</p>
+    <button id="go">get cozy</button>
+    <button id="apk" hidden>put it on your home screen</button>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

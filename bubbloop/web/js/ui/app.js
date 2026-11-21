@@ -1169,8 +1169,11 @@ export function afterStructureChange(resync = true) {
 
 // A beat sent from Pop Pads (same website, so same storage): it waits in
 // IndexedDB and is opened as a new song when Boba starts with ?from=pop.
+// A song handed over by a sister app on this site (Pop Pads, Cozy Chords):
+// it waits in IndexedDB under the app's name, given as ?from=pop or ?from=chords.
 async function fromPopPads() {
-  if (new URLSearchParams(location.search).get('from') !== 'pop') return null;
+  const from = new URLSearchParams(location.search).get('from');
+  if (!['pop', 'chords'].includes(from)) return null;
   try { history.replaceState(null, '', location.pathname); } catch (e) { /* fine */ }
   const file = await new Promise((resolve) => {
     try {
@@ -1178,8 +1181,8 @@ async function fromPopPads() {
       req.onupgradeneeded = () => req.result.createObjectStore('songs');
       req.onerror = () => resolve(null);
       req.onsuccess = () => {
-        const store = req.result.transaction('songs', 'readwrite').objectStore('songs'), get = store.get('pop');
-        get.onsuccess = () => { store.delete('pop'); resolve(get.result && get.result.file); };
+        const store = req.result.transaction('songs', 'readwrite').objectStore('songs'), get = store.get(from);
+        get.onsuccess = () => { store.delete(from); resolve(get.result && get.result.file); };
         get.onerror = () => resolve(null);
       };
     } catch (e) { resolve(null); }
