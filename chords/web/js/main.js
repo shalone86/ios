@@ -450,6 +450,7 @@ $('menu').onclick = () => {
   <button class="big" data-do="edit">✎<span>Change chords<small>pick any chord for any mug (your take follows)</small></span></button>
   ${Object.keys(mine()).length ? `<button class="big" data-do="unedit">↺<span>Back to the key's chords<small>undo every change in ${S.mode}</small></span></button>` : ''}
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
+  <a class="big" href="https://github.com/shalone86/bubble-apps" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">🛠️<span>Make your own<small>all four apps are free to copy and change (public domain), with how-to in plain words</small></span></a>
   ${offer() ? '<h4>On your phone</h4><button class="big" data-install="1">📲<span>Put it on your home screen<small>opens like an app, works with no signal</small></span></button>' : ''}`, (r) => r.onclick = async (e) => {
     const st = r.querySelector('#s-status');
     const I = e.target.closest('[data-install]');

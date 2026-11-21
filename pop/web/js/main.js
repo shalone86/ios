@@ -527,6 +527,7 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <h4>Everything</h4>
   <div class="row"><button class="chip" data-fresh="1">✨ Start fresh</button></div>
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
+  <a class="big" href="https://github.com/shalone86/bubble-apps" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">🛠️<span>Make your own<small>all four apps are free to copy and change (public domain), with how-to in plain words</small></span></a>
   ${offer() ? '<h4>On your phone</h4><button class="big" data-install="1">📲<span>Put it on your home screen<small>opens like an app, works with no signal</small></span></button>' : ''}`, (s) => s.onclick = async (e) => {
   const L = e.target.closest('[data-loops]');
   if (L) { loops = +L.dataset.loops; s.querySelectorAll('[data-loops]').forEach((x) => x.classList.toggle('on', x === L)); return; }
