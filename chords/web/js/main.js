@@ -2,7 +2,7 @@
 // beat with a bass that follows the chords, a take you can record, and
 // saves for sharing, for Logic, and for Boba Beats.
 
-import { Cozy, BEATS, STYLES, beatOf, renderTake, retune } from './engine.js';
+import { Cozy, BEATS, STYLES, beatOf, renderTake, retune, restyle } from './engine.js';
 import { VOICES, playString, playChord } from './sound.js';
 import { KEY_NAMES, SHAPE_ORDER, SHAPE_NAMES, chordsOf, chordNotes, stringNotes } from './theory.js';
 import { offer, install, goOffline } from './install.js';
@@ -329,6 +329,11 @@ $('voice').onclick = () => openSheet(`<h3>Sound</h3>${VOICES.map((v) => `<button
   if (b) { S.voice = b.dataset.v; eng.voice = S.voice; r.querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b)); }
   if (y) { S.style = y.dataset.st; eng.style = S.style; r.querySelectorAll('[data-st]').forEach((x) => x.classList.toggle('on', x === y)); r.querySelector('#st-hint').textContent = `${STYLES.find((x) => x.id === S.style).hint}. Hold a mug and it keeps playing, in time with the tempo.`; }
   save(); drawChords();
+  // the take follows: the new sound, the new style
+  if (take) {
+    take = restyle(take, S.voice, S.style); keep('cozy.take', take);
+    if (playingTake) { stopTake(); playTake(); return; } else warmLoop();
+  }
   // a taste of it
   eng.press(cur >= 0 ? cur : 0, curChord()); setTimeout(() => eng.release(), S.style === 'chord' ? 700 : 1400);
 });

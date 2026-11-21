@@ -168,6 +168,17 @@ check(edited.label === 'D7' && edited.mark === '✎' && edited.taken === 'D7' &&
 
 await page.evaluate((t) => { window.cozy.take = t; }, keptTake);
 
+// the take follows a new sound and a new play style (and back again)
+await page.click('#voice'); await page.click('[data-v="harp"]');
+const harp = await page.evaluate(() => window.cozy.take.ev.every((e) => e.k === 'u' || e.v === 'harp'));
+await page.click('[data-st="up"]');
+const arp = await page.evaluate(() => { const ev = window.cozy.take.ev; return { q: ev.filter((e) => e.k === 'c').every((e) => e.q), made: ev.filter((e) => e.a).length, hand: ev.filter((e) => e.k === 's' && !e.a).length }; });
+await page.click('[data-st="chord"]'); await page.click('[data-v="omni"]');
+const back = await page.evaluate(() => { const ev = window.cozy.take.ev; return { q: ev.some((e) => e.q), made: ev.filter((e) => e.a).length, hand: ev.filter((e) => e.k === 's' && !e.a).length, omni: ev.every((e) => e.k === 'u' || e.v === 'omni') }; });
+await page.click('#scrim', { position: { x: 20, y: 20 } });
+check(harp && arp.q && arp.made >= 4 && arp.hand === 4 && !back.q && back.made === 0 && back.hand === 4 && back.omni,
+  `the take follows the sound (all harp) and the style (an arpeggio of ${arp.made} notes over its chords, the 4 hand-strummed notes kept), and back again`);
+
 // every save, from the menu
 await page.click('#menu');
 const save = async (what) => { const [d] = await Promise.all([page.waitForEvent('download'), page.click(`[data-save="${what}"]`)]); const f = path.join(OUT, d.suggestedFilename()); await d.saveAs(f); return f; };

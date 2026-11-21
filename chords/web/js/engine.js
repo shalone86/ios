@@ -116,12 +116,14 @@ export class Cozy {
     // take with a beat, its own bass follows the chords once they are merged)
     if ((!this.playing || this.beat === 'none') && !(this.rec && this.rec.dub && this.rec.dub.beat !== 'none')) playBass(this.ctx, this.mix.bass, t, bassNote(ch), 1.2);
   }
+  // letting go of a mug: the take notes when the chord stopped (so it can be
+  // played back in another style later, for exactly as long)
   release() {
-    this.stopAuto();
-    if (!this.held) return;
     const t = this.now();
+    if (this.auto) { this.stopAuto(); this.log({ k: 'u' }, t); return; }
+    if (!this.held) return;
     this.held.release(t);
-    if (this.held.held) this.log({ k: 'u' }, t);
+    this.log({ k: 'u' }, t);
     this.held = null;
   }
   string(midi, vel = 1) {
@@ -154,7 +156,7 @@ export class Cozy {
       const pos = this.playing && this.t0 != null ? ((Math.round((t - this.t0) / (sd * a.fine)) % steps) + steps) % steps : a.k % 16;
       for (const [dt, m, vel, len] of autoStep(a.style, a.ch, a.k, pos, a.prev)) {
         playString(this.ctx, this.mix.voices, t + dt, this.voice, m, vel, len || 0);
-        this.log({ k: 's', m, vel, v: this.voice, ...(len ? { len } : {}) }, t + dt);
+        this.log({ k: 's', m, vel, v: this.voice, a: 1, ...(len ? { len } : {}) }, t + dt);   // a: made by the style
         a.prev = m;
       }
       a.k++;
@@ -311,4 +313,47 @@ function moveNote(m, from, to) {
     return from.root + off + shift + tone;
   }
   return m + shift;   // not a chord tone: moves with the root
+}
+
+// ---------- a take in another sound, or another play style ----------
+// Everything takes the new sound. The notes a play style made (arpeggios,
+// strums, rolls, stabs) are made again in the new style, over the same
+// chords for the same time; notes strummed by hand on the strip stay.
+export function restyle(take, voice, style) {
+  const ev = [...take.ev].sort((a, b) => a.t - b.t), beat = beatOf(take.beat), steps = beat.steps || 16;
+  const flagged = ev.some((e) => e.a);
+  // each chord's time: until it was let go (when it sounded only while held:
+  // an organ or a pad, or a style), else until the next chord, or the end
+  const spans = [];
+  const heldOnly = (e) => e.q || e.v === 'omni' || e.v === 'glass';
+  ev.forEach((e, k) => {
+    if (e.k !== 'c') return;
+    let end = take.dur;
+    for (let j = k + 1; j < ev.length; j++) if (ev[j].k === 'c' || (ev[j].k === 'u' && heldOnly(e))) { end = ev[j].t; break; }
+    spans.push({ e, from: e.t, to: Math.min(end, take.dur) });
+  });
+  // takes from before notes were marked: a styled chord's own notes are the ones under it
+  const madeByStyle = (e) => e.a || (!flagged && spans.some((s) => s.e.q && e.t >= s.from - 0.001 && e.t < s.to + 0.15));
+  const out = ev.filter((e) => !(e.k === 's' && madeByStyle(e))).map((e) => {
+    const x = { ...e, v: voice };
+    if (x.k === 'c') { if (style === 'chord') delete x.q; else x.q = 1; }
+    return x;
+  });
+  if (style !== 'chord') {
+    const fine = style === 'tremolo' ? 2 : 1, sd = stepDur(take.bpm) / fine;
+    for (const { e, from, to } of spans) {
+      let prev = null, k = 0;
+      // the first note at the press, the rest on the take's grid
+      for (let t = from; t < to - 0.001; k++) {
+        const pos = ((Math.round(t / (sd * fine)) % steps) + steps) % steps;
+        for (const [dt, m, vel, len] of autoStep(style, e.ch, k, pos, prev)) {
+          if (t + dt < take.dur) out.push({ t: +(t + dt).toFixed(4), k: 's', m, vel, v: voice, a: 1, ...(len ? { len } : {}) });
+          prev = m;
+        }
+        t = Math.max(t + 0.001, Math.ceil((t + 0.0005) / sd) * sd);
+        if (t <= from) t = from + sd;
+      }
+    }
+  }
+  return { ...take, ev: out.sort((a, b) => a.t - b.t) };
 }
