@@ -89,7 +89,16 @@ export class Cozy {
     this.voice = 'omni'; this.beat = 'none'; this.bpm = 84; this.style = 'chord'; this.auto = null;
     this.chord = null; this.held = null; this.idx = -1;
     this.playing = false; this.rec = null; this.clock = null;
-    this.onStep = null; this.onCount = null;
+    this.loop = null;        // the take, playing live as a loop
+    this.pending = [];       // a play style's notes scheduled but not yet heard
+    this.onStep = null; this.onCount = null; this.onLoopChord = null;
+  }
+  // the grid a play style keeps time with: the beat's when it runs, else the
+  // looping take's, else none (the style counts from the press)
+  gridOf() {
+    if (this.playing && this.t0 != null) return { t0: this.t0, bpm: this.bpm, steps: beatOf(this.beat).steps || 16 };
+    if (this.loop) { const tk = this.loop.take; return { t0: this.loop.t0, bpm: tk.bpm, steps: beatOf(tk.beat).steps || 16 }; }
+    return null;
   }
   now() { return this.ctx.currentTime + 0.005; }
   wake() { if (this.ctx.state !== 'running') this.ctx.resume(); }
@@ -114,7 +123,8 @@ export class Cozy {
     }
     // with no beat running, the bass plays with the chord (when dubbing over a
     // take with a beat, its own bass follows the chords once they are merged)
-    if ((!this.playing || this.beat === 'none') && !(this.rec && this.rec.dub && this.rec.dub.beat !== 'none')) playBass(this.ctx, this.mix.bass, t, bassNote(ch), 1.2);
+    const loopBass = (this.loop && this.loop.take.beat !== 'none') || (this.rec && this.rec.dub && this.rec.dub.beat !== 'none');
+    if ((!this.playing || this.beat === 'none') && !loopBass) playBass(this.ctx, this.mix.bass, t, bassNote(ch), 1.2);
   }
   // letting go of a mug: the take notes when the chord stopped (so it can be
   // played back in another style later, for exactly as long)
@@ -126,9 +136,10 @@ export class Cozy {
     this.log({ k: 'u' }, t);
     this.held = null;
   }
-  string(midi, vel = 1) {
+  // delay: for a fast swipe, strings crossed together are spread out a little, as a real strum is
+  string(midi, vel = 1, delay = 0) {
     this.wake();
-    const t = this.now();
+    const t = this.now() + delay;
     playString(this.ctx, this.mix.voices, t, this.voice, midi, vel);
     this.log({ k: 's', m: midi, vel: +vel.toFixed(2), v: this.voice }, t);
   }
@@ -136,32 +147,45 @@ export class Cozy {
   // ----- auto-styles: a little clock of its own, in time with the tempo -----
   // The first note sounds at once; the rest fall on the 16th-note grid (the
   // beat's, if it is running). Every note goes into the take as a string.
+  // Each new chord starts its pattern from the top (an arpeggio from its root,
+  // a strum with a down-stroke), sounding at once, then keeps the grid. Notes
+  // of the old chord that were scheduled but not yet heard are cancelled.
   startAuto(i, ch, t) {
-    const sd = stepDur(this.bpm), fine = this.style === 'tremolo' ? 2 : 1;
-    const keep = this.auto && this.auto.style === this.style;   // a new chord carries on the pattern
-    const k = keep ? this.auto.k : 0;
-    let nextGrid = t + sd / fine;
-    if (this.playing && this.t0 != null) nextGrid = this.t0 + Math.ceil((t - this.t0 + 0.001) / (sd / fine)) * (sd / fine);
-    this.auto = { i, ch, style: this.style, k, at: t, fine, next: t, after: nextGrid, prev: null };
-    if (!this.autoClock) this.autoClock = setInterval(() => this.autoPump(), 15);
+    this.cancelPending();
+    const fine = this.style === 'tremolo' ? 2 : 1, g = this.gridOf(), sd = stepDur(g ? g.bpm : this.bpm) / fine;
+    const after = g ? g.t0 + Math.ceil((t - g.t0 + 0.001) / sd) * sd : t + sd;
+    this.auto = { i, ch, style: this.style, k: 0, fine, sd, next: t, after, prev: null };
+    this.ensureClock();
     this.autoPump();
   }
-  stopAuto() { this.auto = null; if (this.autoClock) { clearInterval(this.autoClock); this.autoClock = null; } }
+  stopAuto() { this.cancelPending(); this.auto = null; }
+  // silence (and take back out of the take) every styled note not yet heard
+  cancelPending() {
+    const now = this.ctx.currentTime;
+    for (const p of this.pending) {
+      if (p.at <= now + 0.001) continue;            // already sounding: let it ring
+      p.h.g.gain.cancelScheduledValues(0);          // its level goes back to 0: it never sounds
+      if (this.rec && p.entry) { const k = this.rec.ev.indexOf(p.entry); if (k >= 0) this.rec.ev.splice(k, 1); }
+    }
+    this.pending = [];
+  }
   autoPump() {
     const a = this.auto; if (!a) return;
-    const sd = stepDur(this.bpm) / a.fine, until = this.ctx.currentTime + 0.1, steps = beatOf(this.beat).steps || 16;
+    const now = this.ctx.currentTime, until = now + 0.08, g = this.gridOf();
+    this.pending = this.pending.filter((p) => p.at > now);
     while (a.next < until) {
       const t = a.next;
-      // where this step falls in the bar: on the beat's grid when it runs, else counted from the press
-      const pos = this.playing && this.t0 != null ? ((Math.round((t - this.t0) / (sd * a.fine)) % steps) + steps) % steps : a.k % 16;
+      // where this step falls in the bar (the first step always counts as the top)
+      const pos = a.k === 0 ? 0 : g ? ((Math.round((t - g.t0) / (a.sd * a.fine)) % g.steps) + g.steps) % g.steps : a.k % 16;
       for (const [dt, m, vel, len] of autoStep(a.style, a.ch, a.k, pos, a.prev)) {
-        playString(this.ctx, this.mix.voices, t + dt, this.voice, m, vel, len || 0);
-        this.log({ k: 's', m, vel, v: this.voice, a: 1, ...(len ? { len } : {}) }, t + dt);   // a: made by the style
+        const h = playString(this.ctx, this.mix.voices, t + dt, this.voice, m, vel, len || 0);
+        const entry = this.log({ k: 's', m, vel, v: this.voice, a: 1, ...(len ? { len } : {}) }, t + dt);   // a: made by the style
+        this.pending.push({ at: t + dt, h, entry });
         a.prev = m;
       }
       a.k++;
-      a.next = a.k === 1 || a.next < a.after ? a.after : a.next + sd;
-      if (a.next <= t) a.next = t + sd;
+      a.next = a.k === 1 ? a.after : a.next + a.sd;
+      if (a.next <= t) a.next = t + a.sd;
     }
   }
 
@@ -173,11 +197,17 @@ export class Cozy {
     const lead = countIn ? (beat.steps || 16) : 0;
     this.t0 = this.ctx.currentTime + 0.1 + lead * stepDur(this.bpm);
     this.n = -lead;
-    if (!this.clock) this.clock = setInterval(() => this.pump(), 20);
+    this.ensureClock();
     this.pump();
     return this.t0;
   }
-  stop() { this.playing = false; if (this.clock) { clearInterval(this.clock); this.clock = null; } if (this.rec) this.stopRec(); }
+  stop() { this.playing = false; if (this.rec) this.stopRec(); }
+  // one clock (a little ahead of the sound) for the beat, the play styles and the looping take
+  ensureClock() { if (!this.clock) this.clock = setInterval(() => this.tick(), 20); }
+  tick() {
+    this.pump(); this.autoPump(); this.loopPump();
+    if (!this.playing && !this.auto && !this.loop) { clearInterval(this.clock); this.clock = null; }
+  }
   pump() {
     if (!this.playing) return;
     const beat = beatOf(this.beat), steps = beat.steps || 16, until = this.ctx.currentTime + 0.12;
@@ -191,13 +221,54 @@ export class Cozy {
         const dub = this.rec && this.rec.dub;
         // a recording ends by itself at the end of its last bar
         if (this.rec && !this.rec.ending && t >= this.rec.end - 0.001) { this.rec.ending = true; if (this.onRecEnd) later(() => this.onRecEnd()); }
-        if (dub) { /* dubbing: the take itself is playing, beat and all */ }
+        // from the end of a recording on, the take's own loop takes over (no double beat)
+        const handing = this.rec && t >= this.rec.end - 0.001;
+        if (dub || handing) { /* the take itself is playing, beat and all */ }
         else if (beat.id !== 'none') beatStep(this.ctx, this.mix, beat, s, t, this.bpm, this.chord);
         else if (s % 4 === 0 && this.rec) DRUMS.click(this.ctx, this.mix.master, t, s === 0);   // no beat: a quiet click while recording
         if (this.onStep) { const bar = Math.floor(n / steps) + 1; later(() => this.onStep(s, steps, bar)); }
       }
       this.n++;
     }
+  }
+
+  // ----- the take, played live as a loop (like Pop Pads' patterns) -----
+  // Its notes are scheduled a little ahead, pass after pass, so it starts at
+  // once, loops without a seam (each pass's last notes ring into the next),
+  // and an edit (sound, style, key) is heard from the next note on.
+  playTake(take, at = null) {
+    this.wake();
+    this.stopTake();
+    const t0 = at != null ? at : this.ctx.currentTime + 0.03;
+    const G = (dest) => { const g = this.ctx.createGain(); g.connect(dest); return g; };
+    this.loop = { take, P: performance(take), t0, upto: t0, bus: { voices: G(this.mix.voices), bass: G(this.mix.bass), drums: G(this.mix.drums) } };
+    this.ensureClock(); this.loopPump();
+    return t0;
+  }
+  setTake(take) { if (this.loop) { this.loop.take = take; this.loop.P = performance(take); } }
+  stopTake() {
+    const L = this.loop; if (!L) return;
+    this.loop = null;
+    const t = this.ctx.currentTime;
+    for (const g of Object.values(L.bus)) { g.gain.setTargetAtTime(0, t, 0.02); setTimeout(() => g.disconnect(), 300); }
+  }
+  loopPump() {
+    const L = this.loop; if (!L) return;
+    const until = this.ctx.currentTime + 0.12, dur = L.take.dur, a = L.upto, ctx = this.ctx;
+    if (until <= a) return;
+    for (let p = Math.max(0, Math.floor((a - L.t0) / dur)); L.t0 + p * dur < until; p++) {
+      const base = L.t0 + p * dur, lo = Math.max(a, base) - base, hi = Math.min(until, base + dur) - base;
+      if (hi <= lo) continue;
+      const inW = (x) => x.t >= lo && x.t < hi, P = L.P;
+      for (const c of P.chords) if (inW(c)) {
+        if (!c.q) playChord(ctx, L.bus.voices, base + c.t, c.v, c.notes).release(base + Math.min(c.end, dur));
+        if (this.onLoopChord && c.i >= 0) { const at = base + c.t; setTimeout(() => { if (this.loop === L) this.onLoopChord(c.i); }, Math.max(0, (at - ctx.currentTime) * 1000)); }
+      }
+      for (const x of P.strings) if (inW(x)) playString(ctx, L.bus.voices, base + x.t, x.v, x.m, x.vel, x.len || 0);
+      for (const x of P.bass) if (inW(x)) playBass(ctx, L.bus.bass, base + x.t, x.m, x.len);
+      for (const x of P.drums) if (inW(x)) DRUMS[x.kind](ctx, L.bus.drums, base + x.t, x.vel);
+    }
+    L.upto = until;
   }
 
   // ----- recording a take -----
@@ -217,10 +288,16 @@ export class Cozy {
     if (this.chord && !dub) this.rec.ev.push({ t: 0, k: 'c', i: this.idx, ch: { root: this.chord.root, shape: this.chord.shape, label: this.chord.label }, n: chordNotes(this.chord), v: this.voice, carried: true });
     return start;
   }
-  log(e, t) { if (this.rec && t >= this.rec.start - 0.05 && t < this.rec.end) this.rec.ev.push({ ...e, t: +Math.max(0, t - this.rec.start).toFixed(4) }); }
+  log(e, t) {
+    if (!(this.rec && t >= this.rec.start - 0.05 && t < this.rec.end)) return null;
+    const entry = { ...e, t: +Math.max(0, t - this.rec.start).toFixed(4) };
+    this.rec.ev.push(entry);
+    return entry;
+  }
   stopRec() {
     const r = this.rec; this.rec = null;
     if (!r) return null;
+    this.lastEnd = r.end;
     if (this.ctx.currentTime - r.start < 0.3 || !r.ev.some((e) => !e.carried)) return null;
     // the chord carried in from before is only kept if nothing new was played at once
     if (r.ev.some((e) => e.k === 'c' && !e.carried && e.t < 0.25)) r.ev = r.ev.filter((e) => !e.carried);
@@ -241,7 +318,7 @@ export function performance(take) {
     if (e.k === 'c') {
       const last = out.chords[out.chords.length - 1];
       if (last && last.end > e.t) last.end = e.t;
-      out.chords.push({ t: e.t, end: take.dur, notes: e.n, label: e.ch.label, v: e.v, ch: e.ch, ...(e.q ? { q: true } : {}) });
+      out.chords.push({ t: e.t, end: take.dur, notes: e.n, label: e.ch.label, v: e.v, ch: e.ch, i: e.i, ...(e.q ? { q: true } : {}) });
       if (beat.id === 'none') out.bass.push({ t: e.t, m: bassNote(e.ch), len: 1.2 });
     } else if (e.k === 'u') { const last = out.chords[out.chords.length - 1]; if (last && last.end > e.t) last.end = e.t; }
     else if (e.k === 's') out.strings.push({ t: e.t, m: e.m, vel: e.vel || 1, v: e.v, ...(e.len ? { len: e.len } : {}) });
@@ -265,20 +342,27 @@ export function performance(take) {
   return out;
 }
 
-// ---------- a take, rendered offline (for listening back and exporting) ----------
+// ---------- a take, rendered offline (for the saved files) ----------
 // opts: { sr, tail (seconds of ring-out), only: 'chords' | 'strings' | 'bass' | 'drums' (a stem) }
+// Notes are made just ahead of where the render has got to (it pauses every
+// half second to add the next second's), not all at the start: a note the
+// render has not reached yet would still cost it work all the way through.
 export async function renderTake(take, { sr = 44100, tail = 3, only = null } = {}) {
   const len = take.dur + tail, ctx = new OfflineAudioContext(2, Math.ceil(len * sr), sr);
-  const mix = makeMix(ctx), P = performance(take);
+  const mix = makeMix(ctx), P = performance(take), jobs = [];
   const on = (name) => !only || only === name;
-  if (on('chords')) for (const c of P.chords) {
-    if (c.q) continue;                       // an auto-style's chord: its notes are in the strings
-    const h = playChord(ctx, mix.voices, c.t, c.v, c.notes);
-    h.release(Math.min(c.end, take.dur + 0.4));
+  if (on('chords')) for (const c of P.chords) if (!c.q) jobs.push([c.t, () => playChord(ctx, mix.voices, c.t, c.v, c.notes).release(Math.min(c.end, take.dur + 0.4))]);
+  if (on('strings')) for (const s of P.strings) jobs.push([s.t, () => playString(ctx, mix.voices, s.t, s.v, s.m, s.vel, s.len || 0)]);
+  if (on('bass')) for (const b of P.bass) jobs.push([b.t, () => playBass(ctx, mix.bass, b.t, b.m, b.len)]);
+  if (on('drums')) for (const d of P.drums) jobs.push([d.t, () => DRUMS[d.kind](ctx, mix.drums, d.t, d.vel)]);
+  jobs.sort((x, y) => x[0] - y[0]);
+  let k = 0;
+  const add = (until) => { while (k < jobs.length && jobs[k][0] < until) jobs[k++][1](); };
+  add(1);
+  for (let t = 0.5; t < len - 0.01 && t < take.dur + 1; t += 0.5) {
+    const at = Math.round(t * sr / 128) * 128 / sr;
+    ctx.suspend(at).then(() => { add(at + 1); ctx.resume(); });
   }
-  if (on('strings')) for (const s of P.strings) playString(ctx, mix.voices, s.t, s.v, s.m, s.vel, s.len || 0);
-  if (on('bass')) for (const b of P.bass) playBass(ctx, mix.bass, b.t, b.m, b.len);
-  if (on('drums')) for (const d of P.drums) DRUMS[d.kind](ctx, mix.drums, d.t, d.vel);
   return { buffer: await ctx.startRendering(), seconds: take.dur };
 }
 

@@ -2,7 +2,7 @@
 // beat with a bass that follows the chords, a take you can record, and
 // saves for sharing, for Logic, and for Boba Beats.
 
-import { Cozy, BEATS, STYLES, beatOf, renderTake, retune, restyle } from './engine.js';
+import { Cozy, BEATS, STYLES, beatOf, retune, restyle } from './engine.js';
 import { VOICES, playString, playChord } from './sound.js';
 import { KEY_NAMES, SHAPE_ORDER, SHAPE_NAMES, chordsOf, chordNotes, stringNotes } from './theory.js';
 import { offer, install, goOffline } from './install.js';
@@ -65,9 +65,17 @@ function select(i) {
 
 // ---------- bubbles: press to play, let go to stop a held chord ----------
 const downs = new Map();   // pointer -> bubble index
+let starting = null;
 async function start() {
   if (eng) return;
-  eng = await Cozy.create();
+  if (!starting) starting = make();   // two fingers landing at once still make one engine
+  await starting;
+}
+async function make() {
+  // iPhone: sound plays even with the silent switch on (like a music app)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older Safari */ }
+  const e = await Cozy.create();
+  eng = e;
   Object.assign(eng, { voice: S.voice, beat: S.beat, bpm: S.bpm, style: S.style });
   eng.onCount = (n) => { const h = $('hint'); if (n) { h.textContent = n; h.classList.add('count'); } else { showHint(); } };
   eng.onStep = (s, steps, bar) => {
@@ -76,7 +84,7 @@ async function start() {
     if (eng.rec && bar >= 1 && bar <= eng.rec.bars) { const h = $('hint'); h.classList.remove('count'); h.textContent = `${eng.rec.dub ? 'dubbing' : 'recording'} · bar ${bar} of ${eng.rec.bars}`; }
   };
   eng.onRecEnd = () => { if (eng.rec) finishTake(); };
-  warmLoop();
+  eng.onLoopChord = (i) => light(i);
 }
 $('chords').addEventListener('pointerdown', async (e) => {
   const b = e.target.closest('.chord'); if (!b) return;
@@ -106,11 +114,11 @@ function stringAt(e) {
   const k = tall ? 1 - (e.clientY - r.top - 10) / (r.height - 20) : (e.clientX - r.left - 10) / (r.width - 20);
   return Math.max(0, Math.min(n - 1, Math.round(k * (n - 1))));
 }
-function pluck(k, vel) {
+function pluck(k, vel, delay = 0) {
   const notes = stringNotes(curChord());
-  eng.string(notes[k], vel);
+  eng.string(notes[k], vel, delay);
   const el = $('strings').children[k];
-  if (el) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); setTimeout(() => el.classList.remove('hit'), 160); }
+  if (el) setTimeout(() => el.animate([{ opacity: 1, filter: 'brightness(2.4)', boxShadow: '0 0 14px #f2b47e' }, { opacity: 1, filter: 'none', boxShadow: '0 0 0 transparent' }], { duration: 240, easing: 'ease-out' }), delay * 1000);
 }
 $('strip').addEventListener('pointerdown', async (e) => {
   e.preventDefault();
@@ -118,17 +126,25 @@ $('strip').addEventListener('pointerdown', async (e) => {
   if (cur < 0) select(0);
   try { $('strip').setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
   const k = stringAt(e);
-  strums.set(e.pointerId, { k, x: e.clientX, y: e.clientY, t: performance.now() });
+  strums.set(e.pointerId, { k, x: e.clientX, y: e.clientY, t: e.timeStamp });
   pluck(k, 0.85);
 });
 $('strip').addEventListener('pointermove', (e) => {
   const s = strums.get(e.pointerId); if (!s) return;
-  const k = stringAt(e); if (k === s.k) return;
-  // faster swipes ring a little louder
-  const now = performance.now(), dist = Math.hypot(e.clientX - s.x, e.clientY - s.y), speed = dist / Math.max(1, now - s.t);
-  const vel = Math.max(0.55, Math.min(1.1, 0.6 + speed * 0.35)), dir = k > s.k ? 1 : -1;
-  for (let j = s.k + dir; j !== k + dir; j += dir) pluck(j, vel);
-  Object.assign(s, { k, x: e.clientX, y: e.clientY, t: now });
+  // every touch sample since the last event (phones send several per frame), in order
+  const samples = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+  const first = samples[0].timeStamp;
+  for (const ce of samples) {
+    const k = stringAt(ce); if (k === s.k) continue;
+    // faster swipes ring a little louder
+    const dt = Math.max(1, ce.timeStamp - s.t), dist = Math.hypot(ce.clientX - s.x, ce.clientY - s.y), speed = dist / dt;
+    const vel = Math.max(0.55, Math.min(1.1, 0.6 + speed * 0.35)), dir = k > s.k ? 1 : -1, count = Math.abs(k - s.k);
+    // strings crossed in one sample are spread over the time it took to cross them, as a real strum is
+    const gap = Math.min(12, Math.max(3, dt / count)) / 1000;
+    let n = 0;
+    for (let j = s.k + dir; j !== k + dir; j += dir) pluck(j, vel, (ce.timeStamp - first) / 1000 + n++ * gap);
+    Object.assign(s, { k, x: ce.clientX, y: ce.clientY, t: ce.timeStamp });
+  }
 });
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => $('strip').addEventListener(ev, (e) => strums.delete(e.pointerId)));
 
@@ -152,6 +168,15 @@ addEventListener('keyup', (e) => {
   if (eng && eng.idx === i) eng.release();
 });
 
+// leaving the app (or the window) lets go of every mug and string, so nothing drones on
+function letGoAll() {
+  downs.clear(); strums.clear();
+  document.querySelectorAll('.chord.down, .chord.sing').forEach((b) => { b.classList.remove('down', 'sing'); });
+  if (eng) eng.release();
+}
+addEventListener('blur', letGoAll);
+document.addEventListener('visibilitychange', () => { if (document.hidden) letGoAll(); });
+
 // ---------- the beat and recording ----------
 function showHint() {
   drawRecChip();
@@ -165,63 +190,30 @@ function setPlaying(on) { $('play').classList.toggle('on', on); $('play').textCo
 // one (the beat starts from the Beat menu), or else starts the beat
 $('play').onclick = async () => {
   await start();
-  if (playingTake) { stopTake(); return; }
-  if (eng.playing) { if (eng.rec) finishTake(); eng.stop(); setPlaying(false); showHint(); return; }
+  if (eng.rec) { finishTake(); stopTake(); eng.stop(); setPlaying(false); showHint(); return; }
+  if (playingTake()) { stopTake(); return; }
+  if (eng.playing) { eng.stop(); setPlaying(false); showHint(); return; }
   if (take) { playTake(); return; }
   if (S.beat === 'none') { openBeats(); return; }
   eng.play(); setPlaying(true);
 };
-// your take, played back as it will be saved, the mugs lighting up as it goes
-// The take as a seamless loop: rendered once (and again only when the take
-// changes), its ring-out folded back onto its start, exactly its own length.
-// Made ahead of time, so ▶ and dubbing start at once.
-let loopCache = { key: '', buf: null, job: null };
-function loopOf(t) {
-  const key = JSON.stringify(t) + '@' + eng.ctx.sampleRate;
-  if (loopCache.key === key) return loopCache.job;
-  const job = renderTake(t, { sr: eng.ctx.sampleRate, tail: 3 }).then(({ buffer }) => {
-    const sr = buffer.sampleRate, n = Math.round(t.dur * sr), out = eng.ctx.createBuffer(2, n, sr);
-    for (let c = 0; c < 2; c++) {
-      const src = buffer.getChannelData(c), d = out.getChannelData(c);
-      d.set(src.subarray(0, n));
-      for (let i = n; i < src.length; i++) d[i % n] += src[i];
-    }
-    if (loopCache.key === key) loopCache.buf = out;
-    return out;
-  });
-  loopCache = { key, buf: null, job };
-  return job;
-}
-const warmLoop = () => { if (eng && take) loopOf(take).catch(() => {}); };
-// the chord on at a moment of the take (for lighting up the mugs)
-const chordAt = (t, pos) => { let i = -1; for (const e of t.ev) { if (e.t > pos + 0.02) break; if (e.k === 'c') i = e.i; } return i; };
-
-let playingTake = null;
-async function playTake() {
+// your take, playing live as a loop, exactly as it will be saved: it starts at
+// once, loops seamlessly, and changes (sound, style, key) are heard straight away.
+// The mug whose chord is on glows; your own tapped chord stays on the strings.
+const playingTake = () => !!(eng && eng.loop);
+function light(i) { document.querySelectorAll('.chord').forEach((b) => b.classList.toggle('lit', +b.dataset.i === i)); }
+function playTake(at = null) {
+  eng.playTake(take, at);
   setPlaying(true);
-  if (!loopCache.buf) $('hint').textContent = 'getting your take ready…';
-  const buf = await loopOf(take);
-  eng.wake();
-  const src = eng.ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(eng.ctx.destination);
-  const at = eng.ctx.currentTime + 0.03; src.start(at);
-  const evs = [...take.ev].sort((a, b) => a.t - b.t), same = take.key === S.key && take.mode === S.mode;
-  let lit = -2;
-  const follow = () => {
-    if (!playingTake || playingTake.src !== src) return;
-    const pos = ((eng.ctx.currentTime - at) % take.dur + take.dur) % take.dur, i = chordAt({ ev: evs }, pos);
-    if (same && i !== lit && i >= 0) { lit = i; select(i); }
-    requestAnimationFrame(follow);
-  };
-  playingTake = { src };
-  requestAnimationFrame(follow);
   $('hint').textContent = '▶ your take, looping · tap ■ to stop';
 }
 function stopTake() {
-  if (!playingTake) return;
-  const p = playingTake; playingTake = null;
-  try { p.src.stop(); } catch (e) { /* ended */ }
+  if (!playingTake()) return;
+  eng.stopTake(); light(-1);
   setPlaying(false); showHint();
 }
+// a changed take: heard from the next note if it is looping
+function takeChanged() { keep('cozy.take', take); if (playingTake()) eng.setTake(take); }
 $('rec').onclick = async () => {
   await start();
   if (eng.rec) { finishTake(); return; }
@@ -239,11 +231,8 @@ async function record(dubIt) {
   const dub = dubIt && take ? take : null;
   if (dub) {
     // dubbing: the take plays (its tempo, its beat) while you add to it
-    if (!loopCache.buf) $('hint').textContent = 'getting your take ready…';
-    const buffer = await loopOf(take);
     const at = eng.record({ dub });
-    const src = eng.ctx.createBufferSource(); src.buffer = buffer; src.loop = true; src.connect(eng.ctx.destination); src.start(at);
-    dubbing = src;
+    eng.playTake(dub, at);
     toast('a bar to get ready, then play on top');
   } else {
     eng.record({ bars: S.bars });
@@ -252,20 +241,21 @@ async function record(dubIt) {
   setPlaying(true);
   $('rec').classList.add('on');
 }
-let dubbing = null;
 function finishTake() {
   const wasDub = !!(eng.rec && eng.rec.dub);
-  const t = eng.stopRec();
+  const t = eng.stopRec(), end = eng.lastEnd;
   $('rec').classList.remove('on');
-  if (dubbing) { try { dubbing.stop(); } catch (e) { /* ended */ } dubbing = null; }
   if (wasDub) { eng.beat = S.beat; eng.bpm = S.bpm; }
-  if (S.beat === 'none' || wasDub) { eng.stop(); setPlaying(false); }
-  if (t && wasDub) { take = t; keep('cozy.take', take); toast('added on top'); }
+  if (eng.playing) eng.stop();   // the beat stops: the loop has its own
+  if (t && wasDub) { take = t; takeChanged(); toast('added on top'); }
   else if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take kept: ${t.bars} bars`); }
-  else toast('nothing played, so nothing was kept');
+  else { toast('nothing played, so nothing was kept'); if (wasDub) stopTake(); setPlaying(playingTake()); showHint(); return; }
   showHint();
-  // straight into hearing it back, looping (the beat stops: the loop has its own)
-  if (t) { if (eng.playing) eng.stop(); playTake(); } else warmLoop();
+  // straight into hearing it back: a dub's loop simply carries on with the new layer;
+  // a new take starts looping right where the recording ended
+  // (a take that ended by itself loops from that exact moment; one stopped early, from now)
+  if (!wasDub) playTake(end != null && Math.abs(end - eng.ctx.currentTime) < 0.15 ? end : null);
+  else { setPlaying(true); $('hint').textContent = '▶ your take, looping · tap ■ to stop'; }
 }
 
 // ---------- menus (Boba Beats' sheets) ----------
@@ -281,7 +271,6 @@ function openSheet(html, wire) {
 function closeSheet() {
   if (sheetBusy) return;
   $('sheet').hidden = true; $('scrim').hidden = true; $('sheet').style.transform = ''; $('sheet-body').textContent = '';
-  stopListening();
 }
 $('scrim').onclick = closeSheet;
 {
@@ -307,17 +296,26 @@ $('key').onclick = () => openSheet(`<h3>Key</h3>
   save(); cur = -1; drawChords();
   hearScale();
   // the whole take moves into the new key (or scale)
-  if (take) { take = retune(take, S.key, S.mode, mine()); keep('cozy.take', take); if (playingTake) { stopTake(); playTake(); } else warmLoop(); }
+  if (take) { take = retune(take, S.key, S.mode, mine()); takeChanged(); }
   r.querySelectorAll('[data-mode]').forEach((x) => x.classList.toggle('on', x.dataset.mode === S.mode));
   r.querySelectorAll('[data-key]').forEach((x) => x.classList.toggle('on', +x.dataset.key === S.key));
 });
+// previews (a key's scale, a changed chord) go through their own fader, so a
+// new one quietly cuts off the last instead of piling on top of it
+let previewBus = null;
+function previewOut() {
+  const t = eng.ctx.currentTime;
+  if (previewBus) { const old = previewBus; old.gain.setTargetAtTime(0, t, 0.03); setTimeout(() => old.disconnect(), 400); }
+  previewBus = eng.ctx.createGain(); previewBus.connect(eng.mix.voices);
+  return previewBus;
+}
 // hear a key: its scale up, then its home chord
 async function hearScale() {
   await start(); eng.wake();
   const steps = S.mode === 'minor' ? [0, 2, 3, 5, 7, 8, 10, 12] : [0, 2, 4, 5, 7, 9, 11, 12];
-  const base = 60 + ((S.key + 6) % 12) - 6, t = eng.ctx.currentTime + 0.03;
-  steps.forEach((st, k) => playString(eng.ctx, eng.mix.voices, t + k * 0.13, S.voice, base + st, 0.7));
-  playChord(eng.ctx, eng.mix.voices, t + steps.length * 0.13 + 0.05, S.voice, chordNotes(chords[0])).release(t + steps.length * 0.13 + 1.2);
+  const base = 60 + ((S.key + 6) % 12) - 6, t = eng.ctx.currentTime + 0.03, out = previewOut();
+  steps.forEach((st, k) => playString(eng.ctx, out, t + k * 0.13, S.voice, base + st, 0.7));
+  playChord(eng.ctx, out, t + steps.length * 0.13 + 0.05, S.voice, chordNotes(chords[0])).release(t + steps.length * 0.13 + 1.2);
 }
 $('voice').onclick = () => openSheet(`<h3>Sound</h3>${VOICES.map((v) => `<button class="big ${v.id === S.voice ? 'on' : ''}" data-v="${v.id}"><span>${v.name}<small>${v.hint}</small></span></button>`).join('')}
   <h4>How a mug plays its chord</h4>
@@ -331,8 +329,8 @@ $('voice').onclick = () => openSheet(`<h3>Sound</h3>${VOICES.map((v) => `<button
   save(); drawChords();
   // the take follows: the new sound, the new style
   if (take) {
-    take = restyle(take, S.voice, S.style); keep('cozy.take', take);
-    if (playingTake) { stopTake(); playTake(); return; } else warmLoop();
+    take = restyle(take, S.voice, S.style); takeChanged();
+    if (playingTake()) return;   // you hear it in the loop
   }
   // a taste of it
   eng.press(cur >= 0 ? cur : 0, curChord()); setTimeout(() => eng.release(), S.style === 'chord' ? 700 : 1400);
@@ -352,13 +350,13 @@ function editChord(i) {
     else if (X && !X.disabled) delete S.custom[S.mode][i];
     else return;
     save(); drawChords(); select(i);
-    if (take) { take = retune(take, S.key, S.mode, mine()); keep('cozy.take', take); warmLoop(); }
+    if (take) { take = retune(take, S.key, S.mode, mine()); takeChanged(); }
     const c2 = chords[i];
     r.querySelector('h3').textContent = `Mug ${i + 1}: ${c2.label}`;
     r.querySelectorAll('[data-root]').forEach((x) => x.classList.toggle('on', +x.dataset.root === c2.root));
     r.querySelectorAll('[data-shape]').forEach((x) => x.classList.toggle('on', x.dataset.shape === c2.shape));
     r.querySelector('[data-reset]').disabled = !c2.custom;
-    const t = eng.ctx.currentTime + 0.02; playChord(eng.ctx, eng.mix.voices, t, S.voice, chordNotes(c2)).release(t + 0.8);
+    const t = eng.ctx.currentTime + 0.02; playChord(eng.ctx, previewOut(), t, S.voice, chordNotes(c2)).release(t + 0.8);
   });
 }
 function openBeats() {
@@ -392,14 +390,12 @@ $('bpm').onclick = () => openSheet(`<h3>Tempo</h3>
 });
 
 // ---------- the menu: the take, and saving it ----------
-let listening = null;
-function stopListening() { if (listening) { try { listening.stop(); } catch (e) { /* done */ } listening = null; } }
 const APPS = [['Pop Pads', 'https://shalonely.com/pop/', '🥤', 'a fizzy little drum machine'], ['Boba Beats', 'https://shalonely.com/boba/', '🧋', 'make whole songs out of bubbles'], ['Deep Drift', 'https://shalonely.com/drift/', '🪼', 'a sleepy sea that sings']];
 $('menu').onclick = () => {
   const has = !!take, secs = has ? take.dur.toFixed(1) : 0;
   openSheet(`<h3>Your take</h3>
   <p class="note">${has ? `${take.bars} bar${take.bars > 1 ? 's' : ''}, ${secs} s, at ${take.bpm} bpm${take.beat !== 'none' ? ` with the ${beatOf(take.beat).name} beat` : ''}. Record again (●) to replace it.` : 'Nothing recorded yet. Press ● and play: you get a bar of clicks, then everything you play is kept.'}</p>
-  <button class="big" data-do="listen" ${has ? '' : 'disabled'}>▶<span>Listen<small>hear it back, as it will be saved</small></span></button>
+  <button class="big" data-do="listen" ${has ? '' : 'disabled'}>▶<span>Listen<small>hear it looping, as it will be saved</small></span></button>
   <button class="big" data-save="song" ${has ? '' : 'disabled'}>🎶<span>Song<small>a WAV from the first chord to the last ring-out</small></span></button>
   <button class="big" data-save="loop" ${has ? '' : 'disabled'}>🎵<span>Loop<small>a WAV that loops cleanly</small></span></button>
   <button class="big" data-save="midi" ${has ? '' : 'disabled'}>🎹<span>MIDI for Logic<small>chords, strings, bass and drums on their own tracks</small></span></button>
@@ -415,17 +411,9 @@ $('menu').onclick = () => {
     const I = e.target.closest('[data-install]');
     if (I) { const how = await install(); if (how) I.querySelector('small').textContent = how; else closeSheet(); return; }
     if (e.target.closest('[data-do="edit"]')) { closeSheet(); editing = true; showHint(); toast('tap a mug to change its chord'); return; }
-    if (e.target.closest('[data-do="unedit"]')) { S.custom[S.mode] = {}; save(); drawChords(); if (take) { take = retune(take, S.key, S.mode, {}); keep('cozy.take', take); warmLoop(); } closeSheet(); toast(`back to the chords of ${KEY_NAMES[S.key]} ${S.mode}`); return; }
+    if (e.target.closest('[data-do="unedit"]')) { S.custom[S.mode] = {}; save(); drawChords(); if (take) { take = retune(take, S.key, S.mode, {}); takeChanged(); } closeSheet(); toast(`back to the chords of ${KEY_NAMES[S.key]} ${S.mode}`); return; }
     const L = e.target.closest('[data-do="listen"]');
-    if (L && take) {
-      await start(); stopListening();
-      st.textContent = 'Getting it ready…';
-      const { buffer } = await renderTake(take, { sr: eng.ctx.sampleRate });
-      const src = eng.ctx.createBufferSource(); src.buffer = buffer; src.connect(eng.ctx.destination); src.start();
-      listening = src; st.textContent = '▶ playing your take';
-      src.onended = () => { if (listening === src) { listening = null; st.textContent = ''; } };
-      return;
-    }
+    if (L && take) { await start(); closeSheet(); if (eng.playing) eng.stop(); if (!playingTake()) playTake(); return; }
     const B = e.target.closest('[data-boba]'), b = e.target.closest('[data-save]');
     if (!take || (!B && !b)) return;
     const X = await import('./export.js'), name = X.baseName(take);
@@ -437,7 +425,7 @@ $('menu').onclick = () => {
         if (window.CozyNative) { st.textContent = `✓ ${await X.deliver(new TextEncoder().encode(JSON.stringify(file)), `${name}.bobabeats.json`, 'application/json')}`; return; }
         await X.handOff(file);
         st.textContent = '✓ Opening Boba Beats…';
-        if (eng && eng.playing) { eng.stop(); setPlaying(false); }
+        if (eng) { eng.stop(); eng.stopTake(); setPlaying(false); }
         location.href = new URL('../boba/?from=chords', location.href).href.replace(/\/chords\/\.\.\//, '/');
         return;
       }
@@ -459,8 +447,11 @@ $('menu').onclick = () => {
   let flakes = [];
   const size = () => {
     c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
+    // the same flakes carry on through a resize (the phone's address bar sliding in and out)
+    const count = Math.round(Math.min(80, innerWidth / 7));
+    if (flakes.length === count) return;
     // bigger flakes are nearer: they fall a little faster and sway wider
-    flakes = Array.from({ length: Math.round(Math.min(80, innerWidth / 7)) }, () => {
+    flakes = Array.from({ length: count }, () => {
       const near = Math.random();
       return { x: Math.random(), y: Math.random(), r: 0.7 + near * 2.4, v: 0.000018 + near * 0.00003, p: Math.random() * 6.28, w: 0.012 + near * 0.03, sway: 5000 + Math.random() * 5000, a: 0.3 + near * 0.35 };
     });
@@ -517,4 +508,4 @@ if (offer()) {
 }
 $('go').onclick = async () => { $('start').classList.add('gone'); await start(); fit(); };
 drawChords(); showHint();
-window.cozy = { get eng() { return eng; }, S, loopLength: () => (loopCache.buf ? loopCache.buf.length : 0), get take() { return take; }, set take(t) { take = t; keep('cozy.take', t); }, select };
+window.cozy = { get eng() { return eng; }, S, get take() { return take; }, set take(t) { take = t; keep('cozy.take', t); }, select, get cur() { return cur; } };

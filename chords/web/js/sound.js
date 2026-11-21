@@ -179,8 +179,13 @@ export const DRUMS = {
 };
 
 // ---------- the room and the master ----------
+// made once per sample rate (every saved file renders a fresh mix, and stems five)
+const rooms = new Map();
 function roomIR(ctx, secs = 1.8) {
-  const sr = ctx.sampleRate, n = Math.floor(sr * secs), b = ctx.createBuffer(2, n, sr);
+  const sr = ctx.sampleRate;
+  if (rooms.has(sr)) return rooms.get(sr);
+  const n = Math.floor(sr * secs), b = new AudioBuffer({ length: n, sampleRate: sr, numberOfChannels: 2 });
+  rooms.set(sr, b);
   for (let c = 0; c < 2; c++) {
     const d = b.getChannelData(c); let s = 7 + c * 977, lp = 0, e = 0;
     for (let i = 0; i < n; i++) {
