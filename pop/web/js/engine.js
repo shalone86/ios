@@ -263,6 +263,7 @@ export class Graph {
 
 export class PopEngine {
   static async create() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older Safari */ }   // iPhone: play even with the silent switch on
     const ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
     const e = new PopEngine(ctx);
     e.graph = await Graph.create(ctx);

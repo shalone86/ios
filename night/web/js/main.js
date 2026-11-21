@@ -122,6 +122,7 @@ function frame(t) { draw(t); requestAnimationFrame(frame); }
 
 async function startAudio() {
   if (!ctx) {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older Safari */ }   // iPhone: play even with the silent switch on
     ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
     drift = new Drift(ctx);
     drift.onNote = (i, level) => {

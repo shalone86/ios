@@ -50,6 +50,7 @@ export class Engine {
   // Call from a user gesture: browsers will not start audio otherwise.
   async wake(project) {
     if (!this.ctx) {
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older Safari */ }   // iPhone: play even with the silent switch on
       const AC = window.AudioContext || window.webkitAudioContext;
       const big = this.smooth === 'on';
       this.ctx = new AC({ latencyHint: big ? 'playback' : 'interactive' });
