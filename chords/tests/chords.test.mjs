@@ -91,28 +91,44 @@ const bar = 4 * 60 / 150;
 await page.waitForTimeout(bar * 1000 + 250);
 const tap = async (i) => { const b = await box(`.chord[data-i="${i}"]`); await touch(`.chord[data-i="${i}"]`, 'pointerdown', b.x + b.w / 2, b.y + b.h / 2); await page.waitForTimeout(250); await touch(`.chord[data-i="${i}"]`, 'pointerup', b.x + b.w / 2, b.y + b.h / 2); };
 await tap(0); await page.waitForTimeout(bar * 1000 - 250); await tap(1);
-await page.waitForTimeout(bar * 500);
-await page.click('#rec');
-const take = await page.evaluate(() => window.cozy.take);
+// a 4-bar take stops by itself at the end of bar 4
+await page.waitForFunction(() => !window.cozy.eng.rec, null, { timeout: (bar * 4 + 2) * 1000 });
+let take = await page.evaluate(() => window.cozy.take);
 const chordsIn = take ? take.ev.filter((e) => e.k === 'c' && !e.carried).map((e) => e.ch.label) : [];
-check(!!take && take.bars === 2 && Math.abs(take.dur - 2 * bar) < 0.01 && chordsIn.join() === 'C,F' && take.beat === 'cozy', `a recorded take: ${take && take.bars} bars, ${take && take.dur} s, chords ${chordsIn.join(' → ')}, with the beat`);
+check(!!take && take.bars === 4 && Math.abs(take.dur - 4 * bar) < 0.01 && chordsIn.join() === 'C,F' && take.beat === 'cozy', `a 4-bar take records and stops by itself: ${take && take.bars} bars, ${take && take.dur} s, chords ${chordsIn.join(' → ')}, with the beat`);
+await page.click('#play');   // stop the beat
+
+// dub on top: the take plays, strings added over it, chords kept; same length
+await page.evaluate(() => { window.cozy.S.dub = true; window.cozy.S.beat = 'none'; window.cozy.eng.beat = 'none'; });
+await page.click('#rec');
+await page.waitForFunction(() => { const e = window.cozy.eng; return e.rec && e.ctx.currentTime > e.rec.start + 0.2; }, null, { timeout: 15000 });
+const dubInfo = await page.evaluate(() => ({ bpm: window.cozy.eng.bpm, beat: window.cozy.eng.beat, bars: window.cozy.eng.rec && window.cozy.eng.rec.bars }));
+const sb = await box('#strip');
+for (let k = 0; k < 4; k++) { await touch('#strip', 'pointerdown', sb.x + 20 + k * 40, sb.y + sb.h / 2); await touch('#strip', 'pointerup', sb.x + 20 + k * 40, sb.y + sb.h / 2); await page.waitForTimeout(150); }
+await page.waitForFunction(() => !window.cozy.eng.rec, null, { timeout: (bar * 4 + 2) * 1000 });
+const dubbed = await page.evaluate(() => window.cozy.take);
+const kinds = (t) => t.ev.reduce((o, e) => ((o[e.k] = (o[e.k] || 0) + 1), o), {});
+check(dubInfo.beat === 'cozy' && dubInfo.bpm === 150 && dubInfo.bars === 4 && dubbed.bars === 4 && dubbed.beat === 'cozy' && kinds(dubbed).s === (kinds(take).s || 0) + 4 && kinds(dubbed).c === kinds(take).c,
+  `dubbing plays the take (its beat and tempo) and adds what you play: ${kinds(dubbed).c} chords kept, ${kinds(dubbed).s} strings added, still ${dubbed.bars} bars`);
+await page.evaluate(() => { window.cozy.S.dub = false; });
+take = dubbed;
 await page.click('#play');   // stop the beat
 
 // every save, from the menu
 await page.click('#menu');
 const save = async (what) => { const [d] = await Promise.all([page.waitForEvent('download'), page.click(`[data-save="${what}"]`)]); const f = path.join(OUT, d.suggestedFilename()); await d.saveAs(f); return f; };
 const song = await save('song'), loop = await save('loop');
-check(Math.abs(+probe(song) - (2 * bar + 3)) < 0.02 && Math.abs(+probe(loop) - 2 * bar) < 0.02, `Song WAV ${(+probe(song)).toFixed(2)} s (the take plus its ring-out), Loop WAV ${(+probe(loop)).toFixed(2)} s (exactly the take)`);
+check(Math.abs(+probe(song) - (4 * bar + 3)) < 0.02 && Math.abs(+probe(loop) - 4 * bar) < 0.02, `Song WAV ${(+probe(song)).toFixed(2)} s (the take plus its ring-out), Loop WAV ${(+probe(loop)).toFixed(2)} s (exactly the take)`);
 const lufs = String(execFileSync('sh', ['-c', `ffmpeg -hide_banner -i "${song}" -af ebur128=framelog=quiet -f null - 2>&1 | grep -E "^ +I:"`])).trim();
 check(/I:\s+-1[3-5]/.test(lufs), `the song is mastered to a gentle level (${lufs})`);
 const mid = fs.readFileSync(await save('midi'));
 let tracks = 0; for (let i = 0; i < mid.length - 3; i++) if (mid[i] === 0x4d && mid[i + 1] === 0x54 && mid[i + 2] === 0x72 && mid[i + 3] === 0x6b) tracks++;
 const ons = new Set(); for (let i = 0; i < mid.length - 2; i++) if ((mid[i] & 0xf0) === 0x90 && mid[i + 2] > 0 && mid[i + 1] < 128) ons.add(`${mid[i] & 15}:${mid[i + 1]}`);
-check(mid.slice(0, 4).toString() === 'MThd' && tracks === 3 && ons.has('0:60') && ons.has('0:53') && ons.has('2:48') && ons.has('2:41') && ons.has('9:36'), `MIDI: chords, bass and drums on their own tracks (${tracks} tracks: the C and F chords, their bass notes C3 and F2, the kick)`);
+check(mid.slice(0, 4).toString() === 'MThd' && tracks === 4 && ons.has('0:60') && ons.has('0:53') && ons.has('2:48') && ons.has('2:41') && ons.has('9:36'), `MIDI: chords, bass and drums on their own tracks (${tracks} tracks: the C and F chords, their bass notes C3 and F2, the kick)`);
 const zip = await save('stems'), list = String(execFileSync('unzip', ['-Z1', zip])).trim().split('\n').map((n) => n.split('/').pop());
 const dir = fs.mkdtempSync(path.join(OUT, 'st-')); execFileSync('unzip', ['-q', zip, '-d', dir]);
 const lens = [...new Set(String(execFileSync('sh', ['-c', `find "${dir}" -name '*.wav'`])).trim().split('\n').map((f) => (+probe(f)).toFixed(2)))];
-check(list.join() === 'mix.wav,1-chords.wav,2-bass.wav,3-drums.wav' && lens.length === 1, `stems: ${list.join(', ')}, all ${lens.join()} s`);
+check(list.join() === 'mix.wav,1-chords.wav,2-strings.wav,3-bass.wav,4-drums.wav' && lens.length === 1, `stems: ${list.join(', ')}, all ${lens.join()} s`);
 
 // the hand-over: Boba opens with the take as sampler tracks
 await Promise.all([page.waitForURL(/\/boba\//, { timeout: 30000 }), page.click('[data-boba]')]);
@@ -123,7 +139,7 @@ const boba = await page.evaluate(() => {
   const p = window.bubbloop.project;
   return { name: p.name, bpm: p.bpm, tracks: p.tracks.map((t) => `${t.name}(${t.role}):${t.smp ? Object.keys(t.smp.kit).length : '-'}`), bars: p.sections.map((s) => s.bars).join(), hits: p.tracks.map((t) => p.sections.reduce((n, s) => n + s.ev[t.id].length, 0)) };
 });
-check(boba.name === 'Cozy Chords in C major' && boba.bpm === 150 && /^Cozy Chords\(pads\):2 Cozy Bass\(bass\):\d+ Cozy Beat\(drums\):3$/.test(boba.tracks.join(' ')) && boba.bars === '2' && boba.hits[0] >= 2,
+check(boba.name === 'Cozy Chords in C major' && boba.bpm === 150 && /^Cozy Chords\(pads\):2 Cozy Strings\(melody\):\d+ Cozy Bass\(bass\):\d+ Cozy Beat\(drums\):3$/.test(boba.tracks.join(' ')) && boba.bars === '4' && boba.hits[0] >= 2,
   `Send to Boba: ${boba.name}, ${boba.tracks.join(', ')}, one ${boba.bars}-bar loop (${boba.hits.join('/')} notes)`);
 
 // fits the screen: small phone, big phone, laptop

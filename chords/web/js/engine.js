@@ -65,8 +65,9 @@ export class Cozy {
     this.chord = ch; this.idx = i;
     const notes = chordNotes(ch);
     this.held = playChord(this.ctx, this.mix.voices, t, this.voice, notes);
-    // with no beat running, the bass plays with the chord
-    if (!this.playing || this.beat === 'none') playBass(this.ctx, this.mix.bass, t, bassNote(ch), 1.2);
+    // with no beat running, the bass plays with the chord (when dubbing over a
+    // take with a beat, its own bass follows the chords once they are merged)
+    if ((!this.playing || this.beat === 'none') && !(this.rec && this.rec.dub && this.rec.dub.beat !== 'none')) playBass(this.ctx, this.mix.bass, t, bassNote(ch), 1.2);
     this.log({ k: 'c', i, ch: { root: ch.root, shape: ch.shape, label: ch.label }, n: notes, v: this.voice }, t);
   }
   release() {
@@ -106,37 +107,45 @@ export class Cozy {
         if (s % 4 === 0) { DRUMS.click(this.ctx, this.mix.master, t, s === 0); const beatNo = s / 4 + 1; if (this.onCount) later(() => this.onCount(beatNo)); }
       } else {
         if (n === 0 && this.onCount) later(() => this.onCount(0));
-        if (beat.id !== 'none') beatStep(this.ctx, this.mix, beat, s, t, this.bpm, this.chord);
+        const dub = this.rec && this.rec.dub;
+        // a recording ends by itself at the end of its last bar
+        if (this.rec && !this.rec.ending && t >= this.rec.end - 0.001) { this.rec.ending = true; if (this.onRecEnd) later(() => this.onRecEnd()); }
+        if (dub) { /* dubbing: the take itself is playing, beat and all */ }
+        else if (beat.id !== 'none') beatStep(this.ctx, this.mix, beat, s, t, this.bpm, this.chord);
         else if (s % 4 === 0 && this.rec) DRUMS.click(this.ctx, this.mix.master, t, s === 0);   // no beat: a quiet click while recording
-        if (this.onStep) later(() => this.onStep(s, steps));
+        if (this.onStep) { const bar = Math.floor(n / steps) + 1; later(() => this.onStep(s, steps, bar)); }
       }
       this.n++;
     }
   }
 
   // ----- recording a take -----
-  // starts at the top of the beat (after a bar of clicks), or at once with no beat
-  record() {
+  // A take is a set number of bars, counted in by a bar of clicks (or, with a
+  // beat already going, starting at its next bar). Dubbing plays an earlier
+  // take (its tempo and beat) and adds what is played on top of it.
+  //   bars: 4, 8 or 16;  dub: the take to play on top of (or null)
+  record({ bars = 4, dub = null } = {}) {
     this.wake();
+    if (dub) { this.stop(); this.bpm = dub.bpm; this.beat = dub.beat; bars = dub.bars; }
+    const steps = beatOf(this.beat).steps || 16, bar = stepDur(this.bpm) * steps;
     let start;
     if (!this.playing) start = this.play(true);
-    else start = this.t0 + Math.ceil((this.ctx.currentTime - this.t0) / (stepDur(this.bpm) * (beatOf(this.beat).steps || 16))) * stepDur(this.bpm) * (beatOf(this.beat).steps || 16);
-    this.rec = { start, ev: [] };
-    // the chord already on is part of the take from its first moment
-    if (this.chord) this.rec.ev.push({ t: 0, k: 'c', i: this.idx, ch: { root: this.chord.root, shape: this.chord.shape, label: this.chord.label }, n: chordNotes(this.chord), v: this.voice, carried: true });
+    else start = this.t0 + Math.ceil((this.ctx.currentTime - this.t0) / bar) * bar;
+    this.rec = { start, end: start + bars * bar, bars, dub, ev: [] };
+    // the chord already on is part of the take from its first moment (not when dubbing)
+    if (this.chord && !dub) this.rec.ev.push({ t: 0, k: 'c', i: this.idx, ch: { root: this.chord.root, shape: this.chord.shape, label: this.chord.label }, n: chordNotes(this.chord), v: this.voice, carried: true });
     return start;
   }
-  log(e, t) { if (this.rec && t >= this.rec.start - 0.05) this.rec.ev.push({ ...e, t: +Math.max(0, t - this.rec.start).toFixed(4) }); }
+  log(e, t) { if (this.rec && t >= this.rec.start - 0.05 && t < this.rec.end) this.rec.ev.push({ ...e, t: +Math.max(0, t - this.rec.start).toFixed(4) }); }
   stopRec() {
     const r = this.rec; this.rec = null;
     if (!r) return null;
-    const dur = Math.max(0, this.ctx.currentTime - r.start);
-    if (dur < 0.5 || !r.ev.some((e) => !e.carried)) return null;
+    if (this.ctx.currentTime - r.start < 0.3 || !r.ev.some((e) => !e.carried)) return null;
     // the chord carried in from before is only kept if nothing new was played at once
     if (r.ev.some((e) => e.k === 'c' && !e.carried && e.t < 0.25)) r.ev = r.ev.filter((e) => !e.carried);
-    // the take ends at the end of its last bar, so it loops and lines up
-    const bar = stepDur(this.bpm) * (beatOf(this.beat).steps || 16), bars = Math.max(1, Math.ceil(dur / bar - 0.02));
-    return { v: 1, bpm: this.bpm, beat: this.beat, dur: +(bars * bar).toFixed(4), bars, ev: r.ev };
+    if (r.dub) return { ...r.dub, ev: [...r.dub.ev, ...r.ev].sort((a, b) => a.t - b.t) };
+    const bar = stepDur(this.bpm) * (beatOf(this.beat).steps || 16);
+    return { v: 1, bpm: this.bpm, beat: this.beat, dur: +(r.bars * bar).toFixed(4), bars: r.bars, ev: r.ev };
   }
 }
 

@@ -29,6 +29,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 #bar { display: flex; align-items: center; gap: 8px; }
 #bar .grow { flex: 1; }
+#reclen.on { background: rgba(255,107,122,.28); border-color: #ff6b7a; }
+#bar .chip { flex: 0 1 auto; min-width: 0; padding: 0 11px; }
 #beat.on { background: color-mix(in srgb, var(--c2) 40%, transparent); border-color: var(--c2); }
 .round { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; background: var(--glass); border: 1px solid var(--line); font-size: 18px; }
 #play.on { background: var(--ink); color: var(--c0); }
@@ -55,9 +57,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background: linear-gradient(180deg, #fffdf8 0%, #fff3e6 55%, #f0c9a0 100%); box-shadow: 0 2px 3px rgba(60,20,10,.3); }
 .chord .m1 { left: 17%; transform: rotate(-14deg); }
 .chord .m2 { left: 41%; top: 16%; transform: rotate(10deg); background: linear-gradient(180deg, #fffdf8 0%, #ffe6ee 55%, #efc0b8 100%); }
-.chord svg { position: absolute; left: 20%; top: 30%; width: 60%; height: 22%; overflow: visible; }
-.chord b { position: absolute; left: 0; right: 0; bottom: 26%; text-align: center; font-size: calc(var(--b, 80px) / 5.6); font-weight: 600; color: rgba(40,10,20,.78); white-space: nowrap; }
-.chord small { position: absolute; left: 0; right: 0; bottom: 11%; text-align: center; font-size: calc(var(--b, 80px) / 10); color: rgba(40,10,20,.5); }
+.chord svg { position: absolute; left: 20%; top: 22%; width: 60%; height: 22%; overflow: visible; }
+.chord b { position: absolute; left: 0; right: 0; bottom: 21%; text-align: center; font-size: calc(var(--b, 80px) / 5.6); font-weight: 600; color: rgba(40,10,20,.78); white-space: nowrap; }
+.chord small { position: absolute; left: 0; right: 0; bottom: 7%; text-align: center; font-size: calc(var(--b, 80px) / 10); color: rgba(40,10,20,.5); }
 /* steam rising from the chord that is on */
 .chord .steam { position: absolute; left: 22%; width: 40%; top: -4%; height: 24%; opacity: 0; }
 .chord.cur .steam { opacity: 1; }
@@ -66,7 +68,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 @keyframes steam { 0% { transform: translateY(6px); opacity: 0; } 40% { opacity: 1; } 100% { transform: translateY(-6px); opacity: 0; } }
 .chord .open, .chord .o { display: none; }
 .chord.down { transform: scale(.92, .88); }
-.chord.down .o { display: inline; } .chord.down .smile { display: none; }
+.chord.sing .o { display: inline; } .chord.sing .smile { display: none; }
+/* the marshmallows bob down into the cocoa while it sings */
+.chord .m { transition: transform .18s cubic-bezier(.3, 1.6, .5, 1); }
+.chord.sing .m1 { transform: translateY(22%) rotate(-6deg); }
+.chord.sing .m2 { transform: translateY(26%) rotate(4deg); }
 .chord.cur .cup { box-shadow: inset 0 -6px 12px rgba(0,0,0,.16), 0 0 0 3px var(--ink), 0 0 22px var(--c); }
 .chord.cur .shut { display: none; } .chord.cur .open { display: inline; }
 

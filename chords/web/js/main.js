@@ -14,7 +14,7 @@ const toast = (msg) => { const el = $('toast'); el.textContent = msg; el.classLi
 // ---------- what is kept on this device ----------
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
 const keep = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } };
-const S = { key: 0, mode: 'major', voice: 'omni', beat: 'none', bpm: 84, ...load('cozy.settings', {}) };
+const S = { key: 0, mode: 'major', voice: 'omni', beat: 'none', bpm: 84, bars: 4, dub: false, ...load('cozy.settings', {}) };
 let take = load('cozy.take', null);
 const save = () => keep('cozy.settings', S);
 
@@ -23,7 +23,7 @@ const FACE = `<svg viewBox="0 0 64 24"><g fill="none" stroke="rgba(40,10,20,.72)
   <g class="shut"><path d="M12 8 q5 5 10 0"/><path d="M42 8 q5 5 10 0"/></g>
   <g class="open"><path d="M12 9 q5 -6 10 0"/><path d="M42 9 q5 -6 10 0"/></g>
   <path class="smile" d="M27 15 q5 5 10 0"/></g>
-  <ellipse class="o" cx="32" cy="17" rx="4" ry="4.6" fill="rgba(40,10,20,.72)"/>
+  <ellipse class="o" cx="32" cy="16" rx="5" ry="5.6" fill="rgba(40,10,20,.72)"/>
   <ellipse cx="6" cy="14" rx="5" ry="3" fill="rgba(255,110,140,.4)"/><ellipse cx="58" cy="14" rx="5" ry="3" fill="rgba(255,110,140,.4)"/></svg>`;
 // a cocoa mug: steam, two marshmallows, the cup with its face and its chord
 const STEAM = '<svg class="steam" viewBox="0 0 40 24"><path d="M10 22 q-5 -6 0 -11 t0 -10"/><path d="M28 22 q-5 -6 0 -11 t0 -10"/></svg>';
@@ -40,6 +40,14 @@ function drawChords() {
   fit();
 }
 const curChord = () => chords[cur >= 0 ? cur : 0];
+// a mug sings when its chord plays: mouth open, marshmallows bobbing down
+// into the cocoa (for a moment, or as long as it is held)
+function sing(b) {
+  if (!b) return;
+  b.classList.add('sing'); clearTimeout(b.singing);
+  b.singing = setTimeout(() => { if (!b.classList.contains('down')) b.classList.remove('sing'); }, 520);
+}
+const unsing = (b) => { b.classList.remove('down'); setTimeout(() => { if (!b.classList.contains('down')) b.classList.remove('sing'); }, 260); };
 function drawStrings() {
   const notes = stringNotes(curChord());
   $('strings').innerHTML = notes.map(() => '<i></i>').join('');
@@ -58,7 +66,12 @@ async function start() {
   eng = await Cozy.create();
   Object.assign(eng, { voice: S.voice, beat: S.beat, bpm: S.bpm });
   eng.onCount = (n) => { const h = $('hint'); if (n) { h.textContent = n; h.classList.add('count'); } else { showHint(); } };
-  eng.onStep = (s) => { if (s === 0) $('play').animate([{ transform: 'scale(1.12)' }, { transform: 'none' }], 180); };
+  eng.onStep = (s, steps, bar) => {
+    if (s !== 0) return;
+    $('play').animate([{ transform: 'scale(1.12)' }, { transform: 'none' }], 180);
+    if (eng.rec && bar >= 1 && bar <= eng.rec.bars) { const h = $('hint'); h.classList.remove('count'); h.textContent = `${eng.rec.dub ? 'dubbing' : 'recording'} · bar ${bar} of ${eng.rec.bars}`; }
+  };
+  eng.onRecEnd = () => { if (eng.rec) finishTake(); };
 }
 $('chords').addEventListener('pointerdown', async (e) => {
   const b = e.target.closest('.chord'); if (!b) return;
@@ -67,14 +80,14 @@ $('chords').addEventListener('pointerdown', async (e) => {
   const i = +b.dataset.i;
   try { b.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
   downs.set(e.pointerId, i);
-  b.classList.add('down');
+  b.classList.add('down'); sing(b);
   select(i);
   eng.press(i, chords[i]);
 });
 const up = (e) => {
   if (!downs.has(e.pointerId)) return;
   const i = downs.get(e.pointerId); downs.delete(e.pointerId);
-  const b = document.querySelector(`.chord[data-i="${i}"]`); if (b) b.classList.remove('down');
+  const b = document.querySelector(`.chord[data-i="${i}"]`); if (b) unsing(b);
   // a held chord stops when its bubble is let go (unless another finger has moved on to a new one)
   if (eng && eng.idx === i && ![...downs.values()].includes(i)) eng.release();
 };
@@ -120,7 +133,7 @@ addEventListener('keydown', async (e) => {
   const i = KEYMAP.indexOf(e.key.toLowerCase());
   if (i >= 0) {
     await start(); select(i); eng.press(i, chords[i]);
-    const b = document.querySelector(`.chord[data-i="${i}"]`); if (b) b.classList.add('down');
+    const b = document.querySelector(`.chord[data-i="${i}"]`); if (b) { b.classList.add('down'); sing(b); }
   } else if (e.key === ' ') {
     e.preventDefault(); await start(); if (cur < 0) select(0);
     const n = stringNotes(curChord()).length;
@@ -129,14 +142,15 @@ addEventListener('keydown', async (e) => {
 });
 addEventListener('keyup', (e) => {
   const i = KEYMAP.indexOf(e.key.toLowerCase()); if (i < 0) return;
-  const b = document.querySelector(`.chord[data-i="${i}"]`); if (b) b.classList.remove('down');
+  const b = document.querySelector(`.chord[data-i="${i}"]`); if (b) unsing(b);
   if (eng && eng.idx === i) eng.release();
 });
 
 // ---------- the beat and recording ----------
 function showHint() {
+  drawRecChip();
   const h = $('hint'); h.classList.remove('count');
-  h.textContent = eng && eng.rec ? 'recording · tap ● to stop' : take ? `your take: ${take.bars} bar${take.bars > 1 ? 's' : ''} · ▶ to hear it · ☰ to save it` : 'tap a chord · swipe the strings to strum it';
+  h.textContent = eng && eng.rec ? 'recording · tap ● to stop' : take ? `your take: ${take.bars} bars · ▶ to hear it${S.dub ? ' · ● dubs on top' : ''} · ☰ to save it` : 'tap a chord · swipe the strings to strum it';
 }
 function setPlaying(on) { $('play').classList.toggle('on', on); $('play').textContent = on ? '■' : '▶'; }
 // ▶: stops whatever is playing; otherwise plays your take back if you have
@@ -172,16 +186,32 @@ $('rec').onclick = async () => {
   await start();
   if (eng.rec) { finishTake(); return; }
   stopTake();
-  eng.record(); setPlaying(true);
+  const dub = S.dub && take ? take : null;
+  if (dub) {
+    // dubbing: the take plays (its tempo, its beat) while you add to it
+    $('hint').textContent = 'getting your take ready…';
+    const { buffer } = await renderTake(take, { sr: eng.ctx.sampleRate, tail: 2 });
+    const at = eng.record({ dub });
+    const src = eng.ctx.createBufferSource(); src.buffer = buffer; src.connect(eng.ctx.destination); src.start(at);
+    dubbing = src;
+    toast('a bar to get ready, then play on top');
+  } else {
+    eng.record({ bars: S.bars });
+    toast(S.beat === 'none' ? 'four clicks, then play' : 'one bar to get ready, then play');
+  }
+  setPlaying(true);
   $('rec').classList.add('on');
-  toast(S.beat === 'none' ? 'four clicks, then play' : 'one bar to get ready, then play');
-  setTimeout(showHint, 50);
 };
+let dubbing = null;
 function finishTake() {
+  const wasDub = !!(eng.rec && eng.rec.dub);
   const t = eng.stopRec();
   $('rec').classList.remove('on');
-  if (S.beat === 'none') { eng.stop(); setPlaying(false); }
-  if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take kept: ${t.bars} bar${t.bars > 1 ? 's' : ''} · ▶ to hear it`); }
+  if (dubbing) { try { dubbing.stop(); } catch (e) { /* ended */ } dubbing = null; }
+  if (wasDub) { eng.beat = S.beat; eng.bpm = S.bpm; }
+  if (S.beat === 'none' || wasDub) { eng.stop(); setPlaying(false); }
+  if (t && wasDub) { take = t; keep('cozy.take', take); toast('added on top · ▶ to hear it'); }
+  else if (t) { t.key = S.key; t.mode = S.mode; take = t; keep('cozy.take', take); toast(`take kept: ${t.bars} bars · ▶ to hear it`); }
   else toast('nothing played, so nothing was kept');
   showHint();
 }
@@ -242,6 +272,21 @@ function openBeats() {
   });
 }
 $('beat').onclick = openBeats;
+// Recording: how long a take is, and whether ● starts a new one or dubs on top
+function drawRecChip() { $('reclen').textContent = S.dub && take ? `dub · ${take.bars} bars` : `${S.bars} bars`; $('reclen').classList.toggle('on', !!(S.dub && take)); }
+$('reclen').onclick = () => openSheet(`<h3>Recording</h3>
+  <h4>Length</h4>
+  <div class="row">${[4, 8, 16].map((n) => `<button class="chip ${n === S.bars ? 'on' : ''}" data-bars="${n}">${n} bars</button>`).join('')}</div>
+  <p class="note" style="margin-top:8px">A take stops by itself at the end, ready to loop.</p>
+  <h4>When you press ●</h4>
+  <button class="big ${S.dub ? '' : 'on'}" data-dub="0">●<span>Record over<small>a fresh take, replacing the last one</small></span></button>
+  <button class="big ${S.dub ? 'on' : ''}" data-dub="1" ${take ? '' : 'disabled'}>◎<span>Dub on top<small>${take ? `your ${take.bars}-bar take plays, and whatever you play is added to it: chords first, then strum on top` : 'record a take first'}</small></span></button>`, (r) => r.onclick = (e) => {
+  const L = e.target.closest('[data-bars]'), D = e.target.closest('[data-dub]');
+  if (L) { S.bars = +L.dataset.bars; r.querySelectorAll('[data-bars]').forEach((x) => x.classList.toggle('on', x === L)); }
+  else if (D && !D.disabled) { S.dub = D.dataset.dub === '1'; r.querySelectorAll('[data-dub]').forEach((x) => x.classList.toggle('on', x === D)); }
+  else return;
+  save(); drawRecChip(); showHint();
+});
 let taps = [];
 $('bpm').onclick = () => openSheet(`<h3>Tempo</h3>
   <div class="tempo"><button data-d="-1">−</button><span id="t-val">${S.bpm}</span><button data-d="1">+</button></div>
@@ -310,20 +355,31 @@ $('menu').onclick = () => {
   });
 };
 
-// ---------- the warm glow in the background: slow motes, like dust in lamplight ----------
+// ---------- the background: snow falling softly outside, and a warm glow from the fire ----------
 {
   const c = $('glow'), g = c.getContext('2d');
-  let motes = [];
-  const size = () => { c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio; motes = Array.from({ length: 26 }, () => ({ x: Math.random(), y: Math.random(), r: 1 + Math.random() * 2.5, s: 0.00004 + Math.random() * 0.00008, p: Math.random() * 6.28 })); };
+  let flakes = [];
+  const size = () => {
+    c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
+    flakes = Array.from({ length: Math.round(Math.min(70, innerWidth / 8)) }, () => ({ x: Math.random(), y: Math.random(), r: 0.8 + Math.random() * 2.2, v: 0.00012 + Math.random() * 0.00018, p: Math.random() * 6.28, w: 0.004 + Math.random() * 0.01 }));
+  };
   size(); addEventListener('resize', size);
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let last = 0;
   const draw = (t) => {
+    const dt = Math.min(64, t - last || 16); last = t;
     g.clearRect(0, 0, c.width, c.height);
-    for (const m of motes) {
-      if (!still) { m.y -= m.s * 16; if (m.y < -0.02) { m.y = 1.02; m.x = Math.random(); } }
-      const a = 0.25 + 0.2 * Math.sin(t / 1400 + m.p);
-      g.fillStyle = `rgba(255, 200, 140, ${a})`;
-      g.beginPath(); g.arc((m.x + Math.sin(t / 5000 + m.p) * 0.01) * c.width, m.y * c.height, m.r * devicePixelRatio, 0, 6.29); g.fill();
+    // the fire's glow at the bottom, breathing slowly
+    const f = 0.16 + 0.04 * Math.sin(t / 900) + 0.025 * Math.sin(t / 370 + 1.3);
+    const glow = g.createRadialGradient(c.width / 2, c.height * 1.08, 0, c.width / 2, c.height * 1.08, c.height * 0.75);
+    glow.addColorStop(0, `rgba(255, 150, 80, ${f})`); glow.addColorStop(1, 'rgba(255, 150, 80, 0)');
+    g.fillStyle = glow; g.fillRect(0, 0, c.width, c.height);
+    // snow: small, slow, drifting, fading as it nears the warm floor
+    for (const s of flakes) {
+      if (!still) { s.y += s.v * dt; if (s.y > 1.02) { s.y = -0.02; s.x = Math.random(); } }
+      const x = (s.x + Math.sin(t / 2600 + s.p) * s.w) * c.width, y = s.y * c.height, fade = Math.max(0, Math.min(1, (1 - s.y) * 2.2));
+      g.fillStyle = `rgba(255, 250, 245, ${0.5 * fade})`;
+      g.beginPath(); g.arc(x, y, s.r * devicePixelRatio, 0, 6.29); g.fill();
     }
     if (!document.hidden) requestAnimationFrame(draw);
   };
