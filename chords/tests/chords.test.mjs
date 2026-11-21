@@ -61,6 +61,20 @@ await touch('#strip', 'pointerup', st.x + st.w - 12, st.y + st.h / 2);
 const strung = await page.evaluate(() => window.__strung);
 check(strung.length === 12 && strung.every((m, k) => !k || m > strung[k - 1]) && strung[0] === 52, `a swipe across the strip plays every string, low to high (${strung.join(' ')})`);
 
+// record with no beat: the four clicks count all the way in, and the take is kept
+await page.evaluate(() => { const c = window.cozy; c.S.beat = 'none'; c.S.bpm = 150; c.eng.beat = 'none'; c.eng.bpm = 150; });
+const counted = [];
+await page.exposeFunction('__count', (n) => counted.push(n));
+await page.evaluate(() => { const e = window.cozy.eng, o = e.onCount; e.onCount = (n) => { window.__count(n); o(n); }; });
+await page.click('#rec');
+await page.waitForTimeout(4 * 60 / 150 * 1000 + 300);
+{ const b = await box('.chord[data-i="0"]'); await touch('.chord[data-i="0"]', 'pointerdown', b.x + b.w / 2, b.y + b.h / 2); await page.waitForTimeout(200); await touch('.chord[data-i="0"]', 'pointerup', b.x + b.w / 2, b.y + b.h / 2); }
+await page.waitForTimeout(600);
+await page.click('#rec');
+const free = await page.evaluate(() => ({ take: window.cozy.take, playing: window.cozy.eng.playing }));
+check(counted.join() === '1,2,3,4,0' && free.take && free.take.beat === 'none' && free.take.ev.some((e) => e.k === 'c' && e.ch.label === 'C') && !free.playing,
+  `with no beat, the count-in goes 1, 2, 3, 4 and the take is kept (${counted.join(' ')}; ${free.take && free.take.bars} bar)`);
+
 // record a take with the beat: a bar of clicks, then two chords
 await page.evaluate(() => { const c = window.cozy; c.S.beat = 'cozy'; c.S.bpm = 150; c.eng.beat = 'cozy'; c.eng.bpm = 150; });
 await page.click('#rec');

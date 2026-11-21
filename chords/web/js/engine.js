@@ -39,7 +39,8 @@ function beatStep(ctx, mix, beat, s, t, bpm, chord) {
     playBass(ctx, mix.bass, t, bassNote(chord, b), Math.max(0.12, (next - s) * stepDur(bpm) * 0.9));
   }
 }
-const timeOfStep = (beat, bpm, n) => n * stepDur(bpm) + (n % 2 ? beat.swing * stepDur(bpm) * 0.66 : 0);
+// (a beat with no swing of its own, like "No beat", has none)
+const timeOfStep = (beat, bpm, n) => n * stepDur(bpm) + (n % 2 ? (beat.swing || 0) * stepDur(bpm) * 0.66 : 0);
 
 export class Cozy {
   static async create() {
