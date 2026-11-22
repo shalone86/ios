@@ -75,7 +75,7 @@ const choke = await page.evaluate(async () => {
 check(choke.cut < choke.ring * 0.01, `a new chord hit cuts the last one's tail (${choke.ring.toFixed(1)} → ${choke.cut.toFixed(4)})`);
 
 // play a pad, then Steps opens on it; the pitch buttons step by intervals
-await page.click('#go');
+await page.evaluate(() => window.popPads.start());
 await page.waitForFunction(() => window.popPads.eng && window.popPads.eng.bufs);
 await page.evaluate(() => window.popPads.eng.setKit('cola'));
 const pad14 = await page.$('.pad[data-pad="14"]'), box = await pad14.boundingBox();

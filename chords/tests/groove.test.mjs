@@ -34,7 +34,7 @@ let failed = 0; const check = (ok, m) => { console.log((ok ? '  ok   ' : '  FAIL
 
 // a beat in Pop Pads (Lime): kick, snare, hats, and a bass line: root on 1, a fifth up on step 7, root on 9
 await page.goto(`${base}/pop/`);
-await page.click('#go');
+await page.evaluate(() => window.popPads.start());
 await page.waitForFunction(() => window.popPads.eng && window.popPads.eng.bufs);
 await page.evaluate(() => {
   const s = window.popPads.song; s.kit = 'lime'; s.bpm = 96; s.swing = 0;
@@ -56,7 +56,7 @@ check(arrived.name === 'Lime groove' && arrived.bpm === 96 && arrived.chip === '
   `Send to Cozy Chords: "${arrived.name}" arrives as the beat, at Pop's 96 bpm, with Pop's own drums (${arrived.drums}) and ${arrived.notes} bass notes`);
 
 // in the Beat menu, under "Grooves from Pop Pads"
-await page.click('#go'); await page.waitForFunction(() => window.cozy.eng);
+await page.evaluate(() => window.cozy.start()); await page.waitForFunction(() => window.cozy.eng);
 await page.click('#beat');
 const listed = await page.evaluate(() => [...document.querySelectorAll('#sheet [data-b]')].map((b) => b.textContent).filter((t) => /from Pop Pads/.test(t)));
 await page.click('#scrim', { position: { x: 20, y: 20 } });
@@ -94,7 +94,7 @@ const boba = await page.evaluate(() => window.bubbloop.project.tracks.filter((t)
 check(/Cozy Chords:2/.test(boba) && /Cozy Bass \(Lime groove\):\d+/.test(boba) && /Lime groove:3/.test(boba), `and on to Boba: ${boba}`);
 
 // removing it from the Beat menu
-await page.goto(`${base}/chords/`); await page.click('#go'); await page.waitForFunction(() => window.cozy.eng);
+await page.goto(`${base}/chords/`); await page.evaluate(() => window.cozy.start()); await page.waitForFunction(() => window.cozy.eng);
 await page.click('#beat');
 await page.click('[data-del]');
 const gone = await page.evaluate(async () => { const { GROOVES } = await import('/chords/js/engine.js'); return { n: GROOVES.size, beat: window.cozy.S.beat }; });

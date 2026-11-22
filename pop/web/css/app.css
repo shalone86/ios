@@ -144,18 +144,6 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
   padding: 9px 16px; border-radius: 20px; font-weight: 600; font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap; }
 #toast.on { opacity: 1; }
 
-#start { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; text-align: center;
-  background: radial-gradient(circle at 50% 40%, var(--c1), var(--c0) 70%); transition: opacity .5s; }
-#start.gone { opacity: 0; pointer-events: none; }
-#start h2 { margin: 6px 0 4px; font-size: 44px; }
-#start p { margin: 0 0 24px; color: var(--dim); }
-#start button { padding: 14px 30px; border-radius: 28px; background: var(--ink); color: var(--c0); font-size: 18px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
-#start .how { display: block; margin: 16px auto 0; padding: 8px 14px; background: none; box-shadow: none; color: var(--ink); font-size: 15px; opacity: .85; }
-#start #apk { display: block; margin: 22px auto 0; max-width: 300px; padding: 6px 12px; background: none; box-shadow: none; color: var(--dim); font-size: 13px; font-weight: 400; text-decoration: underline; }
-#start #apk[hidden] { display: none; }
-.logo { display: flex; justify-content: center; gap: 6px; align-items: flex-end; }
-.logo i { display: block; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--c2) 45%, var(--c1)); }
-.logo i:nth-child(1) { width: 26px; height: 26px; } .logo i:nth-child(2) { width: 46px; height: 46px; } .logo i:nth-child(3) { width: 18px; height: 18px; }
 
 /* sideways on a phone: controls on the left, pads on the right */
 body.wide #app { max-width: 1200px; display: grid; grid-template-columns: minmax(300px, 460px) auto; grid-auto-rows: min-content; column-gap: 40px; row-gap: 10px;

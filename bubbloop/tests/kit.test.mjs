@@ -8,7 +8,7 @@ const { browser, page, errors } = await openPage(server.url + '/index.html', {
 });
 let failed = 0;
 const check = (ok, msg) => { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed++; };
-await page.click('#btn-start', { force: true });
+await page.waitForFunction(() => window.bubbloop); await page.evaluate(() => window.bubbloop.engine.wake(window.bubbloop.project));
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.engine.ready);
 
 // chop: six hits, 0.3 s apart

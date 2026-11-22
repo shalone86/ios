@@ -29,7 +29,7 @@ const errors = []; page.on('pageerror', (e) => errors.push(String(e)));
 let failed = 0; const check = (ok, m) => { console.log((ok ? '  ok   ' : '  FAIL ') + m); if (!ok) failed++; };
 
 await page.goto(`${base}/pop/`);
-await page.click('#go');
+await page.evaluate(() => window.popPads.start());
 await page.waitForFunction(() => window.popPads.eng && window.popPads.eng.bufs);
 // a beat: chain 1 → 2 → 1 (three bars, so Boba gets four), a pitched-up snare, a nudged hat
 const sent = await page.evaluate(() => {
@@ -51,7 +51,7 @@ await page.click('#menu');
 await Promise.all([page.waitForURL(/\/boba\//, { timeout: 30000 }), page.click('[data-boba]')]);
 check(/\/boba\//.test(page.url()), `Send to Boba Beats opens Boba (${page.url().replace(base, '')})`);
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.project, null, { timeout: 30000 });
-await page.evaluate(() => document.getElementById('btn-start').click());
+await page.waitForFunction(() => window.bubbloop); await page.evaluate(() => window.bubbloop.engine.wake(window.bubbloop.project));
 await page.waitForTimeout(1500);
 const got = await page.evaluate(async () => {
   const p = window.bubbloop.project, t = p.tracks[0], sec = p.sections[0], ev = sec.ev[t.id], all = p.sections.reduce((n, x) => n + x.ev[t.id].length, 0);
@@ -93,7 +93,7 @@ const file = await page.evaluate(async () => { const { bobaSong } = await import
 fs.writeFileSync(path.join(here, '.handoff.bobabeats.json'), file);
 await page.goto(`${base}/boba/`);
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.project);
-await page.evaluate(() => document.getElementById('btn-start').click()); await page.waitForTimeout(500);
+await page.waitForFunction(() => window.bubbloop); await page.evaluate(() => window.bubbloop.engine.wake(window.bubbloop.project)); await page.waitForTimeout(500);
 await page.evaluate(async () => { const { openSheets } = await import('/boba/js/ui/sheets.js'); openSheets.project ? openSheets.project() : null; });
 await page.waitForTimeout(400);
 const input = await page.$('#p-file');

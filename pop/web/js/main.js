@@ -6,6 +6,7 @@ import { INTERVALS, PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, la
 import { KITS, KIT_ORDER } from './kits.js';
 import { offer, install, goOffline } from './install.js';
 import { tapAlong } from './tapalong.js';
+import { tips, unlockAudio } from './tips.js';
 import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff, cozyGroove } from './export.js';
 
 // the other bubble apps (in the Android app these open in the browser)
@@ -13,6 +14,8 @@ const APPS = [['Boba Beats', 'https://shalonely.com/boba/', '🧋', 'make whole 
 
 const $ = (id) => document.getElementById(id);
 const SAVE = 'poppads.song';
+const tip = tips('pop');
+let hits = 0;   // pads tapped this visit, for the tips
 let eng = null, mode = 'play', sel = 0, chainEdit = false;
 let tab = 'drum', lockStep = null;       // steps mode: which panel, and the step being given its own settings
 
@@ -252,6 +255,7 @@ $('grid').addEventListener('pointerdown', async (e) => {
   sel = i;                              // the pad last played is the one Steps opens on
   try { pad.setPointerCapture(e.pointerId); } catch (err) { /* a pointer the browser can't capture: moves still reach the grid */ }
   eng.tap(i);
+  if (++hits === 12) tip.show('steps', 'tap Steps to build a beat that loops', document.querySelector('[data-mode="steps"]'));
   const t = { pad: i, el: pad, y0: e.clientY, holding: false };
   t.timer = setTimeout(() => { t.holding = true; eng.hold(i); pad.classList.add('rep'); }, 220);
   touches.set(e.pointerId, t);
@@ -301,6 +305,7 @@ $('metro').onclick = () => { song.metro = !song.metro; save(); $('metro').classL
 document.querySelector('.seg').onclick = (e) => {
   const b = e.target.closest('[data-mode]'); if (!b) return;
   mode = b.dataset.mode; drawAll();
+  if (mode === 'steps') tip.done('steps');
 };
 $('sounds').onclick = async (e) => {
   const b = e.target.closest('[data-sel]'); if (!b) return;
@@ -525,7 +530,7 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   ${window.PopNative ? '' : '<button class="big" data-cozy="1">☕<span>Send to Cozy Chords<small>use this groove there: the drums as they sound here, and this kit\'s bass playing the bass line under your chords</small></span></button>'}
   <p id="s-status" style="min-height:1.3em;color:var(--dim);font-size:14px;margin:6px 0 0"></p>
   <h4>Pattern ${song.cur + 1}</h4>
-  <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">▶ How it works</button></div>
+  <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">▶ Watch how it works (2 min)</button></div>
   <h4>Everything</h4>
   <div class="row"><button class="chip" data-fresh="1">✨ Start fresh</button><button class="chip" data-timing="1">🎧 Bluetooth timing${eng && eng.tapDelay ? ` · ${Math.round(eng.tapDelay * 1000)} ms` : ''}</button></div>
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
@@ -630,19 +635,16 @@ function showTour() {
 const closeTour = () => { $('tour-video').pause(); $('tour').hidden = true; };
 $('tour-close').onclick = closeTour;
 $('tour-video').onended = closeTour;
-$('how-start').onclick = () => { $('start').classList.add('gone'); start(); showTour(); };
 
 // ---------- go ----------
 // on the website: offer to put Pop Pads on the home screen as an app (no APK needed)
 goOffline();
-if (offer()) {
-  const b = $('apk'); b.hidden = false;
-  b.onclick = async () => { const how = await install(); if (how) { b.textContent = how; b.style.textDecoration = 'none'; } else b.hidden = true; };
-}
-$('go').onclick = async () => { $('start').classList.add('gone'); await start(); };
+// no start screen: the first tap on a pad starts the sound (the soft glow says where)
+unlockAudio(() => eng && eng.ctx);
 // the Android app: the beat stops when you leave the app
 window.popPadsPause = () => { if (eng && eng.playing) $('play').click(); };
 // the Android back button closes a sheet first
 window.popPadsBack = () => { if (!$('tour').hidden) { closeTour(); return true; } if (!$('sheet').hidden) { closeSheet(); return true; } return false; };
 drawAll();
+tip.glow('.pad[data-pad="0"]', '.pad');   // the kick, until someone taps a pad
 window.popPads = { get eng() { return eng; }, get song() { return song; }, start };

@@ -1,6 +1,7 @@
 // Deep Drift: a dark sea of sleepy, glowing orbs that sing when touched.
 
 import { offer, install, goOffline } from './install.js';
+import { tips, unlockAudio } from './tips.js';
 import { Drift, MOODS, orbNotes, VOICE_NAMES } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -116,7 +117,13 @@ function drawOrb(o, t) {
   o.sx = x; o.sy = y; o.sr = R;
 }
 
-function frame(t) { draw(t); requestAnimationFrame(frame); }
+// first visit: the middle light breathes until someone touches one
+const tip = tips('drift');
+let firstTouch = tip.seen('first');
+function frame(t) {
+  if (!firstTouch) { const o = orbs[orbs.length >> 1]; if (o) o.glow = Math.max(o.glow, 0.45 + 0.4 * Math.sin(t / 380)); }
+  draw(t); requestAnimationFrame(frame);
+}
 
 // ---------- sound ----------
 
@@ -170,6 +177,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (!drift) return;
   const o = orbAt(e.clientX, e.clientY);
   if (!o) return;
+  if (!firstTouch) { firstTouch = true; tip.done('first'); tip.done('hello'); }
   const t = { orb: o, hold: null };
   // keep a finger down to hum the note for as long as you like
   t.timer = setTimeout(() => { t.hold = drift.hold(o.i, notes[o.i], 0.75); o.held = true; o.glow = 1.2; }, 350);
@@ -263,9 +271,8 @@ function timerStep() {
   $('timer').textContent = left > 120 ? `sleep: ${Math.ceil(left / 60)} min` : 'sleep: fading';
 }
 
-$('go').onclick = async () => { $('start').classList.add('gone'); await startAudio(); };
 
-// the tutorial video: from the start screen, and from ? at any time
+// the tutorial video: from the menu (☰ or ?) at any time
 function showTour() {
   const box = $('tour'), video = $('tour-video');
   try { localStorage.setItem('deepdrift.seenTour', '1'); } catch (e) { /* private mode */ }
@@ -282,11 +289,12 @@ function closeTour() {
 // on the website: offer to put Deep Drift on the home screen as an app (no APK needed)
 goOffline();
 if (offer()) {
-  const b = $('apk'), m = $('m-apk'); b.hidden = false; m.hidden = false;
-  b.onclick = async () => { const how = await install(); if (how) { b.textContent = how; b.style.textDecoration = 'none'; } else { b.hidden = true; m.hidden = true; } };
-  m.onclick = async () => { const how = await install(); if (how) m.querySelector('small').textContent = how; else { b.hidden = true; m.hidden = true; } };
+  const m = $('m-apk'); m.hidden = false;
+  m.onclick = async () => { const how = await install(); if (how) m.querySelector('small').textContent = how; else m.hidden = true; };
 }
-$('tour-link').onclick = () => { $('start').classList.add('gone'); showTour(); };
+// no start screen: touching a light starts the sound; one line says so, once
+unlockAudio(() => ctx);
+setTimeout(() => { if (!firstTouch) tip.show('hello', 'tap a sleepy light to start it singing · hold one to hum'); }, 600);
 // the menu: the tutorial, and the other bubble apps
 $('help').onclick = () => { $('menu').hidden = false; };
 $('menu-close').onclick = () => { $('menu').hidden = true; };

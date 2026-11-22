@@ -9,7 +9,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const shot = (n) => page.screenshot({ path: path.join(OUT, `shot-${n}.png`) });
 await page.waitForTimeout(600);
 await shot('0-splash');
-await page.click('#btn-start', { force: true });
+await page.waitForFunction(() => window.bubbloop); await page.evaluate(() => window.bubbloop.engine.wake(window.bubbloop.project));
 await page.waitForTimeout(1200);
 await shot('1-play');
 // STEPS="name::selector;;name::js:code" clicks (or runs) each step and snaps it

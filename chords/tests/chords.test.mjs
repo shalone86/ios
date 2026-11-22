@@ -44,7 +44,7 @@ check(keys.cMajor === 'C F G Am Dm Em Fmaj7 G7 B♭ Fm D Csus2' && keys.aMinor =
 check(keys.g7 === '55,59,62,65' && keys.strings === '52,55,60,64,67,72,76,79,84,88,91,96' && keys.bass === 45, `voicings: G7 ${keys.g7}, C's strings ${keys.strings}, Am's bass ${keys.bass}`);
 
 // tap a chord, strum the strings
-await page.click('#go');
+await page.evaluate(() => window.cozy.start());
 await page.waitForFunction(() => window.cozy.eng);
 const box = async (sel) => page.$eval(sel, (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
 const touch = async (sel, type, x, y) => page.dispatchEvent(sel, type, { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, bubbles: true });
@@ -260,7 +260,7 @@ check(list.join() === 'mix.wav,1-chords.wav,2-strings.wav,3-bass.wav,4-drums.wav
 // the hand-over: Boba opens with the take as sampler tracks
 await Promise.all([page.waitForURL(/\/boba\//, { timeout: 30000 }), page.click('[data-boba]')]);
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.project, null, { timeout: 30000 });
-await page.evaluate(() => document.getElementById('btn-start').click());
+await page.waitForFunction(() => window.bubbloop); await page.evaluate(() => window.bubbloop.engine.wake(window.bubbloop.project));
 await page.waitForTimeout(1200);
 const boba = await page.evaluate(() => {
   const p = window.bubbloop.project;
@@ -274,7 +274,7 @@ const fits = [];
 for (const [w, h] of [[360, 640], [430, 932], [1440, 820]]) {
   const p2 = await (await browser.newContext({ viewport: { width: w, height: h }, hasTouch: w < 800, serviceWorkers: 'block' })).newPage();
   p2.on('pageerror', (e) => errors.push(String(e)));
-  await p2.goto(`${base}/chords/`); await p2.click('#go'); await p2.waitForTimeout(300);
+  await p2.goto(`${base}/chords/`); await p2.evaluate(() => window.cozy.start()); await p2.waitForTimeout(300);
   const r = await p2.evaluate(() => {
     const all = [...document.querySelectorAll('.chord'), document.getElementById('strip'), document.getElementById('menu'), document.getElementById('play')].map((e) => e.getBoundingClientRect());
     const b = document.querySelector('.chord').getBoundingClientRect();

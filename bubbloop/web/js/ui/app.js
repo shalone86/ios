@@ -12,6 +12,9 @@ import { haptic, keepAwake, onBack, onPause, exitApp, goOffline, isNative } from
 import { mountIcons, icon, FACE, mascot, ROLE_COLOR, ROLE_COLOR_LO, FX_ART } from './art.js';
 import { Particles } from './particles.js';
 import { openSheets, closeSheet, sheetIsOpen } from './sheets.js';
+import { tips, unlockAudio } from '../tips.js';
+
+const tip = tips('boba');
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -188,6 +191,8 @@ function updateHint() {
   if (!engine.playing && empty && engine.mode === 'loop') text = 'Tap bubbles to play · the pink button loops it';
   else if (engine.recording && empty && engine.mode === 'loop') text = 'Recording… play something!';
   el.hint.textContent = text;
+  // a first loop is down: show where the other instruments are (once)
+  if (!empty && !engine.recording && engine.mode === 'loop') tip.show('tracks', 'add drums or bass on top: tap a track here', el.tracks);
 }
 
 // ---------- track pods ----------
@@ -914,6 +919,7 @@ export function afterEdit() {
 }
 
 export function selectTrack(id) {
+  tip.done('tracks');
   app.trackId = id;
   renderTracks(); renderTools(); renderGrid(); renderSteps();
   if (app.view === 'mix') renderMix();
@@ -1229,19 +1235,11 @@ async function boot() {
     if (midi.supported && !isNative) midi.connect().catch(() => {});
   } catch (e) { /* Web MIDI unavailable */ }
 
-  const start = async () => {
-    el.splash.classList.add('gone');
-    try { await engine.wake(app.project); } catch (e) { toast('Audio could not start: ' + e.message, 4000); }
-    renderAll();
-    if (popped) toast('Your Pop Pads beat is in: the drums are the Pop Pads track', 4000);
-  };
-  $('btn-start').onclick = start;
-  // first visit: offer the tutorial on the start screen (it stays in the song menu)
-  let seen = false;
-  try { seen = !!localStorage.getItem('bubbloop.seenTour'); } catch (e) { /* private mode */ }
-  if (!seen) $('btn-tour').hidden = false;
-  $('btn-tour').onclick = () => { el.splash.classList.add('gone'); showTour(); };
-  el.splash.addEventListener('pointerdown', (e) => { if (e.target === el.splash) start(); });
+  // no start screen: the first tap on a bubble wakes the sound (the root bubbles glow)
+  el.splash.classList.add('gone');
+  unlockAudio(() => engine.ctx);
+  tip.glow('#grid .cell.root .orb', '#grid .cell');
+  if (popped) toast('Your Pop Pads beat is in: the drums are the Pop Pads track', 4000);
   window.bubbloop = app;       // handy for tests and tinkering
   goOffline();
 }

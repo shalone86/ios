@@ -350,6 +350,11 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 @keyframes rise { from { transform: translateY(100%); } to { transform: none; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 #sheet h2 { margin: 0 0 4px; font-size: 21px; font-weight: 700; }
+#sheet details.more { margin-top: 12px; }
+#sheet details.more summary { cursor: pointer; padding: 10px 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); list-style: none; }
+#sheet details.more summary::-webkit-details-marker { display: none; }
+#sheet details.more summary::after { content: ' ▸'; }
+#sheet details.more[open] summary::after { content: ' ▾'; }
 #sheet h3 { margin: 16px 0 6px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
 #sheet p.sub { margin: 0 0 10px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.35; }
 #sheet .pill { background: #fff; border-color: #e7dbf2; color: var(--ink); box-shadow: 0 2px 5px rgba(80, 40, 140, 0.08); }
@@ -402,10 +407,8 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
 .logo-bubbles .bub:nth-child(4) { width: 42px; height: 42px; }
 .logo-bubbles .bub:nth-child(5) { width: 52px; height: 52px; }
 #old-msg { max-width: 300px; font-size: 15px; font-weight: 500; line-height: 1.4; background: rgba(40, 22, 90, 0.7); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; }
-.start { height: 58px; padding: 0 38px; border-radius: 29px; font-size: 20px; font-weight: 700; color: var(--ink); background: linear-gradient(160deg, #fff, #ffd9ec); box-shadow: 0 10px 26px rgba(30, 10, 70, 0.45), inset 0 -4px 0 rgba(200, 120, 180, 0.35); animation: pulse 0.9s ease-in-out infinite alternate; }
 
 /* ---------- tutorial video ---------- */
-.tour-link { font-size: 15px; font-weight: 600; color: var(--cream); opacity: 0.92; padding: 10px 16px; border-radius: 20px; background: rgba(40, 22, 90, 0.45); border: 1px solid var(--line); }
 #tour { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; background: rgba(15, 8, 40, 0.94); display: grid; place-items: center; padding: calc(var(--safe-t) + 10px) 10px calc(var(--safe-b) + 10px); }
 /* sized explicitly: a video with no size shows at 300x150 until it loads */
 #tour video { width: min(100%, calc((100vh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16)); width: min(100%, calc((100dvh - 24px - var(--safe-t) - var(--safe-b)) * 9 / 16));
@@ -486,7 +489,6 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
   .logo h1 { font-size: 40px; margin-top: 4px; }
   .logo-bubbles { height: 50px; }
   .logo-bubbles .bub { transform: scale(0.75); }
-  .start { height: 48px; font-size: 18px; }
 }
 
 @media (orientation: landscape) and (min-width: 760px) and (min-height: 540px) {

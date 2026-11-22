@@ -131,12 +131,8 @@ function project() {
     <div class="wrap" style="margin-top:10px">
       <button class="pill" data-act="new">${icon('plus')}New song</button>
       <button class="pill" data-act="dup">${icon('copy')}Duplicate</button>
-      <button class="pill" data-act="demo">${icon('note')}Demo song</button>
-      <button class="pill" data-act="tour">${icon('play')}How it works</button>
       <button class="pill" data-act="export">${icon('share')}Export</button>
-      <button class="pill" data-act="file">Save song file</button>
-      <button class="pill" data-act="open">Import song file</button>
-      ${app.midi && app.midi.supported ? `<button class="pill" data-act="midi">${icon('midi')}MIDI</button>` : ''}
+      <button class="pill" data-act="tour">${icon('play')}Watch how it works (2 min)</button>
       ${offer() ? `<button class="pill" data-act="install">📲 Put it on your home screen</button>` : ''}
     </div>
     <p class="sub" id="p-install" hidden></p>
@@ -147,21 +143,29 @@ function project() {
     <h3>Settings</h3>
     <div class="field"><span>Buzz on tap</span><span style="flex:1"></span><button class="toggle ${st.haptics ? 'on' : ''}" data-set="haptics" aria-label="Haptics"></button></div>
     <div class="field"><span>Show note names</span><span style="flex:1"></span><button class="toggle ${st.names ? 'on' : ''}" data-set="names" aria-label="Note names"></button></div>
-    <div class="field"><span>Advanced mode</span><span style="flex:1"></span><button class="toggle ${st.advanced ? 'on' : ''}" data-set="advanced" aria-label="Advanced mode"></button></div>
-    <p class="sub">Adds a chord type per bubble in the Chords menu.</p>
-    <div class="field"><span>Small speakers</span><span style="flex:1"></span><button class="toggle ${app.engine.small ? 'on' : ''}" data-small="1" aria-label="Small speakers"></button></div>
-    <p class="sub">For a phone's own speaker: trims the deepest bass it can't play (which makes it buzz and rumble) and keeps the punch. Turn off on headphones or proper speakers. Exports are not affected.</p>
-    <div class="field"><span>Smooth audio</span><span style="flex:1"></span><button class="toggle ${st.smooth === 'on' ? 'on' : ''}" data-smooth="1" aria-label="Smooth audio"></button></div>
-    <p class="sub">Only for crackle on Bluetooth: a bigger audio buffer, steadier but slower to respond to taps.</p>
-    <div class="field"><span>Keep old versions</span><span style="flex:1"></span><button class="toggle ${st.versions ? 'on' : ''}" data-set="versions" aria-label="Keep old versions"></button></div>
-    <p class="sub">Off: saving or exporting under the same name replaces the file. On: each save gets a new number.</p>
-    <div class="field"><span>Click while playing</span><span style="flex:1"></span><button class="toggle ${st.metroPlay ? 'on' : ''}" data-set="metroPlay" aria-label="Metronome during playback"></button></div>
-    <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="400" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
-    <p class="sub">If recorded notes land late (wireless headphones), <button class="pill small" data-tapalong="1">tap along</button> to set it for you.</p>
-    <div id="p-tapalong"></div>
+    <details class="more">
+      <summary>More settings</summary>
+      <div class="wrap" style="margin-top:6px">
+        <button class="pill" data-act="demo">${icon('note')}Demo song</button>
+        <button class="pill" data-act="file">Save song file</button>
+        <button class="pill" data-act="open">Open song file</button>
+        ${app.midi && app.midi.supported ? `<button class="pill" data-act="midi">${icon('midi')}MIDI</button>` : ''}
+      </div>
+      <div class="field"><span>Headphone delay</span><input type="range" id="p-offset" min="-80" max="400" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
+      <p class="sub">Notes land late with wireless headphones? <button class="pill small" data-tapalong="1">tap along</button> to set it for you.</p>
+      <div id="p-tapalong"></div>
+      <div class="field"><span>Phone speaker</span><span style="flex:1"></span><button class="toggle ${app.engine.small ? 'on' : ''}" data-small="1" aria-label="Phone speaker"></button></div>
+      <p class="sub">Trims the deep bass a phone speaker can't play (it buzzes). Off for headphones. Exports aren't affected.</p>
+      <div class="field"><span>Fix Bluetooth crackle</span><span style="flex:1"></span><button class="toggle ${st.smooth === 'on' ? 'on' : ''}" data-smooth="1" aria-label="Fix Bluetooth crackle"></button></div>
+      <p class="sub">Steadier sound, but taps respond a little slower.</p>
+      <div class="field"><span>More chord types</span><span style="flex:1"></span><button class="toggle ${st.advanced ? 'on' : ''}" data-set="advanced" aria-label="More chord types"></button></div>
+      <p class="sub">A chord type for each bubble, in the Chords menu.</p>
+      <div class="field"><span>Click while playing</span><span style="flex:1"></span><button class="toggle ${st.metroPlay ? 'on' : ''}" data-set="metroPlay" aria-label="Metronome during playback"></button></div>
+      <div class="field"><span>Keep old versions</span><span style="flex:1"></span><button class="toggle ${st.versions ? 'on' : ''}" data-set="versions" aria-label="Keep old versions"></button></div>
+      <p class="sub">Each save gets a new number instead of replacing the file.</p>
+    </details>
     <h3>Bubble apps</h3>
     <div class="wrap"><a class="pill" href="https://shalonely.com/pop/">🥤 Pop Pads: drum machine</a><a class="pill" href="https://shalonely.com/drift/">🪼 Deep Drift: sleepy sea</a><a class="pill" href="https://shalonely.com/chords/">🎐 Cozy Chords: strum chords</a><a class="pill" href="https://github.com/shalone86/bubble-apps" target="_blank" rel="noopener">🛠️ Make your own</a></div>
-    <p class="sub">Pop Pads can send its beat here: in Pop Pads, ☰ → Send to Boba Beats. All four apps are public domain: "Make your own" shows how to copy and change them.</p>
     <p class="sub center" style="margin-top:14px">Boba Beats · songs stay on this device</p>
   `, (root) => {
     const name = root.querySelector('#p-name');

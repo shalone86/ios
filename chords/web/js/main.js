@@ -7,6 +7,9 @@ import { VOICES, playString, playChord } from './sound.js';
 import { KEY_NAMES, SHAPE_ORDER, SHAPE_NAMES, chordsOf, chordNotes, stringNotes } from './theory.js';
 import { offer, install, goOffline } from './install.js';
 import { tapAlong } from './tapalong.js';
+import { tips, unlockAudio } from './tips.js';
+
+const tip = tips('cozy');
 
 const $ = (id) => document.getElementById(id);
 let eng = null;
@@ -98,6 +101,7 @@ $('chords').addEventListener('pointerdown', async (e) => {
   b.classList.add('down'); sing(b);
   select(i);
   eng.press(i, chords[i]);
+  tip.show('strum', 'now swipe the strings to strum it', $('strip'));
 });
 const up = (e) => {
   if (!downs.has(e.pointerId)) return;
@@ -124,7 +128,9 @@ function pluck(k, vel, delay = 0) {
 $('strip').addEventListener('pointerdown', async (e) => {
   e.preventDefault();
   await start();
+  tip.done('strum');
   if (cur < 0) select(0);
+  if (tip.seen('strum') && !tip.seen('rec')) setTimeout(() => tip.show('rec', '● records 4 bars of you playing', $('rec')), 2500);
   try { $('strip').setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
   const k = stringAt(e);
   strums.set(e.pointerId, { k, x: e.clientX, y: e.clientY, t: e.timeStamp });
@@ -217,6 +223,7 @@ function stopTake() {
 function takeChanged() { keep('cozy.take', take); if (playingTake()) eng.setTake(take); }
 $('rec').onclick = async () => {
   await start();
+  tip.done('rec');
   if (eng.rec) { finishTake(); return; }
   if (!take) { record(false); return; }
   // a take is already there: add to it, or start again?
@@ -558,16 +565,14 @@ if (window.visualViewport) visualViewport.addEventListener('resize', fit);
 
 // ---------- go ----------
 goOffline();
-if (offer()) {
-  const b = $('apk'); b.hidden = false;
-  b.onclick = async () => { const how = await install(); if (how) { b.textContent = how; b.style.textDecoration = 'none'; } else b.hidden = true; };
-}
-$('go').onclick = async () => { $('start').classList.add('gone'); await start(); fit(); };
+// no start screen: the first tap on a mug starts the sound (the soft glow says where)
+unlockAudio(() => eng && eng.ctx);
 drawChords(); showHint();
+tip.glow('.chord[data-i="0"] .cup', '.chord');   // the first mug, until someone taps it
 // grooves first (a take or the settings may use one), then any just sent from Pop Pads
 loadGrooves().then(grooveFromPop).then((g) => {
   if (!GROOVES.has(S.beat) && S.beat.startsWith('pop:')) { S.beat = 'none'; save(); }
   drawChords();
   if (g) toast(`${g.name} is your beat now: pick it in Beat to start it`);
 });
-window.cozy = { get eng() { return eng; }, S, get take() { return take; }, set take(t) { take = t; keep('cozy.take', t); }, select, get cur() { return cur; } };
+window.cozy = { get eng() { return eng; }, S, get take() { return take; }, set take(t) { take = t; keep('cozy.take', t); }, select, start, get cur() { return cur; } };

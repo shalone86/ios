@@ -30,14 +30,7 @@ input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; margin-top: -8px; border-radius: 50%; background: #bfe3ff; box-shadow: 0 0 14px rgba(140, 210, 255, .8); }
 input[type=range]::-moz-range-track { height: 4px; background: var(--line); }
 input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; border-radius: 50%; background: #bfe3ff; }
-#start { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: grid; place-items: center; text-align: center; background: rgba(3, 7, 22, .7); transition: opacity .8s; z-index: 5; }
-#start.gone { opacity: 0; pointer-events: none; }
-#start h2 { margin: 0 0 6px; font-size: 40px; font-weight: 600; }
-#start p { margin: 0 0 26px; color: var(--dim); }
-#start button { padding: 14px 30px; border-radius: 28px; font-size: 18px; font-weight: 600; background: rgba(150, 210, 255, .16); border: 1px solid rgba(170, 220, 255, .45); box-shadow: 0 0 30px rgba(120, 190, 255, .25); }
-#start #apk { display: block; margin: 22px auto 0; max-width: 300px; padding: 6px 12px; font-size: 13px; font-weight: 400; color: var(--dim); background: none; border: 0; box-shadow: none; text-decoration: underline; }
-#apk[hidden], #m-apk[hidden] { display: none; }
-#start #tour-link { display: block; margin: 16px auto 0; padding: 8px 14px; font-size: 15px; font-weight: 600; background: none; border: 0; box-shadow: none; color: var(--ink); opacity: .85; }
+#m-apk[hidden] { display: none; }
 #help { width: 36px; padding: 0; }
 #tour { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(2, 5, 16, .95); padding: calc(var(--safe-t) + 10px) 10px calc(var(--safe-b) + 10px); }
 #tour[hidden] { display: none; }
@@ -67,7 +60,7 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
 <div id="menu" hidden><div class="card" role="dialog" aria-label="Menu">
   <button class="chip x" id="menu-close" aria-label="Close">✕</button>
   <h3>Deep Drift</h3>
-  <button class="item" id="m-tour">▶ How it works<small>a 2 minute video</small></button>
+  <button class="item" id="m-tour">▶ Watch how it works<small>a 2 minute video</small></button>
   <h4>Bubble apps</h4>
   <a class="item" href="https://shalonely.com/boba/">🧋 Boba Beats<small>make whole songs out of bubbles</small></a>
   <a class="item" href="https://shalonely.com/pop/">🥤 Pop Pads<small>a fizzy little drum machine</small></a>
@@ -85,7 +78,6 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border: 0; bord
     <button class="chip" id="hum">Hum: off</button>
   </div>
 </section>
-<div id="start"><div><h2>Deep Drift</h2><p>tap the sleepy lights to start them singing.<br>tap again to let one rest. hold one to hum.</p><button id="go">dive in</button><button id="tour-link">▶ how it works · 2 min</button><button id="apk" hidden>put it on your home screen</button></div></div>
 <div id="tour" hidden role="dialog" aria-label="How Deep Drift works"><video id="tour-video" controls playsinline preload="none"></video><button id="tour-close" class="chip" aria-label="Close">✕</button></div>
 <script type="module" src="js/main.js"></script>
 </body>

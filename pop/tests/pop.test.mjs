@@ -40,7 +40,7 @@ const kits = await page.evaluate(async () => {
 });
 check(kits.length === 7 && kits.every((k) => k.pads === 16 && k.silent === 0), `7 flavors, 16 pads each, all with sound (${kits.map((k) => k.id).join(', ')})`);
 
-await page.click('#go');
+await page.evaluate(() => window.popPads.start());
 await page.waitForFunction(() => window.popPads.eng && window.popPads.eng.bufs);
 const pads = await page.$$('.pad');
 check(pads.length === 16, 'sixteen pads on screen');
@@ -353,7 +353,7 @@ for (const [w, h, label, zoom] of [[360, 640, 'small phone', 1], [412, 780, 'pho
   lp2.on('pageerror', (e) => errors.push(String(e)));
   await lp2.goto(`http://127.0.0.1:${server.address().port}/index.html`);
   if (zoom !== 1) await lp2.addStyleTag({ content: `html { font-size: ${zoom * 100}%; } .chip, #top h1, .seg button { zoom: ${zoom}; }` });
-  await lp2.click('#go'); await lp2.waitForTimeout(400);
+  await lp2.evaluate(() => window.popPads.start()); await lp2.waitForTimeout(400);
   for (const m of ['play', 'steps']) {
     await lp2.click(`[data-mode="${m}"]`); await lp2.waitForTimeout(250);
     const r = await lp2.evaluate(() => {

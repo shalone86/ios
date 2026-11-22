@@ -33,7 +33,7 @@ let failed = 0; const check = (ok, m) => { console.log((ok ? '  ok   ' : '  FAIL
 const probe = (f) => String(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f])).trim();
 
 await page.goto(`${base}/chords/`);
-await page.click('#go');
+await page.evaluate(() => window.cozy.start());
 await page.waitForFunction(() => window.cozy.eng);
 await page.click('#menu');
 await page.click('[data-do="timing"]');

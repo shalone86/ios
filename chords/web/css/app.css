@@ -132,17 +132,6 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: 0; bord
   padding: 9px 16px; border-radius: 20px; font-weight: 600; font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap; }
 #toast.on { opacity: 1; }
 
-#start { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; text-align: center;
-  background: radial-gradient(ellipse at 50% 80%, color-mix(in srgb, var(--c2) 25%, var(--c0)), var(--c0) 70%); transition: opacity .5s; }
-#start.gone { opacity: 0; pointer-events: none; }
-#start h2 { margin: 6px 0 4px; font-size: 44px; }
-#start p { margin: 0 0 24px; color: var(--dim); }
-#start button { padding: 14px 30px; border-radius: 28px; background: var(--ink); color: var(--c0); font-size: 18px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
-#start #apk { display: block; margin: 22px auto 0; max-width: 300px; padding: 6px 12px; background: none; box-shadow: none; color: var(--dim); font-size: 13px; font-weight: 400; text-decoration: underline; }
-#start #apk[hidden] { display: none; }
-.logo { display: flex; justify-content: center; }
-.logo .chord { --b: 96px; }
-
 /* changing chords: the mugs wiggle gently, waiting to be picked */
 body.editing .chord { animation: wiggle 1.4s ease-in-out infinite; }
 body.editing .chord:nth-child(2n) { animation-delay: -.7s; }

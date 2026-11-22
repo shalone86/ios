@@ -54,7 +54,7 @@ const longRun = await page.evaluate(async () => {
 check(longRun.end > longRun.start - 6 && longRun.voices.join() === 'pad,glass,choir',
   `loops in three voices keep singing (first minute ${longRun.start.toFixed(1)} dB, fourth minute ${longRun.end.toFixed(1)} dB)`);
 
-await page.click('#go');
+await page.mouse.click(5, 5);
 await page.waitForFunction(() => window.deepDrift.drift && window.deepDrift.drift.ctx.state === 'running');
 await page.waitForTimeout(400);
 const o = await page.evaluate(() => { const o = window.deepDrift.orbs[4]; return { x: o.sx, y: o.sy }; });

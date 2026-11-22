@@ -34,12 +34,11 @@ async function tap(r, c, holdMs = 90) {
 const click = async (sel) => { await page.waitForSelector(sel, { state: 'attached', timeout: 10000 }); await page.locator(sel).first().evaluate((el) => el.click()); };
 
 console.log('Start');
-check(await page.locator('#btn-tour').isVisible(), 'first visit: the start screen offers the tutorial');
-await click('#btn-tour');
-check(await page.locator('#tour').isVisible() && /media\/tutorial\.mp4$/.test(await page.locator('#tour-video').getAttribute('src')), 'the tutorial opens in a full-screen player');
-await click('#tour-close');
-check(!(await page.locator('#tour').isVisible()), 'and closes');
-await click('#btn-start');
+await page.waitForFunction(() => window.bubbloop); await wait(600);
+check(!(await page.locator('#splash').isVisible()) && await page.evaluate(() => getComputedStyle(document.querySelector('#grid .cell.root .orb')).animationName) === 'bb-glow',
+  'first visit: no start screen, the root bubbles glow');
+await page.locator('#grid .cell.root').first().dispatchEvent('pointerdown', { pointerId: 3, isPrimary: true, bubbles: true });
+await page.locator('#grid .cell.root').first().dispatchEvent('pointerup', { pointerId: 3, isPrimary: true, bubbles: true });
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.engine.ready, null, { timeout: 15000 });
 check(true, 'audio engine wakes up');
 check(await page.locator('#grid .cell').count() === 25, '25 bubbles on the grid');
@@ -330,8 +329,12 @@ const durs = inside.map((n) => { const f = path.join(OUT, 'zip-' + n.replace(/[^
 check(inside.length === lens.length && durs.every((d, i) => Math.abs(d - lens[i]) < 0.002), `All loops: a zip of ${inside.length} seamless loops (${inside.join(', ')})`);
 
 await click('#btn-project');
-check(await page.locator('[data-act="tour"]').count() === 1, 'the song menu keeps a "How it works" button to rewatch it');
-await page.evaluate(() => document.getElementById('scrim').click());
+check(await page.locator('[data-act="tour"]').count() === 1 && await page.locator('details.more [data-act="demo"]').count() === 1, 'the song menu: "Watch how it works" up top, the rest under More settings');
+await click('[data-act="tour"]');
+check(await page.locator('#tour').isVisible() && /media\/tutorial\.mp4$/.test(await page.locator('#tour-video').getAttribute('src')), 'the tutorial opens in a full-screen player');
+await click('#tour-close');
+check(!(await page.locator('#tour').isVisible()), 'and closes');
+if (await page.locator('#sheet').isVisible()) await page.evaluate(() => document.getElementById('scrim').click());
 check(fs.existsSync(new URL('../web/media/tutorial.mp4', import.meta.url)), 'the tutorial video is in the app');
 
 console.log('Persistence');
@@ -341,8 +344,8 @@ const saved = await state(() => JSON.parse(localStorage.getItem('bubbloop.p.' + 
 check(saved && saved.song.length === 2 && saved.sections.length === 2, 'song autosaved');
 check(!JSON.stringify(saved).includes('"_p"'), 'no scratch fields in the save');
 await page.reload();
-check(!(await page.locator('#btn-tour').isVisible()), 'after watching once, the start screen no longer pushes it');
-await click('#btn-start');
+check(await page.evaluate(() => getComputedStyle(document.querySelector('#grid .cell.root .orb')).animationName) === 'none', 'coming back: no glow');
+await page.evaluate(() => window.bubbloop.engine.wake(window.bubbloop.project));
 await page.waitForFunction(() => window.bubbloop && window.bubbloop.engine.ready);
 check(await state(() => window.bubbloop.project.sections.length) === 2, 'song comes back after a restart');
 
@@ -351,7 +354,7 @@ await page.waitForFunction(() => navigator.serviceWorker.controller || navigator
 await wait(1500);
 await context.setOffline(true);
 await page.reload();
-await click('#btn-start');
+await page.waitForFunction(() => window.bubbloop);
 check(await page.locator('#grid .cell').count() === 25, 'opens with no connection once visited');
 await context.setOffline(false);
 check(execFileSync('node', [new URL('../tools/make-web.mjs', import.meta.url).pathname, '--check']).toString().includes('up to date'), 'offline file list is current');
