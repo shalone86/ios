@@ -6,6 +6,7 @@ import { Cozy, BEATS, GROOVES, STYLES, beatOf, retune, restyle, addGroove } from
 import { VOICES, playString, playChord } from './sound.js';
 import { KEY_NAMES, SHAPE_ORDER, SHAPE_NAMES, chordsOf, chordNotes, stringNotes } from './theory.js';
 import { offer, install, goOffline } from './install.js';
+import { tapAlong } from './tapalong.js';
 
 const $ = (id) => document.getElementById(id);
 let eng = null;
@@ -76,7 +77,7 @@ async function make() {
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older Safari */ }
   const e = await Cozy.create();
   eng = e;
-  Object.assign(eng, { voice: S.voice, beat: S.beat, bpm: S.bpm, style: S.style });
+  Object.assign(eng, { voice: S.voice, beat: S.beat, bpm: S.bpm, style: S.style, tapDelay: S.tapDelay || 0 });
   eng.onCount = (n) => { const h = $('hint'); if (n) { h.textContent = n; h.classList.add('count'); } else { showHint(); } };
   eng.onStep = (s, steps, bar) => {
     if (s !== 0) return;
@@ -335,6 +336,14 @@ $('voice').onclick = () => openSheet(`<h3>Sound</h3>${VOICES.map((v) => `<button
   // a taste of it
   eng.press(cur >= 0 ? cur : 0, curChord()); setTimeout(() => eng.release(), S.style === 'chord' ? 700 : 1400);
 });
+// ---------- Bluetooth timing: tap along, and recordings are moved back by your headphones' delay ----------
+function timing() {
+  openSheet(`<h3>Bluetooth timing</h3><div id="tap-here"></div><div class="row" style="justify-content:center;margin-top:12px"><button class="chip" data-t="reset">no delay (wired, or the phone's speaker)</button></div>`, async (r) => {
+    r.onclick = (e) => { if (e.target.closest('[data-t="reset"]')) { S.tapDelay = 0; eng.tapDelay = 0; save(); toast('timing reset'); closeSheet(); } };
+    const secs = await tapAlong(eng.ctx, eng.mix.master, r.querySelector('#tap-here'));
+    if (secs != null) { S.tapDelay = +secs.toFixed(3); eng.tapDelay = S.tapDelay; save(); }
+  });
+}
 // ---------- changing a mug's chord (Advanced) ----------
 function editChord(i) {
   const c = chords[i], base = chordsOf(S.key, S.mode)[i];
@@ -448,6 +457,7 @@ $('menu').onclick = () => {
   <p id="s-status" class="note" style="min-height:1.3em"></p>
   <h4>Advanced</h4>
   <button class="big" data-do="edit">✎<span>Change chords<small>pick any chord for any mug (your take follows)</small></span></button>
+  <button class="big" data-do="timing">🎧<span>Bluetooth timing<small>${S.tapDelay ? `recordings move back ${Math.round(S.tapDelay * 1000)} ms` : 'if recordings land late with wireless headphones, tap along to fix it'}</small></span></button>
   ${Object.keys(mine()).length ? `<button class="big" data-do="unedit">↺<span>Back to the key's chords<small>undo every change in ${S.mode}</small></span></button>` : ''}
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
   <a class="big" href="https://github.com/shalone86/bubble-apps" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">🛠️<span>Make your own<small>all four apps are free to copy and change (public domain), with how-to in plain words</small></span></a>
@@ -455,6 +465,7 @@ $('menu').onclick = () => {
     const st = r.querySelector('#s-status');
     const I = e.target.closest('[data-install]');
     if (I) { const how = await install(); if (how) I.querySelector('small').textContent = how; else closeSheet(); return; }
+    if (e.target.closest('[data-do="timing"]')) { await start(); timing(); return; }
     if (e.target.closest('[data-do="edit"]')) { closeSheet(); editing = true; showHint(); toast('tap a mug to change its chord'); return; }
     if (e.target.closest('[data-do="unedit"]')) { S.custom[S.mode] = {}; save(); drawChords(); if (take) { take = retune(take, S.key, S.mode, {}); takeChanged(); } closeSheet(); toast(`back to the chords of ${KEY_NAMES[S.key]} ${S.mode}`); return; }
     const L = e.target.closest('[data-do="listen"]');

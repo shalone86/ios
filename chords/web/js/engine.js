@@ -150,6 +150,7 @@ export class Cozy {
   constructor(ctx) {
     this.ctx = ctx; this.mix = makeMix(ctx);
     this.voice = 'omni'; this.beat = 'none'; this.bpm = 84; this.style = 'chord'; this.auto = null;
+    this.tapDelay = 0;       // how late taps land behind the sound (Bluetooth): moved back when recording
     this.chord = null; this.held = null; this.idx = -1;
     this.playing = false; this.rec = null; this.clock = null;
     this.loop = null;        // the take, playing live as a loop
@@ -177,12 +178,12 @@ export class Cozy {
     if (this.style !== 'chord') {
       // an auto-style plays the chord for you; the take still knows which chord is on (for the bass)
       this.held = null;
-      this.log({ ...info, q: 1 }, t);
+      this.log({ ...info, q: 1 }, t - this.tapDelay);
       this.startAuto(i, ch, t);
     } else {
       this.stopAuto();
       this.held = playChord(this.ctx, this.mix.voices, t, this.voice, notes);
-      this.log(info, t);
+      this.log(info, t - this.tapDelay);
     }
     // with no beat running, the bass plays with the chord (when dubbing over a
     // take with a beat, its own bass follows the chords once they are merged)
@@ -193,10 +194,10 @@ export class Cozy {
   // played back in another style later, for exactly as long)
   release() {
     const t = this.now();
-    if (this.auto) { this.stopAuto(); this.log({ k: 'u' }, t); return; }
+    if (this.auto) { this.stopAuto(); this.log({ k: 'u' }, t - this.tapDelay); return; }
     if (!this.held) return;
     this.held.release(t);
-    this.log({ k: 'u' }, t);
+    this.log({ k: 'u' }, t - this.tapDelay);
     this.held = null;
   }
   // delay: for a fast swipe, strings crossed together are spread out a little, as a real strum is
@@ -204,7 +205,7 @@ export class Cozy {
     this.wake();
     const t = this.now() + delay;
     playString(this.ctx, this.mix.voices, t, this.voice, midi, vel);
-    this.log({ k: 's', m: midi, vel: +vel.toFixed(2), v: this.voice }, t);
+    this.log({ k: 's', m: midi, vel: +vel.toFixed(2), v: this.voice }, t - this.tapDelay);
   }
 
   // ----- auto-styles: a little clock of its own, in time with the tempo -----

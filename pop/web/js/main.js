@@ -5,6 +5,7 @@
 import { INTERVALS, PopEngine, newSong, tweakOf, padAt as padSettings, mixAt, laneOf, motionOf, hasMotion, PATTERNS, LFO_RATES, LFO_TARGETS } from './engine.js';
 import { KITS, KIT_ORDER } from './kits.js';
 import { offer, install, goOffline } from './install.js';
+import { tapAlong } from './tapalong.js';
 import { loopWav, stemsZip, patternMidi, deliver, baseName, bobaSong, handOff, cozyGroove } from './export.js';
 
 // the other bubble apps (in the Android app these open in the browser)
@@ -198,6 +199,7 @@ requestAnimationFrame(fizz);
 async function start() {
   if (eng) { if (eng.ctx.state !== 'running') await eng.ctx.resume(); return; }
   eng = await PopEngine.create();
+  try { eng.tapDelay = +localStorage.getItem('poppads.tapDelay') || 0; } catch (e) { /* private mode */ }
   eng.setSong(song);
   await eng.setKit(song.kit);
   eng.onHit = (i) => {
@@ -525,7 +527,7 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   <h4>Pattern ${song.cur + 1}</h4>
   <div class="row"><button class="chip" data-clear="1">Clear it</button>${hasMotion(song, song.cur) ? '<button class="chip" data-unmove="1">Clear its knob moves</button>' : ''}<button class="chip" data-how="1">▶ How it works</button></div>
   <h4>Everything</h4>
-  <div class="row"><button class="chip" data-fresh="1">✨ Start fresh</button></div>
+  <div class="row"><button class="chip" data-fresh="1">✨ Start fresh</button><button class="chip" data-timing="1">🎧 Bluetooth timing${eng && eng.tapDelay ? ` · ${Math.round(eng.tapDelay * 1000)} ms` : ''}</button></div>
   <h4>Bubble apps</h4>${APPS.map(([n, u, ic, d]) => `<a class="big" href="${u}" style="text-decoration:none;color:inherit">${ic}<span>${n}<small>${d}</small></span></a>`).join('')}
   <a class="big" href="https://github.com/shalone86/bubble-apps" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">🛠️<span>Make your own<small>all four apps are free to copy and change (public domain), with how-to in plain words</small></span></a>
   ${offer() ? '<h4>On your phone</h4><button class="big" data-install="1">📲<span>Put it on your home screen<small>opens like an app, works with no signal</small></span></button>' : ''}`, (s) => s.onclick = async (e) => {
@@ -537,6 +539,17 @@ $('menu').onclick = () => openSheet(`<h3>Save the beat</h3>
   const I = e.target.closest('[data-install]');
   if (I) { const how = await install(); if (how) I.querySelector('small').textContent = how; else closeSheet(); return; }
   if (e.target.closest('[data-fresh]')) { startFresh(); return; }
+  if (e.target.closest('[data-timing]')) {
+    // tap along to clicks: recorded taps are then moved back by the headphones' delay
+    await start();
+    openSheet(`<h3>Bluetooth timing</h3><div id="tap-here"></div><div class="row" style="justify-content:center;margin-top:12px"><button class="chip" data-t="reset">no delay (wired, or the phone's speaker)</button></div>`, async (r) => {
+      const keepIt = (v) => { eng.tapDelay = v; try { localStorage.setItem('poppads.tapDelay', String(v)); } catch (err) { /* private mode */ } };
+      r.onclick = (ev) => { if (ev.target.closest('[data-t="reset"]')) { keepIt(0); toast('timing reset'); closeSheet(); } };
+      const secs = await tapAlong(eng.ctx, eng.ctx.destination, r.querySelector('#tap-here'));
+      if (secs != null) keepIt(+secs.toFixed(3));
+    });
+    return;
+  }
   if (e.target.closest('[data-boba]')) {
     const st = s.querySelector('#s-status');
     const what = saving(), bars = what.chain.length > 1 ? what.chain : [what.cur];

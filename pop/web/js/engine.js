@@ -399,8 +399,9 @@ export class PopEngine {
     this.hit(i, now);
     if (this.rec && this.playing) {
       // snap to the nearest step; if that step is still to come, don't play it twice
+      // with a measured delay (Bluetooth timing), a tap lands that much earlier, where it was meant
       const sd = stepDur(this.song.bpm), lat = this.ctx.outputLatency || this.ctx.baseLatency || 0;
-      const k = Math.round((now + lat * 0.5 - this.t0) / sd);
+      const k = Math.round((now + (this.tapDelay ? -this.tapDelay : lat * 0.5) - this.t0) / sd);
       if (k < 0) return;                    // still counting in
       this.write(i, k);
       if (k >= this.n) this.skip.add(`${i}:${k}`);

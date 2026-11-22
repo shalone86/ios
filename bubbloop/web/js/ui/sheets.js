@@ -12,6 +12,7 @@ import { FILLS } from '../seq.js';
 import { exportProject, FORMATS } from '../exporter.js';
 import { canShare, shareFile, saveFile, isNative } from '../platform.js';
 import { offer, install } from '../install.js';
+import { tapAlong } from '../tapalong.js';
 import { mountIcons, icon, mascot, GLYPHS, DONE_ART } from './art.js';
 import { showTour, app, curTrack, renderAll, afterEdit, afterStructureChange, selectTrack, toast, touch, trackMascot, openProject } from './app.js';
 
@@ -155,8 +156,9 @@ function project() {
     <div class="field"><span>Keep old versions</span><span style="flex:1"></span><button class="toggle ${st.versions ? 'on' : ''}" data-set="versions" aria-label="Keep old versions"></button></div>
     <p class="sub">Off: saving or exporting under the same name replaces the file. On: each save gets a new number.</p>
     <div class="field"><span>Click while playing</span><span style="flex:1"></span><button class="toggle ${st.metroPlay ? 'on' : ''}" data-set="metroPlay" aria-label="Metronome during playback"></button></div>
-    <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="160" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
-    <p class="sub">If recorded notes land late, nudge tap timing up; if early, down.</p>
+    <div class="field"><span>Tap timing</span><input type="range" id="p-offset" min="-80" max="400" step="5" value="${st.tapOffset}"><output id="p-offset-out">${st.tapOffset} ms</output></div>
+    <p class="sub">If recorded notes land late (wireless headphones), <button class="pill small" data-tapalong="1">tap along</button> to set it for you.</p>
+    <div id="p-tapalong"></div>
     <h3>Bubble apps</h3>
     <div class="wrap"><a class="pill" href="https://shalonely.com/pop/">🥤 Pop Pads: drum machine</a><a class="pill" href="https://shalonely.com/drift/">🪼 Deep Drift: sleepy sea</a><a class="pill" href="https://shalonely.com/chords/">🎐 Cozy Chords: strum chords</a><a class="pill" href="https://github.com/shalone86/bubble-apps" target="_blank" rel="noopener">🛠️ Make your own</a></div>
     <p class="sub">Pop Pads can send its beat here: in Pop Pads, ☰ → Send to Boba Beats. All four apps are public domain: "Make your own" shows how to copy and change them.</p>
@@ -171,6 +173,16 @@ function project() {
       root.querySelector('#p-offset-out').textContent = `${st.tapOffset} ms`;
       app.engine.tapOffset = st.tapOffset / 1000;
       S.saveSettings(st);
+    });
+    // tap along to clicks: the measured delay, less what the phone already reports, becomes tap timing
+    on(root, '[data-tapalong]', async () => {
+      const ctx = app.engine.ctx;
+      if (!ctx) { toast('Play a note first, then try again'); return; }
+      const secs = await tapAlong(ctx, ctx.destination, root.querySelector('#p-tapalong'));
+      if (secs == null) return;
+      const known = ctx.outputLatency || ctx.baseLatency || 0;
+      st.tapOffset = Math.max(-80, Math.min(400, Math.round((secs - known) * 200) * 5));
+      off.value = st.tapOffset; off.dispatchEvent(new Event('input'));
     });
     on(root, '[data-set]', (b) => {
       const k = b.dataset.set;
