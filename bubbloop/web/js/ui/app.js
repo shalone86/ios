@@ -495,10 +495,12 @@ function renderSteps() {
 
 // ---------- FX pads ----------
 
+// the lock a pad shows is the one for where the pads act now: the whole mix, or this track
+const latchKey = (k) => (app.fxTrack ? `${k}@${curTrack().id}` : k);
 function renderFx() {
   const latch = app.project.latch || {};
   el.fx.innerHTML = FX.map((f, i) => `
-    <div class="fx fx-${i} ${f.zones ? 'zoned' : ''} ${latch[f.id] ? 'latched on' : ''}" data-fx="${f.id}">
+    <div class="fx fx-${i} ${f.zones ? 'zoned' : ''} ${latch[latchKey(f.id)] ? 'latched on' : ''}" data-fx="${f.id}">
       ${FX_ART[f.id]}
       <b>${f.name}</b><small>${f.sub}</small>
       ${f.zones ? `<div class="zones">${f.zones.map((z) => `<i>${z}</i>`).join('')}</div>` : ''}
@@ -523,12 +525,12 @@ function bindFx() {
     wakeNow();
     const f = FX.find((x) => x.id === pad.dataset.fx);
     if (e.target.closest('.lock')) {
-      const on = !app.project.latch[f.id];
-      engine.setLatch(f.id, on, f.zones ? Math.floor(f.zones.length / 2) : null);
+      const tr = app.fxTrack ? curTrack().id : null, on = !app.project.latch[latchKey(f.id)];
+      engine.setLatch(f.id, on, f.zones ? Math.floor(f.zones.length / 2) : null, tr);
       pad.classList.toggle('latched', on);
       pad.classList.toggle('on', on);
       showZone(pad, on && f.zones ? Math.floor(f.zones.length / 2) : -1);
-      toast(on ? `${f.name} stays on` : `${f.name} released`);
+      toast(on ? `${f.name} stays on${tr ? ` for ${curTrack().name} only` : ''}` : `${f.name} released${tr ? ` on ${curTrack().name}` : ''}`);
       touch();
       return;
     }
@@ -556,7 +558,7 @@ function bindFx() {
     if (!h) return;
     held.delete(e.pointerId);
     engine.fxUp(h.f.id, h.tr);
-    if (!app.project.latch[h.f.id]) { h.pad.classList.remove('on'); showZone(h.pad, -1); }
+    if (!app.project.latch[latchKey(h.f.id)]) { h.pad.classList.remove('on'); showZone(h.pad, -1); }
     if (engine.recording) renderTools();
   };
   fxReleaseAll = () => { for (const pid of [...held.keys()]) up({ pointerId: pid }); };
@@ -915,6 +917,7 @@ export function selectTrack(id) {
   app.trackId = id;
   renderTracks(); renderTools(); renderGrid(); renderSteps();
   if (app.view === 'mix') renderMix();
+  if (app.fxTrack) renderFx();   // its own locks show on the pads
   mapDirty = true;
 }
 
@@ -1040,7 +1043,7 @@ function bind() {
     if (!b) return;
     const p = app.project, t = curTrack(), tool = b.dataset.tool;
     if (tool === 'acc') { engine.acc = engine.acc === 0 ? 1 : engine.acc === 1 ? -1 : 0; renderTools(); }
-    else if (tool === 'fxtarget') { app.fxTrack = !app.fxTrack; renderTools(); }
+    else if (tool === 'fxtarget') { app.fxTrack = !app.fxTrack; renderTools(); renderFx(); }
     else if (tool === 'inst') openSheets.instrument(t);
     else if (tool === 'sampler') openSheets.sampler(t);
     else if (tool === 'grooves') openSheets.grooves();

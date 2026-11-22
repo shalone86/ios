@@ -40,7 +40,11 @@ export async function renderProject(project, options = {}) {
   try { await ensureSamples(sampleIds(p)); await prepareNatural(p); } catch (e) { /* no sample storage here */ }
   const g = buildGraph(ctx, p, kit, { offline: true, solo, master });
   for (const fx of [...p.sections.flatMap((s) => s.fx), ...p.song.flatMap((b) => b.fx)]) if (fx.tr) g.trackRack(fx.tr);
-  for (const k of Object.keys(p.latch || {})) if (p.latch[k]) g.rack.on(k, p.latch[k].p, 0);
+  for (const key of Object.keys(p.latch || {})) {
+    if (!p.latch[key]) continue;
+    const [k, tr] = key.split('@'), rack = g.fxRack(tr || null);   // a lock on one track, or the whole mix
+    if (rack) rack.on(k, p.latch[key].p, 0);
+  }
 
   const timeAt = (tick) => LEAD + tick * spt;
   let si = 0, pos = 0;

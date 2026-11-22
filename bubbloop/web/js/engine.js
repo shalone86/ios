@@ -215,17 +215,25 @@ export class Engine {
     }
   }
 
+  // A locked effect stays on. It is kept per target, like a held one: under
+  // its own name for the whole mix, or as 'name@track' for one track only.
   applyLatches() {
     const latch = this.project.latch || {};
-    for (const k of Object.keys(latch)) if (latch[k]) this.g.rack.on(k, latch[k].p, this.now);
+    for (const key of Object.keys(latch)) {
+      if (!latch[key]) continue;
+      const [k, tr] = key.split('@'), rack = this.g.fxRack(tr || null);
+      if (rack) rack.on(k, latch[key].p, this.now);
+    }
   }
 
-  setLatch(k, on, p) {
-    const latch = this.project.latch;
-    if (on) latch[k] = { p: p ?? null }; else delete latch[k];
+  setLatch(k, on, p, tr = null) {
+    const latch = this.project.latch, key = tr ? `${k}@${tr}` : k;
+    if (on) latch[key] = { p: p ?? null }; else delete latch[key];
     if (!this.g) return;
-    if (on) this.g.rack.on(k, p, this.now);
-    else if (!this.heldFx.has(k + '|')) this.g.rack.off(k, this.now);
+    const rack = this.g.fxRack(tr);
+    if (!rack) return;
+    if (on) rack.on(k, p, this.now);
+    else if (!this.heldFx.has(k + '|' + (tr || ''))) rack.off(k, this.now);
   }
 
   // ---------- scheduler ----------
@@ -487,7 +495,8 @@ export class Engine {
     if (!f) return;
     this.heldFx.delete(key);
     const now = this.now;
-    if (tr || !(this.project.latch && this.project.latch[k])) f.rack.off(k, now);
+    const latch = this.project.latch || {};
+    if (!latch[tr ? `${k}@${tr}` : k]) f.rack.off(k, now);   // a lock on the same target keeps it on
     this.closeFx(k, f, now);
   }
 

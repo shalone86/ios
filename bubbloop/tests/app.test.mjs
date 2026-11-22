@@ -196,6 +196,18 @@ console.log('Menus do not leak into each other');
   await click('.tab[data-view="fx"]');
   await click('[data-tool="fxtarget"]');
   check(/only/.test(await page.locator('[data-tool="fxtarget"]').innerText()), 'FX can be aimed at the current track');
+  // a lock there is that track's alone: the whole mix shows no lock, and back on the track it does
+  const pressLock = () => page.evaluate(() => { const el = document.querySelector('.fx [data-lock]'), b = el.getBoundingClientRect(); for (const type of ['pointerdown', 'pointerup']) el.dispatchEvent(new PointerEvent(type, { pointerId: 91, pointerType: 'touch', isPrimary: true, clientX: b.left + 4, clientY: b.top + 4, bubbles: true, cancelable: true })); });
+  await pressLock();
+  const lockOne = await state(() => ({ keys: Object.keys(window.bubbloop.project.latch), tr: window.bubbloop.trackId, lit: document.querySelectorAll('.fx.latched').length }));
+  await click('[data-tool="fxtarget"]');
+  const litMix = await state(() => document.querySelectorAll('.fx.latched').length);
+  await click('[data-tool="fxtarget"]');
+  const litBack = await state(() => document.querySelectorAll('.fx.latched').length);
+  await pressLock();
+  const cleared = await state(() => Object.keys(window.bubbloop.project.latch).length);
+  check(lockOne.keys.length === 1 && lockOne.keys[0].endsWith('@' + lockOne.tr) && lockOne.lit === 1 && litMix === 0 && litBack === 1 && cleared === 0,
+    `locking an effect on one track keeps it on that track only (${lockOne.keys[0]}), not the whole mix; unlocking clears it`);
   await click('[data-tool="fxtarget"]');
   await click('.tab[data-view="play"]');
   await click('.pod[data-track]:nth-child(3)');

@@ -386,6 +386,8 @@ export function clearFxIn(p, lane) {
 export function removeTrack(p, id) {
   if (p.tracks.length <= 1) return false;
   pushUndo(p);
+  // its own locked effects go with it
+  for (const key of Object.keys(p.latch || {})) if (key.endsWith('@' + id)) delete p.latch[key];
   p.tracks = p.tracks.filter((t) => t.id !== id);
   for (const s of p.sections) { delete s.ev[id]; if (s.mute) delete s.mute[id]; s.fx = s.fx.filter((f) => f.tr !== id); }
   for (const b of p.song) { delete b.off[id]; if (b.sp) delete b.sp[id]; b.fx = b.fx.filter((f) => f.tr !== id); }
